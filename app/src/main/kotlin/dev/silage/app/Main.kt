@@ -30,6 +30,8 @@ import dev.silage.app.connect.ConnectPresenter
 import dev.silage.app.connect.ConnectScreen
 import dev.silage.app.connect.ProbeOutcome
 import dev.silage.app.di.desktopModule
+import dev.silage.app.browse.CollectionScreen
+import dev.silage.app.browse.LibraryScreen
 import dev.silage.app.home.HomeScreen
 import dev.silage.app.shell.AppShell
 import dev.silage.app.shell.PendingPage
@@ -92,7 +94,14 @@ private suspend fun startRoute(koin: Koin): Route {
     if (registry.activeEntry.value == null) return Route.Connect
     if (koin.get<TokenManager>().getRefreshToken() == null) return Route.SignIn
     // Developer switch for screenshots/tests: skip the profile picker when one is already active.
-    if (System.getenv("SILAGE_DEV_START") == "home" && koin.get<ProfileRepository>().getActiveProfileId() != null) return Route.Home
+    val dev = System.getenv("SILAGE_DEV_START")
+    if (dev != null && koin.get<ProfileRepository>().getActiveProfileId() != null) {
+        if (dev == "library") {
+            val libs = koin.get<org.siloserver.silo.repository.PersonalDataRepository>().listUserLibraries()
+            (libs as? ApiResult.Success)?.data?.firstOrNull()?.let { return Route.Library(it.id, it.name) }
+        }
+        return Route.Home
+    }
     return Route.Profiles
 }
 
@@ -143,6 +152,12 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         is Route.Playing -> PlayingScreen(koin, route.contentId, onDone = { if (!nav.back()) nav.root(Route.Home) })
         Route.Home -> AppShell(nav, koin, route) {
             HomeScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) })
+        }
+        is Route.Library -> AppShell(nav, koin, route) {
+            LibraryScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onOpenCollection = { id, name -> nav.go(Route.Collection(id, name)) })
+        }
+        is Route.Collection -> AppShell(nav, koin, route) {
+            CollectionScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) })
         }
         // Pages still to come in Plan 2 show their name inside the shell.
         else -> AppShell(nav, koin, route) { PendingPage(route) }
