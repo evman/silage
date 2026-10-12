@@ -34,6 +34,14 @@ import dev.silage.app.settings.SettingsScreen
 import dev.silage.app.nav.AppNavigator
 import dev.silage.app.nav.EntryHost
 import dev.silage.app.nav.KeyRoot
+import dev.silage.app.splash.SplashScreen
+import dev.silage.app.ui.LogoIcon
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import dev.silage.app.nav.Route
 import dev.silage.app.playback.PlayingScreen
 import dev.silage.app.profiles.ProfileRow
@@ -41,7 +49,6 @@ import dev.silage.app.profiles.ProfilesPresenter
 import dev.silage.app.profiles.ProfilesScreen
 import dev.silage.app.signin.SignInPresenter
 import dev.silage.app.signin.SignInScreen
-import kotlinx.coroutines.runBlocking
 import org.koin.core.Koin
 import org.koin.core.context.startKoin
 import org.siloserver.silo.di.sharedModules
@@ -55,7 +62,6 @@ import org.siloserver.silo.repository.ProfileRepository
 
 fun main() {
     val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
-    val navigator = AppNavigator(runBlocking { startRoute(koin) })
     val crashLog = CrashLog()
     // Developer hook for reproducing exits: post a real Esc key press after N seconds.
     System.getenv("SILAGE_DEV_BACK_AFTER")?.toLongOrNull()?.let { secs ->
@@ -78,7 +84,7 @@ fun main() {
           },
       ) {
         val windowState = rememberWindowState(placement = WindowPlacement.Fullscreen)
-        Window(onCloseRequest = ::exitApplication, state = windowState, title = BuildInfo.NAME) {
+        Window(onCloseRequest = ::exitApplication, state = windowState, title = BuildInfo.NAME, icon = LogoIcon) {
             MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black, primary = Color.White, onPrimary = Color.Black)) {
                 // Layouts are specified at 1080p and scaled uniformly to the window (4K is 2×).
                 BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
@@ -88,8 +94,16 @@ fun main() {
                         LocalDensity provides Density(scale, fontScale = 1f),
                         dev.silage.app.playback.LocalWindowDensity provides windowDensity,
                     ) {
-                        val route by navigator.route.collectAsState()
-                        KeyRoot(route, onBack = navigator::back) { EntryHost(navigator) { entry -> AppRoutes(koin, navigator, entry.route) } }
+                        // The window opens on the startup animation while the start
+                        // route (server, sign-in, profile) resolves underneath.
+                        var navigator by remember { mutableStateOf<AppNavigator?>(null) }
+                        var splashDone by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) { navigator = AppNavigator(withContext(Dispatchers.IO) { startRoute(koin) }) }
+                        navigator?.let { nav ->
+                            val route by nav.route.collectAsState()
+                            KeyRoot(route, onBack = nav::back) { EntryHost(nav) { entry -> AppRoutes(koin, nav, entry.route) } }
+                        }
+                        if (!splashDone) SplashScreen(ready = navigator != null) { splashDone = true }
                     }
                 }
             }

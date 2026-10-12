@@ -66,3 +66,17 @@ afterEvaluate {
         (project.findProperty("devOpenVersions") as String?)?.let { environment("SILAGE_DEV_OPEN_VERSIONS", it) }
     }
 }
+
+tasks.register<JavaExec>("runLogoRender") {
+    group = "spike"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("dev.silage.app.spike.LogoRenderKt")
+    args = listOfNotNull(project.findProperty("out") as String?)
+}
+
+tasks.register<JavaExec>("runSplashRender") {
+    group = "spike"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("dev.silage.app.spike.SplashRenderKt")
+    args = listOfNotNull(project.findProperty("out") as String?)
+}
