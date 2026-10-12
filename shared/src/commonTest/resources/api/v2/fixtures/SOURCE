@@ -1,0 +1,21 @@
+repository=https://github.com/Silo-Server/silo-server
+path=contracts/api/v2/fixtures
+commit=51953b6c138a45aaca05a81b3234ef12d4bdd9c8
+ref=HEAD
+snapshot=committed
+api_major=2
+
+snapshot=uncommitted means the bodies were copied from a server checkout with
+uncommitted fixture changes on top of that commit, so the commit alone does
+not reproduce them. Re-vendor from a server commit that contains them before
+relying on this record.
+
+Byte-identical copies of a subset of the server's native API v2 contract
+fixtures; do not hand-edit any of them. The server generates them through its
+real v2 router (make apiv2-fixtures) and validates the bodies against the
+committed OpenAPI artifact. Only the fixtures the Android pilot consumes are
+vendored here, and index.json is filtered to those entries; the OpenAPI
+document itself is never vendored. Re-vendor with
+scripts/sync-apiv2-fixtures.sh <server checkout> and run :shared:testDebugUnitTest.
+
+ApiV2ContractTest decodes every body here with the production SiloJson.

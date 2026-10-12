@@ -1,0 +1,3 @@
+repository=https://github.com/Silo-Server/silo-server
+commit=e4627b76cb746fb7a31148c18f41beb3df8673c8
+path=docs/design/schemas/client-diagnostics/v1

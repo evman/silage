@@ -1,0 +1,145 @@
+package org.siloserver.silo.network
+
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.util.AttributeKey
+
+/**
+ * An auth scope captured at a point in time, used to **pin** a single API
+ * request to a specific server + profile regardless of the globally-active
+ * scope (Track B outbox drain). Without this, a background replay started for
+ * server A could be sent with server B's headers if the user switches mid-send.
+ *
+ * The credential identity is frozen by [credentialGenerationId] in addition to
+ * the profile identity ([profileId] and [profileToken]). A null generation is
+ * the saved per-server account; a non-null generation identifies one temporary
+ * remote-playback overlay. This prevents an in-flight request from falling
+ * through to the saved account when a temporary overlay ends, or vice versa.
+ *
+ * [profileToken] freezes the per-server stored profile token, of which there is
+ * exactly one — a p1→p2→p1 switch would otherwise lose p1's token. Access and
+ * refresh tokens are read live from the captured credential slot at send time
+ * because they rotate on refresh; freezing their values would break the second
+ * op in a drain after the first triggers a token rotation.
+ *
+ * [identityGeneration] changes before every server, account, profile, or
+ * temporary-scope mutation. It distinguishes a later login that happens to
+ * reuse the same server/profile identifiers from the credential identity that
+ * was active when this snapshot was captured. [isIdentityGenerationStamped]
+ * distinguishes a legitimate capture at generation zero from a legacy,
+ * hand-built scope that never captured the generation at all.
+ */
+data class AuthScopeSnapshot(
+    val serverId: String,
+    val profileId: String?,
+    val serverUrl: String,
+    val profileToken: String?,
+    val credentialGenerationId: String? = null,
+    val identityGeneration: Long = 0L,
+    val isIdentityGenerationStamped: Boolean = false,
+    /**
+     * Bumped every time this server's PERSISTENT credentials are written or
+     * cleared — i.e. by sign-in and sign-out, but deliberately NOT by a
+     * remote-playback overlay beginning or ending.
+     *
+     * Persistent scopes are keyed by serverId alone, so without this a snapshot
+     * captured before a sign-out would still read — and overwrite — whatever the
+     * next login stored for that same server. [identityGeneration] cannot serve:
+     * it moves for overlays too, and an overlay must leave a pinned persistent
+     * scope working.
+     *
+     * `0L` means "not stamped from a live snapshot"; hand-built scopes keep the
+     * pre-existing behaviour rather than failing closed on a value they never
+     * recorded.
+     */
+    val credentialEpoch: Long = 0L,
+) {
+    /**
+     * Whether [current] is still the identity this snapshot was captured from:
+     * same server, identity generation, and persistent-credential epoch. A
+     * null [current] means the identity is gone, so it never matches.
+     */
+    fun isSameIdentityAs(current: AuthScopeSnapshot?): Boolean =
+        current != null &&
+            current.serverId == serverId &&
+            current.identityGeneration == identityGeneration &&
+            current.credentialEpoch == credentialEpoch
+
+    companion object {
+        /**
+         * The account scope, with no profile, for a call to a saved server that
+         * need not be the active one (approving a TV, reading its connections).
+         * Such a scope can't carry the token manager's live persistent-credential
+         * epoch, so the request is pinned to [identityGeneration] instead: a late
+         * refresh can't overwrite a same-server account replacement.
+         */
+        fun profileless(serverId: String, serverUrl: String, identityGeneration: Long) = AuthScopeSnapshot(
+            serverId = serverId,
+            serverUrl = serverUrl,
+            profileId = null,
+            profileToken = null,
+            identityGeneration = identityGeneration,
+            isIdentityGenerationStamped = true,
+        )
+    }
+
+    override fun toString(): String =
+        "AuthScopeSnapshot(" +
+            "serverId=<redacted>, profileId=<redacted>, serverUrl=<redacted>, " +
+            "profileToken=<redacted>, credentialGenerationId=<redacted>, " +
+            "identityGeneration=<redacted>, isIdentityGenerationStamped=<redacted>, " +
+            "credentialEpoch=<redacted>)"
+}
+
+/** Attribute carrying the [AuthScopeSnapshot] that [SiloAuthPlugin] honors. */
+val AuthScopeAttributeKey: AttributeKey<AuthScopeSnapshot> = AttributeKey("SiloAuthScope")
+
+/**
+ * Attribute marking a request as intentionally unauthenticated.
+ *
+ * Used for candidate-server probes before the active server scope is changed:
+ * those calls must not leak the current server's bearer/profile credentials or
+ * trigger refresh/invalidation against the active account on a candidate 401.
+ */
+val SkipSiloAuthAttributeKey: AttributeKey<Boolean> = AttributeKey("SiloSkipAuth")
+
+/**
+ * Marks a same-origin request as unsafe to send without a Silo bearer.
+ *
+ * This is intentionally opt-in: public endpoints and [skipSiloAuth] requests
+ * retain their existing behavior.
+ */
+internal val RequireSiloAuthAttributeKey: AttributeKey<Boolean> = AttributeKey("SiloRequireAuth")
+
+/** Pin this request to [snapshot]'s scope; [SiloAuthPlugin] uses it verbatim. */
+fun HttpRequestBuilder.authScope(snapshot: AuthScopeSnapshot) {
+    attributes.put(AuthScopeAttributeKey, snapshot)
+}
+
+/** Abort before the engine if the request's exact auth scope has no access token. */
+internal fun HttpRequestBuilder.requireSiloAuth() {
+    attributes.put(RequireSiloAuthAttributeKey, true)
+}
+
+/** Opt this request out of Silo auth/profile headers and auth-refresh handling. */
+fun HttpRequestBuilder.skipSiloAuth() {
+    attributes.put(SkipSiloAuthAttributeKey, true)
+}
+
+/**
+ * Marks a request that must go out on a fresh bearer. Pinned ([authScope]):
+ * when the scope's access token has expired or is about to, [SiloAuthPlugin]
+ * refreshes it first rather than waiting for a 401. Both pinned and on the
+ * active session: when that refresh is refused with 503
+ * `provider_unavailable` and the token has already expired, the request
+ * isn't sent and fails with [SiloAuthUnavailableException.PROVIDER_UNAVAILABLE].
+ * Used where the TV sign-in spec has the approver refresh before approving
+ * or declining a TV (and reading the account the card names), and for the
+ * account's linking operations: the link ticket, a link's confirmation and
+ * linking with directory credentials.
+ */
+internal val FreshSiloAuthAttributeKey: AttributeKey<Boolean> = AttributeKey("SiloFreshAuth")
+internal fun HttpRequestBuilder.freshSiloAuth() { attributes.put(FreshSiloAuthAttributeKey, true) }
+
+/** A nonretryable mutation must not be replayed by the auth-refresh interceptor. */
+internal val SingleAttemptAttributeKey = AttributeKey<Boolean>("SiloSingleAttempt")
+internal fun HttpRequestBuilder.singleAttempt() { attributes.put(SingleAttemptAttributeKey, true) }
