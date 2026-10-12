@@ -105,6 +105,9 @@ private suspend fun startRoute(koin: Koin): Route {
         }
         if (dev.startsWith("detail:")) return Route.Detail(dev.removePrefix("detail:"))
         if (dev == "settings") return Route.Settings
+        if (dev == "profiles") return Route.Profiles
+        if (dev == "signin") return Route.SignIn
+        if (dev == "connect") return Route.Connect
         if (dev == "search") return Route.Search
         if (dev == "watchlist") return Route.Watchlist
         if (dev == "library") {
@@ -143,7 +146,7 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             ProfilesPresenter(
                 list = {
                     when (val r = profiles.listProfiles()) {
-                        is ApiResult.Success -> ApiResult.Success(r.data.map { ProfileRow(it.id, it.name, it.hasPin) })
+                        is ApiResult.Success -> ApiResult.Success(r.data.map { ProfileRow(it.id, it.name, it.hasPin, it.avatarUrl, it.avatar) })
                         is ApiResult.Error -> r
                         is ApiResult.NetworkError -> r
                     }

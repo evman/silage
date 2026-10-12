@@ -3,7 +3,7 @@ package dev.silage.app.profiles
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.repository.ProfileCommitResult
 
-data class ProfileRow(val id: String, val name: String, val hasPin: Boolean)
+data class ProfileRow(val id: String, val name: String, val hasPin: Boolean, val avatarUrl: String? = null, val avatarKey: String? = null)
 
 sealed interface ProfilesState {
     data object Loading : ProfilesState
