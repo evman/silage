@@ -15,6 +15,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import dev.silage.app.connect.ConnectPresenter
 import dev.silage.app.connect.ConnectScreen
+import dev.silage.app.connect.ProbeOutcome
 import dev.silage.app.di.desktopModule
 import dev.silage.app.home.HomeListScreen
 import dev.silage.app.nav.AppNavigator
@@ -32,6 +33,8 @@ import org.siloserver.silo.di.sharedModules
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.network.ServerRegistry
 import org.siloserver.silo.network.TokenManager
+import org.siloserver.silo.network.apiv2.ApiV2Probe
+import org.siloserver.silo.network.apiv2.ApiV2ProbeResult
 import org.siloserver.silo.repository.AuthRepository
 import org.siloserver.silo.repository.ProfileRepository
 
@@ -64,10 +67,23 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
     val profiles = koin.get<ProfileRepository>()
     when (route) {
         Route.Connect -> ConnectScreen(
-            ConnectPresenter { url -> runCatching { auth.setServerUrl(url) } },
+            ConnectPresenter(
+                probe = { url ->
+                    when (koin.get<ApiV2Probe>().probeFresh(url)) {
+                        is ApiV2ProbeResult.V2 -> ProbeOutcome.Reachable
+                        ApiV2ProbeResult.UpdateServer -> ProbeOutcome.NeedsServerUpdate
+                        is ApiV2ProbeResult.Failure -> ProbeOutcome.Unreachable
+                    }
+                },
+                save = { url -> auth.setServerUrl(url) },
+            ),
             onConnected = { nav.go(Route.SignIn) },
         )
-        Route.SignIn -> SignInScreen(SignInPresenter { u, p -> auth.login(u, p) }, onSignedIn = { nav.go(Route.Profiles) })
+        Route.SignIn -> SignInScreen(
+            SignInPresenter { u, p -> auth.login(u, p) },
+            onSignedIn = { nav.go(Route.Profiles) },
+            onChangeServer = { nav.go(Route.Connect) },
+        )
         Route.Profiles -> ProfilesScreen(
             ProfilesPresenter(
                 list = {
@@ -87,6 +103,7 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
                 select = { id, token -> profiles.selectProfile(id, token) },
             ),
             onSelected = { nav.go(Route.Home) },
+            onChangeServer = { nav.go(Route.Connect) },
         )
         Route.Home -> HomeListScreen(koin, onPlay = { nav.go(Route.Playing(it)) })
         is Route.Playing -> PlayingScreen(koin, route.contentId, onDone = { nav.go(Route.Home) })

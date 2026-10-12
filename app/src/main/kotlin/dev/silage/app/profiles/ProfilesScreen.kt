@@ -9,13 +9,15 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 @Composable
-fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit) {
+fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit, onChangeServer: () -> Unit) {
     var state by remember { mutableStateOf<ProfilesState>(ProfilesState.Loading) }
     var profiles by remember { mutableStateOf(emptyList<ProfileRow>()) }
     var pinTarget by remember { mutableStateOf<ProfileRow?>(null) }
     var pin by remember { mutableStateOf("") }
+    var loadAttempt by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) {
+    LaunchedEffect(loadAttempt) {
+        state = ProfilesState.Loading
         state = presenter.load()
         (state as? ProfilesState.Loaded)?.let { profiles = it.profiles }
     }
@@ -39,8 +41,12 @@ fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit) {
         }
         when (val s = state) {
             is ProfilesState.PinError -> Text(s.message, color = MaterialTheme.colorScheme.error)
-            is ProfilesState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
+            is ProfilesState.Error -> {
+                Text(s.message, color = MaterialTheme.colorScheme.error)
+                Button(onClick = { loadAttempt++ }) { Text("Retry") }
+            }
             else -> Unit
         }
+        TextButton(onClick = onChangeServer) { Text("Change server") }
     }
 }

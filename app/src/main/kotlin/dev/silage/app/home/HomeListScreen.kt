@@ -18,7 +18,22 @@ fun HomeListScreen(koin: Koin, onPlay: (String) -> Unit) {
     val vm = remember { koin.get<HomeViewModel>() }
     LaunchedEffect(vm) { vm.loadSections() }
     val state by vm.uiState.collectAsState()
-    if (state.isLoading && state.sections.isEmpty()) { Text("Loading…", Modifier.padding(96.dp)); return }
+    if (state.sections.isEmpty()) {
+        Column(Modifier.padding(96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            when {
+                state.isLoading -> Text("Loading…")
+                state.error != null -> {
+                    Text("Couldn't load Home: ${state.error}", color = MaterialTheme.colorScheme.error)
+                    Button(onClick = { vm.refresh() }) { Text("Retry") }
+                }
+                else -> {
+                    Text("Nothing on Home yet.")
+                    Button(onClick = { vm.refresh() }) { Text("Refresh") }
+                }
+            }
+        }
+        return
+    }
     LazyColumn(Modifier.padding(64.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         items(state.sections, key = { it.id }) { section ->
             Text(section.title, style = MaterialTheme.typography.titleLarge)

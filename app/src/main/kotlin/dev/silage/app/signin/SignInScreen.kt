@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 @Composable
-fun SignInScreen(presenter: SignInPresenter, onSignedIn: () -> Unit) {
+fun SignInScreen(presenter: SignInPresenter, onSignedIn: () -> Unit, onChangeServer: () -> Unit) {
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var state by remember { mutableStateOf<SignInState>(SignInState.Idle) }
@@ -26,6 +26,7 @@ fun SignInScreen(presenter: SignInPresenter, onSignedIn: () -> Unit) {
                 if (state == SignInState.SignedIn) onSignedIn()
             }
         }) { Text("Sign in") }
+        TextButton(onClick = onChangeServer) { Text("Change server") }
         (state as? SignInState.Error)?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
     }
 }
