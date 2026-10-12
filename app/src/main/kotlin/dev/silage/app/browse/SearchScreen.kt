@@ -17,7 +17,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -56,31 +63,45 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit) {
             emptyText = if (results == SearchResults.Idle) "Search your movies and shows" else "No results for “$text”",
             header = {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    val interaction = remember { MutableInteractionSource() }
-                    val fieldFocused by interaction.collectIsFocusedAsState()
-                    Row(
-                        Modifier.padding(top = 56.dp, bottom = 20.dp).widthIn(max = 1100.dp).fillMaxWidth().height(76.dp)
-                            .clip(RoundedCornerShape(38.dp)).background(Color.White.copy(alpha = 0.10f))
-                            .border(3.dp, if (fieldFocused) Color.White else Color.Transparent, RoundedCornerShape(38.dp))
-                            .padding(horizontal = 28.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Outlined.Search, null, tint = Silage.Text2, modifier = Modifier.size(32.dp))
-                        Spacer(Modifier.width(18.dp))
-                        Box(Modifier.weight(1f)) {
-                            if (text.isEmpty()) Text("Movies, shows, people…", color = Silage.Text3, fontSize = 26.sp)
-                            BasicTextField(
-                                text, onValueChange = { text = it; query.onInput(it) },
-                                singleLine = true, interactionSource = interaction,
-                                textStyle = TextStyle(color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium),
-                                cursorBrush = SolidColor(Silage.Amber),
-                                modifier = Modifier.fillMaxWidth().focusRequester(field),
-                            )
-                        }
-                    }
+                    SearchField(text, { text = it; query.onInput(it) }, field)
                 }
             },
         )
+    }
+}
+
+/** The big search box. */
+@Composable
+fun SearchField(text: String, onChange: (String) -> Unit, focusRequester: FocusRequester, modifier: Modifier = Modifier) {
+    val focus = LocalFocusManager.current
+    val interaction = remember { MutableInteractionSource() }
+    val fieldFocused by interaction.collectIsFocusedAsState()
+    Row(
+        modifier.padding(top = 56.dp, bottom = 20.dp).widthIn(max = 1100.dp).fillMaxWidth().height(76.dp)
+            .clip(RoundedCornerShape(38.dp)).background(Color.White.copy(alpha = 0.10f))
+            .border(3.dp, if (fieldFocused) Color.White else Color.Transparent, RoundedCornerShape(38.dp))
+            .padding(horizontal = 28.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Search, null, tint = Silage.Text2, modifier = Modifier.size(32.dp))
+        Spacer(Modifier.width(18.dp))
+        Box(Modifier.weight(1f)) {
+            if (text.isEmpty()) Text("Movies, shows, people…", color = Silage.Text3, fontSize = 26.sp)
+            BasicTextField(
+                text, onValueChange = onChange,
+                singleLine = true, interactionSource = interaction,
+                textStyle = TextStyle(color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium),
+                cursorBrush = SolidColor(Silage.Amber),
+                // A single-line field keeps the arrows for its cursor; Down/Enter go to the results.
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).onPreviewKeyEvent { e ->
+                    if (e.type == KeyEventType.KeyDown && (e.key == Key.DirectionDown || e.key == Key.Enter || e.key == Key.NumPadEnter)) {
+                        focus.moveFocus(FocusDirection.Down)
+                    } else {
+                        false
+                    }
+                },
+            )
+        }
     }
 }
 
