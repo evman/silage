@@ -11,7 +11,7 @@ import java.awt.event.KeyEvent
 object EmbeddedVideo {
     private val video = mapOf(
         "vo" to "gpu-next",
-        "hwdec" to "auto-safe",
+        "hwdec" to "vaapi,auto-safe",
         "target-colorspace-hint" to "yes",
         "force-window" to "yes",
     )

@@ -16,6 +16,9 @@ class EmbeddedVideoTest {
         assertEquals("no", opts["input-vo-keyboard"])
         assertEquals("gpu-next", opts["vo"])
         assertEquals("x11vk", opts["gpu-context"])
+        // VA-API first: probing CUDA on a machine whose NVIDIA card is absent
+        // (passed through to a VM) stalls startup for ~20 s.
+        assertEquals("vaapi,auto-safe", opts["hwdec"])
     }
 
     @Test fun withoutAWindowHandleThePlayerFallsBackToItsOwnFullscreenWindow() {
