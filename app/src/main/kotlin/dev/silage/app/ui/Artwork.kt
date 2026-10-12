@@ -77,8 +77,10 @@ fun Artwork(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     showTitleTile: Boolean = true,
+    alignment: Alignment = Alignment.Center,
 ) {
-    Box(modifier.background(Silage.Elevated)) {
+    // Without a placeholder (logos, backdrops) there's no fill: logos are transparent.
+    Box(if (showTitleTile) modifier.background(Silage.Elevated) else modifier) {
         val blur = remember(thumbhash) { thumbhash?.takeIf { it.isNotBlank() }?.let(Images::blur) }
         when {
             blur != null -> Image(blur, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -88,7 +90,7 @@ fun Artwork(
             )
         }
         if (!url.isNullOrBlank()) {
-            AsyncImage(model = url, contentDescription = title, imageLoader = Images.loader, contentScale = contentScale, modifier = Modifier.fillMaxSize())
+            AsyncImage(model = url, contentDescription = title, imageLoader = Images.loader, contentScale = contentScale, alignment = alignment, modifier = Modifier.fillMaxSize())
         }
     }
 }

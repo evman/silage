@@ -55,3 +55,9 @@ tasks.register<JavaExec>("runEmbedSpike") {
     (project.findProperty("mpvOpts") as String?)?.let { environment("SPIKE_MPV_OPTS", it) }
     (project.findProperty("noHud") as String?)?.let { environment("SPIKE_NOHUD", it) }
 }
+
+afterEvaluate {
+    tasks.named<JavaExec>("run") {
+        (project.findProperty("devStart") as String?)?.let { environment("SILAGE_DEV_START", it) }
+    }
+}

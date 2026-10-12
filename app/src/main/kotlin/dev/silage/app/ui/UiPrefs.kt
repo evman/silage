@@ -18,6 +18,10 @@ private data class UiPrefsFile(
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
 class UiPrefs(private val path: Path) {
+    private val _changes = kotlinx.coroutines.flow.MutableStateFlow(0)
+    /** Bumped on every write, so screens showing a preference can refresh. */
+    val changes: kotlinx.coroutines.flow.StateFlow<Int> = _changes
+
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     private fun read(): UiPrefsFile = runCatching { json.decodeFromString(UiPrefsFile.serializer(), Files.readString(path)) }
@@ -29,6 +33,7 @@ class UiPrefs(private val path: Path) {
         val tmp = Files.createTempFile(path.parent, "ui", ".tmp")
         Files.writeString(tmp, json.encodeToString(UiPrefsFile.serializer(), next))
         Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        _changes.value++
         Unit
     }
 

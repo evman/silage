@@ -1,6 +1,19 @@
 package dev.silage.app
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.unit.Density
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
@@ -17,7 +30,9 @@ import dev.silage.app.connect.ConnectPresenter
 import dev.silage.app.connect.ConnectScreen
 import dev.silage.app.connect.ProbeOutcome
 import dev.silage.app.di.desktopModule
-import dev.silage.app.home.HomeListScreen
+import dev.silage.app.home.HomeScreen
+import dev.silage.app.shell.AppShell
+import dev.silage.app.shell.PendingPage
 import dev.silage.app.nav.AppNavigator
 import dev.silage.app.nav.Route
 import dev.silage.app.playback.PlayingScreen
@@ -44,10 +59,28 @@ fun main() {
     application {
         val windowState = rememberWindowState(placement = WindowPlacement.Fullscreen)
         Window(onCloseRequest = ::exitApplication, state = windowState, title = BuildInfo.NAME) {
-            MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black)) {
-                Surface(Modifier.fillMaxSize(), color = Color.Black) {
-                    val route by navigator.route.collectAsState()
-                    AppRoutes(koin, navigator, route)
+            MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black, primary = Color.White, onPrimary = Color.Black)) {
+                // Layouts are specified at 1080p and scaled uniformly to the window (4K is 2×).
+                BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+                    val scale = constraints.maxHeight / 1080f
+                    CompositionLocalProvider(LocalDensity provides Density(scale, fontScale = 1f)) {
+                        val focus = LocalFocusManager.current
+                        val route by navigator.route.collectAsState()
+                        Box(
+                            Modifier.fillMaxSize().onKeyEvent { e ->
+                                // Bubbled up unhandled: arrows move focus spatially, Esc/Backspace go back.
+                                if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                                when (e.key) {
+                                    Key.DirectionLeft -> focus.moveFocus(FocusDirection.Left)
+                                    Key.DirectionRight -> focus.moveFocus(FocusDirection.Right)
+                                    Key.DirectionUp -> focus.moveFocus(FocusDirection.Up)
+                                    Key.DirectionDown -> focus.moveFocus(FocusDirection.Down)
+                                    Key.Escape, Key.Backspace -> navigator.back()
+                                    else -> false
+                                }
+                            },
+                        ) { AppRoutes(koin, navigator, route) }
+                    }
                 }
             }
         }
@@ -58,6 +91,8 @@ private suspend fun startRoute(koin: Koin): Route {
     val registry = koin.get<ServerRegistry>()
     if (registry.activeEntry.value == null) return Route.Connect
     if (koin.get<TokenManager>().getRefreshToken() == null) return Route.SignIn
+    // Developer switch for screenshots/tests: skip the profile picker when one is already active.
+    if (System.getenv("SILAGE_DEV_START") == "home" && koin.get<ProfileRepository>().getActiveProfileId() != null) return Route.Home
     return Route.Profiles
 }
 
@@ -106,7 +141,10 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             onChangeServer = { nav.root(Route.Connect) },
         )
         is Route.Playing -> PlayingScreen(koin, route.contentId, onDone = { if (!nav.back()) nav.root(Route.Home) })
-        // Until the sidebar shell (Plan 2 Task 5), every browsing route shows the Home list.
-        else -> HomeListScreen(koin, onPlay = { nav.go(Route.Playing(it)) })
+        Route.Home -> AppShell(nav, koin, route) {
+            HomeScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) })
+        }
+        // Pages still to come in Plan 2 show their name inside the shell.
+        else -> AppShell(nav, koin, route) { PendingPage(route) }
     }
 }

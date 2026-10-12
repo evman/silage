@@ -41,4 +41,5 @@ val desktopModule = module {
     // Plan 2 replaces this with a durable outbox when favorite/watchlist UI arrives.
     single<MembershipPort> { UnavailableMembershipPort }
     factory { HomeViewModel(get(), get()) }
+    single { dev.silage.app.ui.UiPrefs(XdgPaths.config.resolve("ui.json")) }
 }
