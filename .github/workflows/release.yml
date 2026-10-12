@@ -133,3 +133,26 @@ jobs:
           (cd dist && sha256sum silage-bin-*.pkg.tar.zst silage_amd64.deb silage.x86_64.rpm silage-linux-x86_64.tar.gz >> SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" --title "Silage $v" --notes-file /tmp/notes.md \
             dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/SHA256SUMS
+
+  # Releases made with GITHUB_TOKEN don't trigger other workflows, so the
+  # README installer is tested here, against the release just published.
+  install-test:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'debian:trixie', 'fedora:41', 'archlinux:latest']
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    steps:
+      - name: Prerequisites (curl, sudo)
+        run: |
+          if command -v apt-get >/dev/null; then apt-get update && apt-get install -y curl sudo ca-certificates
+          elif command -v dnf >/dev/null; then dnf install -y curl sudo
+          else pacman -Syu --noconfirm --needed curl sudo; fi
+      - name: One-line install from the README
+        run: curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
+      - name: Run it
+        run: |
+          silage --version
+          silage --check

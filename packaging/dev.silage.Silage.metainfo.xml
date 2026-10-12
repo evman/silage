@@ -41,6 +41,11 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.1.2" date="2026-10-12">
+      <description>
+        <p>Home's banner is smaller and shrinks to half its height with a smooth animation once you scroll into the rows.</p>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-10-12">
       <description>
         <p>Home's rows no longer scroll over the banner's title and description. Packages declare the display libraries they need.</p>
