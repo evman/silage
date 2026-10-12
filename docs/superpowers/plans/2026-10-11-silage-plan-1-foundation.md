@@ -1,0 +1,2751 @@
+# Silage Plan 1 — Foundation Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** A Linux app that connects to a Silo server, signs in, picks a profile, lists Home rows, and plays a movie through libmpv with progress synced back to the server. It also answers the go/no-go question on Compose-drawn player overlays.
+
+**Architecture:** Three Gradle modules. `:shared` is silo-android's Kotlin Multiplatform core, vendored by script, plus a `desktop` JVM target with small Linux replacements for Android-only files. `:player` is a libmpv wrapper over JNA with no Silo knowledge. `:app` is a Compose Desktop window with plain, unstyled screens. Plan 2 replaces them with the Skyline UI.
+
+**Tech Stack:** Kotlin 2.1.20, JDK 21, Gradle 8.12, Compose Multiplatform 1.7.3, Ktor 3.1.2 (OkHttp engine), Koin 4.1.0, JNA 5.15.0, java-keyring 1.0.4, libmpv 2.x (mpv ≥ 0.38).
+
+**Spec:** `docs/superpowers/specs/2026-10-11-silage-design.md`
+
+This is plan 1 of 4: (1) Foundation, (2) Browsing UI, (3) Player UX + Settings, (4) Icon, packaging, AUR.
+
+**Pre-verified facts.** These came from a throwaway probe on 2026-10-11; don't re-investigate them:
+- silo-android `shared/src/commonMain` (549 files, commit `538aa09d00f3236066193e828f8435eb23e31713`) compiles for a plain JVM target unchanged. It needs only these `actual`s: `ioDispatcher`, `mainDispatcher`, `createPlatformHttpClient`, `wallClockMillis`, `localizedLanguageName`, `canonicalLanguageIdentity`, `overlayLanguageName`.
+- With two test-fixture `actual`s (`readApiV2FixtureResource`, `readWatchPartyFixture`) and `commonTest/resources` on the classpath, all **1869** upstream tests pass on JVM.
+- Compilation needs a 4 GB heap (`-Xmx4g` for Gradle and the Kotlin daemon); with 2 GB the JVM backend dies with `OutOfMemoryError`.
+- `EncryptedTokenManagerImpl.kt` and `AndroidServerRegistry.kt` use only `android.content.SharedPreferences` and `android.util.Base64` from Android.
+- The Silo server restricts the device `platform` value only for diagnostics uploads, so `"linux"` is safe for auth and playback.
+
+## Global Constraints
+
+- Product name **Silage**; describe it as "a Silo client". Never name anything `Silo…` or use Silo logos or wordmarks (spec §9).
+- License **AGPL-3.0-or-later**; vendored files keep their upstream headers.
+- Kotlin package for new code: `dev.silage` (app, player). Vendored code keeps `org.siloserver.silo`; new desktop `actual`s live in the same packages as their `expect`s.
+- JDK 21 toolchain; Gradle JVM args `-Xmx4g`.
+- Native API only: no Jellyfin endpoints, and no `/api/v1` except what upstream `shared` already does.
+- XDG paths: config `$XDG_CONFIG_HOME/silage`, cache `$XDG_CACHE_HOME/silage`, state/logs `$XDG_STATE_HOME/silage`, data `$XDG_DATA_HOME/silage` (spec §4.2).
+- Device metadata platform string: `"linux"`; client name `"Silage"`.
+- mpv defaults for real playback: `vo=gpu-next`, `hwdec=auto-safe`, `target-colorspace-hint=yes` (spec §6.3).
+- Vendored `shared` sources are **never hand-edited**. Every change is a desktop source file or a scripted transform in `scripts/vendor-shared.sh`, recorded in `shared/UPSTREAM.md`.
+
+## Review Focus
+
+1. **Server address typed loosely** (`192.168.1.5:8096`, trailing slash, uppercase scheme). Expect it normalized to `http(s)://host:port` without a trailing slash, not a confusing error. Pinned in Task 5 (`ServerAddressTest`).
+2. **No Secret Service running** (minimal window manager, no KWallet or GNOME Keyring). Expect sign-in to still work, with tokens in a `0600` file and a warning logged. Pinned in Task 2 (`SecureBlobStoreTest`).
+3. **Stream headers containing commas or colons** (for example `Authorization: Bearer a,b`). Expect them reaching mpv intact. Pinned in Task 3 (`MpvPlayerTest.headersWithCommasSurvive`).
+4. **Selecting a Home card that has no playable file** (series or folder cards). Expect a readable message, not a crash. Pinned in Task 6 (`PlaybackLauncherTest.noVersionsFails`).
+5. **User closes the mpv window or presses `q` mid-playback.** Expect the app back on Home with the server session stopped. Pinned in Task 3 (`MpvPlayerTest.quitEmitsShutdown`) and Task 6 (`PlaybackControllerTest.shutdownStopsSession`).
+
+---
+
+## File Structure
+
+```
+silage/
+├─ settings.gradle.kts            modules :shared :player :app
+├─ build.gradle.kts               plugin versions (apply false)
+├─ gradle.properties              heap settings
+├─ gradle/libs.versions.toml      dependency catalog
+├─ gradle/wrapper/*, gradlew      Gradle 8.12 wrapper
+├─ scripts/vendor-shared.sh       copies upstream shared + transforms
+├─ shared/
+│  ├─ build.gradle.kts
+│  ├─ UPSTREAM.md                 pinned commit + list of local changes
+│  └─ src/
+│     ├─ commonMain/ commonTest/  VENDORED (generated by script)
+│     ├─ desktopMain/kotlin/org/siloserver/silo/
+│     │  ├─ util/Dispatchers.desktop.kt, util/WallClock.desktop.kt
+│     │  ├─ network/SiloHttpClient.desktop.kt
+│     │  ├─ model/settings/LanguagePresentation.desktop.kt     (vendored copy)
+│     │  ├─ overlays/OverlayLanguageName.desktop.kt            (vendored copy)
+│     │  ├─ player/SubtitleTrackDisplayLabel.kt                (vendored copy)
+│     │  ├─ platform/SharedPreferences.kt, platform/Base64.kt
+│     │  ├─ platform/PersistentPreferences.kt, platform/SecureBlobStore.kt
+│     │  └─ network/vendored/EncryptedTokenManagerImpl.kt, AndroidServerRegistry.kt  (vendored + import swap)
+│     └─ desktopTest/kotlin/…     fixture actuals + desktop tests
+├─ player/
+│  ├─ build.gradle.kts
+│  └─ src/main/kotlin/dev/silage/player/{LibMpv.kt, MpvStructs.kt, MpvPlayer.kt, PlayerModels.kt}
+│     src/test/kotlin/dev/silage/player/{TestClips.kt, MpvPlayerTest.kt}
+└─ app/
+   ├─ build.gradle.kts
+   └─ src/main/kotlin/dev/silage/app/
+      ├─ Main.kt, BuildInfo.kt, XdgPaths.kt
+      ├─ di/DesktopModule.kt, di/DesktopDeviceMetadataProvider.kt
+      ├─ nav/AppNavigator.kt
+      ├─ connect/ServerAddress.kt, connect/ConnectPresenter.kt, connect/ConnectScreen.kt
+      ├─ signin/SignInPresenter.kt, signin/SignInScreen.kt
+      ├─ profiles/ProfilesPresenter.kt, profiles/ProfilesScreen.kt
+      ├─ home/HomeListScreen.kt
+      ├─ playback/{DesktopCapabilities.kt, PlaybackLauncher.kt, PlaybackController.kt}
+      └─ spike/OverlaySpike.kt
+      src/test/kotlin/dev/silage/app/… matching tests
+```
+
+---
+
+### Task 1: Gradle project with vendored `shared` compiling and passing upstream tests on desktop
+
+**Files:**
+- Create: `settings.gradle.kts`, `build.gradle.kts`, `gradle.properties`, `gradle/libs.versions.toml`, `.gitignore`
+- Create (copy): `gradlew`, `gradle/wrapper/gradle-wrapper.jar`, `gradle/wrapper/gradle-wrapper.properties` from silo-android
+- Create: `scripts/vendor-shared.sh`, `shared/build.gradle.kts`, `shared/UPSTREAM.md`
+- Create: `shared/src/desktopMain/kotlin/org/siloserver/silo/util/Dispatchers.desktop.kt`, `util/WallClock.desktop.kt`, `network/SiloHttpClient.desktop.kt`
+- Create: `shared/src/desktopTest/kotlin/org/siloserver/silo/network/apiv2/ApiV2FixtureSupport.desktop.kt`, `.../model/watchtogether/WatchPartyFixtures.desktop.kt`
+- Generated by script: `shared/src/commonMain/**`, `shared/src/commonTest/**`, the three vendored desktop copies
+
+**Interfaces:**
+- Produces: Gradle module `:shared` with a `desktop` JVM target exposing the whole `org.siloserver.silo` API (for example `org.siloserver.silo.di.sharedModules(): List<Module>`, `AuthRepository`, `ProfileRepository`, `PlaybackRepository`, `HomeViewModel`, `WatchDetailV2Api`).
+- Produces: `scripts/vendor-shared.sh <path-to-silo-android-checkout>`, which regenerates every vendored file.
+
+- [ ] **Step 1: Get the upstream checkout and the wrapper**
+
+```bash
+mkdir -p ~/src && git -C ~/src clone https://github.com/Silo-Server/silo-android 2>/dev/null || true
+git -C ~/src/silo-android fetch -q origin 538aa09d00f3236066193e828f8435eb23e31713 && git -C ~/src/silo-android checkout -q 538aa09d00f3236066193e828f8435eb23e31713
+cd /home/admin/silo/silage
+mkdir -p gradle/wrapper
+cp ~/src/silo-android/gradlew . && cp ~/src/silo-android/gradle/wrapper/gradle-wrapper.{jar,properties} gradle/wrapper/
+grep distributionUrl gradle/wrapper/gradle-wrapper.properties   # expect gradle-8.12-bin.zip
+```
+
+- [ ] **Step 2: Root build files**
+
+`settings.gradle.kts`:
+```kotlin
+pluginManagement {
+    repositories { gradlePluginPortal(); mavenCentral(); google() }
+}
+dependencyResolutionManagement {
+    repositories { mavenCentral(); google() }
+}
+rootProject.name = "silage"
+include(":shared", ":player", ":app")
+```
+
+`build.gradle.kts`:
+```kotlin
+plugins {
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.compose.multiplatform) apply false
+    alias(libs.plugins.compose.compiler) apply false
+}
+```
+
+`gradle.properties`:
+```properties
+org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+kotlin.daemon.jvmargs=-Xmx4g
+org.gradle.caching=true
+kotlin.code.style=official
+```
+
+`gradle/libs.versions.toml`:
+```toml
+[versions]
+kotlin = "2.1.20"
+compose-multiplatform = "1.7.3"
+ktor = "3.1.2"
+kotlinx-serialization = "1.8.1"
+kotlinx-coroutines = "1.10.2"
+koin = "4.1.0"
+lifecycle-kmp = "2.9.6"
+jna = "5.15.0"
+java-keyring = "1.0.4"
+
+[libraries]
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-logging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
+ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.ref = "ktor" }
+ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
+koin-test = { module = "io.insert-koin:koin-test", version.ref = "koin" }
+lifecycle-viewmodel-kmp = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycle-kmp" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+java-keyring = { module = "com.github.javakeyring:java-keyring", version.ref = "java-keyring" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+```
+
+Before committing, check that `lifecycle-viewmodel-kmp` in this file uses the same group and artifact as silo-android's `gradle/libs.versions.toml` (`grep lifecycle-viewmodel-kmp ~/src/silo-android/gradle/libs.versions.toml`). Use upstream's coordinates if they differ.
+
+`.gitignore`:
+```
+.gradle/
+build/
+*/build/
+.idea/
+*.iml
+local.properties
+```
+
+- [ ] **Step 3: Write the vendoring script**
+
+`scripts/vendor-shared.sh`:
+```bash
+#!/usr/bin/env bash
+# Regenerates every vendored file under shared/ from a silo-android checkout.
+# Usage: scripts/vendor-shared.sh ~/src/silo-android
+set -euo pipefail
+UP="${1:?path to silo-android checkout}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+S="$ROOT/shared/src"
+UPS="$UP/shared/src"
+PKG=kotlin/org/siloserver/silo
+
+rm -rf "$S/commonMain" "$S/commonTest"
+cp -r "$UPS/commonMain" "$S/commonMain"
+cp -r "$UPS/commonTest" "$S/commonTest"
+
+# Pure-JVM androidMain files, copied verbatim under desktop names.
+D="$S/desktopMain/$PKG"
+mkdir -p "$D/model/settings" "$D/overlays" "$D/player" "$D/network/vendored"
+cp "$UPS/androidMain/$PKG/model/settings/LanguagePresentation.android.kt" "$D/model/settings/LanguagePresentation.desktop.kt"
+cp "$UPS/androidMain/$PKG/overlays/OverlayLanguageName.android.kt"        "$D/overlays/OverlayLanguageName.desktop.kt"
+cp "$UPS/androidMain/$PKG/player/SubtitleTrackDisplayLabel.kt"            "$D/player/SubtitleTrackDisplayLabel.kt"
+
+# Persistence classes: swap the two Android imports for desktop shims (Task 2).
+for f in EncryptedTokenManagerImpl.kt AndroidServerRegistry.kt; do
+  sed -e 's/^import android\.content\.SharedPreferences$/import org.siloserver.silo.platform.SharedPreferences/' \
+      -e 's/^import android\.util\.Base64$/import org.siloserver.silo.platform.Base64/' \
+      "$UPS/androidMain/$PKG/network/$f" > "$D/network/vendored/$f"
+  if grep -qE '^import android' "$D/network/vendored/$f"; then
+    echo "ERROR: $f still has Android imports" >&2; exit 1
+  fi
+done
+
+# Brand-asset guard: Silo logos must never enter this repo.
+if find "$S/commonMain" "$S/commonTest" -iname '*logo*' -o -iname '*wordmark*' | grep -q .; then
+  echo "ERROR: brand asset found in vendored tree" >&2; exit 1
+fi
+
+echo "$(git -C "$UP" rev-parse HEAD)" > "$ROOT/shared/UPSTREAM_COMMIT"
+echo "Vendored silo-android $(cat "$ROOT/shared/UPSTREAM_COMMIT")"
+```
+
+Task 2 fills in the `platform` shims, so until then the persistence copies won't compile. Step 5 handles that.
+
+- [ ] **Step 4: Write `shared/build.gradle.kts`**
+
+```kotlin
+plugins {
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+kotlin {
+    jvmToolchain(21)
+    jvm("desktop")
+
+    sourceSets {
+        commonMain.dependencies {
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.json)
+            implementation(libs.ktor.client.logging)
+            implementation(libs.ktor.client.websockets)
+            implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kotlinx.coroutines.core)
+            api(libs.koin.core)
+            api(libs.lifecycle.viewmodel.kmp)
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.client.mock)
+        }
+        val desktopMain by getting {
+            dependencies {
+                implementation(libs.ktor.client.okhttp)
+                implementation(libs.java.keyring)
+            }
+        }
+        val desktopTest by getting {
+            resources.srcDir("src/commonTest/resources")
+        }
+    }
+}
+```
+
+- [ ] **Step 5: Run the vendoring script and add the hand-written desktop actuals**
+
+```bash
+chmod +x scripts/vendor-shared.sh && scripts/vendor-shared.sh ~/src/silo-android
+```
+
+Move the two persistence copies aside so Task 1 compiles without Task 2's shims. Task 2 restores them by re-running the script.
+```bash
+rm -r shared/src/desktopMain/kotlin/org/siloserver/silo/network/vendored
+```
+
+`shared/src/desktopMain/kotlin/org/siloserver/silo/util/Dispatchers.desktop.kt`:
+```kotlin
+package org.siloserver.silo.util
+
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+
+actual val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+
+/**
+ * Upstream view models launch UI-state updates here. Compose Desktop reads
+ * StateFlows from any thread, so Default is correct; :app swaps in
+ * Dispatchers.Main (Swing) via Dispatchers.setMain only in tests if needed.
+ */
+actual val mainDispatcher: CoroutineDispatcher = Dispatchers.Default
+```
+
+`shared/src/desktopMain/kotlin/org/siloserver/silo/util/WallClock.desktop.kt`:
+```kotlin
+package org.siloserver.silo.util
+
+actual fun wallClockMillis(): Long = System.currentTimeMillis()
+```
+
+`shared/src/desktopMain/kotlin/org/siloserver/silo/network/SiloHttpClient.desktop.kt`:
+```kotlin
+package org.siloserver.silo.network
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+
+actual fun createPlatformHttpClient(retryOnConnectionFailure: Boolean): HttpClient =
+    HttpClient(OkHttp) {
+        engine {
+            config { retryOnConnectionFailure(retryOnConnectionFailure) }
+        }
+    }
+```
+
+`shared/src/desktopTest/kotlin/org/siloserver/silo/network/apiv2/ApiV2FixtureSupport.desktop.kt`:
+```kotlin
+package org.siloserver.silo.network.apiv2
+
+actual fun readApiV2FixtureResource(name: String): String =
+    checkNotNull(ApiV2Fixtures::class.java.classLoader?.getResource("api/v2/fixtures/$name")) {
+        "Missing vendored fixture api/v2/fixtures/$name"
+    }.readText()
+```
+
+`shared/src/desktopTest/kotlin/org/siloserver/silo/model/watchtogether/WatchPartyFixtures.desktop.kt`:
+```kotlin
+package org.siloserver.silo.model.watchtogether
+
+actual fun readWatchPartyFixture(name: String): String =
+    checkNotNull(WatchPartyFixtureAnchor::class.java.classLoader?.getResource("watchtogether/v2/$name")) {
+        "Missing Watch Party fixture watchtogether/v2/$name"
+    }.readText()
+```
+
+Create empty placeholder modules so `settings.gradle.kts` resolves. Tasks 3 and 5 replace these files.
+```bash
+mkdir -p player app && echo 'plugins { alias(libs.plugins.kotlin.jvm) }' | tee player/build.gradle.kts app/build.gradle.kts
+```
+
+- [ ] **Step 6: Compile**
+
+Run: `./gradlew :shared:compileKotlinDesktop`
+Expected: `BUILD SUCCESSFUL`. The first run downloads Gradle and dependencies, roughly 2–4 minutes.
+
+- [ ] **Step 7: Run the upstream tests**
+
+Run: `./gradlew :shared:desktopTest`
+Expected: `BUILD SUCCESSFUL`. Count the results with:
+```bash
+python3 - <<'EOF'
+import glob,re
+t=f=0
+for x in glob.glob('shared/build/test-results/desktopTest/*.xml'):
+    m=re.search(r'tests="(\d+)" skipped="\d+" failures="(\d+)" errors="(\d+)"',open(x).read(3000))
+    t+=int(m[1]); f+=int(m[2])+int(m[3])
+print("tests",t,"failed",f)
+EOF
+```
+Expected: `tests 1869 failed 0`. A different count means upstream moved; record the actual number in `UPSTREAM.md`. Any failure blocks the task.
+
+- [ ] **Step 8: Write `shared/UPSTREAM.md`**
+
+```markdown
+# Vendored silo-android `shared`
+
+- Source: https://github.com/Silo-Server/silo-android, `shared/`
+- Commit: see `UPSTREAM_COMMIT` (initially 538aa09d00f3236066193e828f8435eb23e31713)
+- License: AGPL-3.0-or-later. Silo name and brand assets are not vendored.
+- Regenerate: `scripts/vendor-shared.sh <silo-android checkout>`. Never edit `commonMain/` or `commonTest/` by hand.
+
+## Local changes (all outside commonMain/commonTest)
+
+| File | Why |
+|---|---|
+| desktopMain/util/Dispatchers.desktop.kt | actual dispatchers (main = Default) |
+| desktopMain/util/WallClock.desktop.kt | actual clock |
+| desktopMain/network/SiloHttpClient.desktop.kt | OkHttp engine without Android tuning |
+| desktopMain/model/settings/LanguagePresentation.desktop.kt | verbatim copy of androidMain (pure JVM) |
+| desktopMain/overlays/OverlayLanguageName.desktop.kt | verbatim copy of androidMain (pure JVM) |
+| desktopMain/player/SubtitleTrackDisplayLabel.kt | verbatim copy of androidMain (pure JVM) |
+| desktopTest/**/…Fixture….desktop.kt | test fixture loaders (verbatim copies of androidUnitTest) |
+
+Upstream test baseline on desktop: 1869 tests, 0 failures.
+```
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add -A
+git commit -m "build: vendor silo-android shared core with a desktop JVM target"
+```
+
+---
+
+### Task 2: Desktop persistence — keyring-backed preferences, server registry, token manager
+
+**Files:**
+- Create: `shared/src/desktopMain/kotlin/org/siloserver/silo/platform/SharedPreferences.kt`
+- Create: `shared/src/desktopMain/kotlin/org/siloserver/silo/platform/Base64.kt`
+- Create: `shared/src/desktopMain/kotlin/org/siloserver/silo/platform/PersistentPreferences.kt`
+- Create: `shared/src/desktopMain/kotlin/org/siloserver/silo/platform/SecureBlobStore.kt`
+- Generated: `shared/src/desktopMain/kotlin/org/siloserver/silo/network/vendored/{EncryptedTokenManagerImpl.kt, AndroidServerRegistry.kt}` (re-run the script)
+- Test: `shared/src/desktopTest/kotlin/org/siloserver/silo/platform/{PersistentPreferencesTest.kt, SecureBlobStoreTest.kt, Base64Test.kt}`
+- Test: `shared/src/desktopTest/kotlin/org/siloserver/silo/network/DesktopPersistenceTest.kt`
+- Modify: `shared/UPSTREAM.md` (add rows), spec §4.2 (storage note)
+
+**Interfaces:**
+- Consumes: Task 1's `:shared` module.
+- Produces:
+  - `org.siloserver.silo.platform.SharedPreferences`: same method names and semantics as Android's.
+  - `class PersistentPreferences(store: BlobStore) : SharedPreferences`
+  - `interface BlobStore { fun read(): String?; fun write(contents: String): Boolean }`
+  - `class FileBlobStore(path: java.nio.file.Path) : BlobStore`
+  - `object SecureBlobStore { fun create(fallbackFile: Path, keyring: KeyringAccess? = KeyringAccess.system(), log: (String) -> Unit = System.err::println): BlobStore }`
+  - `interface KeyringAccess { fun get(): String?; fun set(value: String) }` with `companion fun system(): KeyringAccess?` (null when no Secret Service)
+  - `AndroidServerRegistry(prefs: SharedPreferences, identityTransitions: IdentityTransitionBarrier)` and `EncryptedTokenManagerImpl(prefs, registry, identityTransitions)`: upstream classes, now compiling on desktop.
+
+**Design note:** as on Android, the registry and token manager share **one** preferences handle. Desktop stores that handle as a single JSON blob: in the Secret Service keyring (service `silage`, account `session`) when available, otherwise in `$XDG_DATA_HOME/silage/session.json` with mode `0600`. This replaces spec §4.2's separate `servers.json`; update the spec row in Step 10.
+
+- [ ] **Step 1: Write the failing preferences tests**
+
+`shared/src/desktopTest/kotlin/org/siloserver/silo/platform/PersistentPreferencesTest.kt`:
+```kotlin
+package org.siloserver.silo.platform
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class MemoryBlobStore(var contents: String? = null, var failWrites: Boolean = false) : BlobStore {
+    var writes = 0
+    override fun read(): String? = contents
+    override fun write(contents: String): Boolean {
+        if (failWrites) return false
+        writes++; this.contents = contents; return true
+    }
+}
+
+class PersistentPreferencesTest {
+    @Test fun valuesSurviveReload() {
+        val store = MemoryBlobStore()
+        PersistentPreferences(store).edit()
+            .putString("s", "hello").putLong("l", 42L).putBoolean("b", true).commit()
+        val reloaded = PersistentPreferences(store)
+        assertEquals("hello", reloaded.getString("s", null))
+        assertEquals(42L, reloaded.getLong("l", 0L))
+        assertTrue(reloaded.getBoolean("b", false))
+        assertEquals(setOf("s", "l", "b"), reloaded.all.keys)
+    }
+
+    @Test fun defaultsWhenMissing() {
+        val p = PersistentPreferences(MemoryBlobStore())
+        assertNull(p.getString("x", null))
+        assertEquals(7L, p.getLong("x", 7L))
+        assertFalse(p.contains("x"))
+    }
+
+    @Test fun removeAndClear() {
+        val store = MemoryBlobStore()
+        val p = PersistentPreferences(store)
+        p.edit().putString("a", "1").putString("b", "2").commit()
+        p.edit().remove("a").commit()
+        assertFalse(p.contains("a")); assertTrue(p.contains("b"))
+        p.edit().clear().commit()
+        assertTrue(PersistentPreferences(store).all.isEmpty())
+    }
+
+    @Test fun putNullStringRemovesKey() {
+        val p = PersistentPreferences(MemoryBlobStore())
+        p.edit().putString("a", "1").commit()
+        p.edit().putString("a", null).commit()
+        assertFalse(p.contains("a"))
+    }
+
+    @Test fun editsAreInvisibleUntilCommitted() {
+        val p = PersistentPreferences(MemoryBlobStore())
+        val e = p.edit().putString("a", "1")
+        assertFalse(p.contains("a"))
+        e.apply()
+        assertTrue(p.contains("a"))
+    }
+
+    @Test fun commitReportsWriteFailureAndKeepsOldValue() {
+        val store = MemoryBlobStore()
+        val p = PersistentPreferences(store)
+        p.edit().putString("a", "1").commit()
+        store.failWrites = true
+        assertFalse(p.edit().putString("a", "2").commit())
+        assertEquals("1", p.getString("a", null))
+    }
+
+    @Test fun corruptBlobStartsEmpty() {
+        val p = PersistentPreferences(MemoryBlobStore("{not json"))
+        assertTrue(p.all.isEmpty())
+    }
+}
+```
+
+`shared/src/desktopTest/kotlin/org/siloserver/silo/platform/Base64Test.kt`:
+```kotlin
+package org.siloserver.silo.platform
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class Base64Test {
+    @Test fun urlSafeNoPaddingRoundTrip() {
+        val flags = Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
+        val encoded = Base64.encodeToString("https://a.b:8096/?x=~~".toByteArray(), flags)
+        assertEquals(false, encoded.contains('=') || encoded.contains('+') || encoded.contains('/'))
+        assertEquals("https://a.b:8096/?x=~~", Base64.decode(encoded, flags).decodeToString())
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `./gradlew :shared:desktopTest --tests 'org.siloserver.silo.platform.*'`
+Expected: compilation FAILURE, `Unresolved reference: BlobStore` / `PersistentPreferences` / `Base64`.
+
+- [ ] **Step 3: Implement the shims**
+
+`shared/src/desktopMain/kotlin/org/siloserver/silo/platform/SharedPreferences.kt`:
+```kotlin
+package org.siloserver.silo.platform
+
+/**
+ * The subset of android.content.SharedPreferences that vendored upstream
+ * persistence classes use. Same names and semantics, so those files compile
+ * with only their import swapped (see scripts/vendor-shared.sh).
+ */
+interface SharedPreferences {
+    val all: Map<String, Any?>
+    fun getString(key: String, defValue: String?): String?
+    fun getLong(key: String, defValue: Long): Long
+    fun getBoolean(key: String, defValue: Boolean): Boolean
+    fun contains(key: String): Boolean
+    fun edit(): Editor
+
+    interface Editor {
+        fun putString(key: String, value: String?): Editor
+        fun putLong(key: String, value: Long): Editor
+        fun putBoolean(key: String, value: Boolean): Editor
+        fun remove(key: String): Editor
+        fun clear(): Editor
+        fun commit(): Boolean
+        fun apply()
+    }
+}
+```
+
+`shared/src/desktopMain/kotlin/org/siloserver/silo/platform/Base64.kt`:
+```kotlin
+package org.siloserver.silo.platform
+
+/** Flag-compatible stand-in for android.util.Base64. */
+object Base64 {
+    const val DEFAULT = 0
+    const val NO_PADDING = 1
+    const val NO_WRAP = 2
+    const val URL_SAFE = 8
+
+    fun encodeToString(input: ByteArray, flags: Int): String {
+        var encoder = if (flags and URL_SAFE != 0) java.util.Base64.getUrlEncoder() else java.util.Base64.getEncoder()
+        if (flags and NO_PADDING != 0) encoder = encoder.withoutPadding()
+        return encoder.encodeToString(input)
+    }
+
+    fun decode(input: String, flags: Int): ByteArray {
+        val decoder = if (flags and URL_SAFE != 0) java.util.Base64.getUrlDecoder() else java.util.Base64.getDecoder()
+        return decoder.decode(input)
+    }
+}
+```
+
+`shared/src/desktopMain/kotlin/org/siloserver/silo/platform/PersistentPreferences.kt`:
+```kotlin
+package org.siloserver.silo.platform
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+
+/** Where a preferences blob lives. Implementations must write atomically. */
+interface BlobStore {
+    fun read(): String?
+    fun write(contents: String): Boolean
+}
+
+/**
+ * SharedPreferences over a single JSON blob. Values are stored with a
+ * one-letter type tag ({"s": ...}, {"l": ...}, {"b": ...}) so getLong and
+ * getBoolean round-trip exactly.
+ */
+class PersistentPreferences(private val store: BlobStore) : SharedPreferences {
+    private val lock = Any()
+    private var values: Map<String, Any> = load()
+
+    private fun load(): Map<String, Any> {
+        val raw = store.read() ?: return emptyMap()
+        return runCatching {
+            Json.parseToJsonElement(raw).jsonObject.mapNotNull { (key, tagged) ->
+                val obj = tagged.jsonObject
+                val value: Any? = obj["s"]?.jsonPrimitive?.content
+                    ?: obj["l"]?.jsonPrimitive?.longOrNull
+                    ?: obj["b"]?.jsonPrimitive?.booleanOrNull
+                value?.let { key to it }
+            }.toMap()
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun serialize(map: Map<String, Any>): String = JsonObject(
+        map.mapValues { (_, v) ->
+            when (v) {
+                is String -> JsonObject(mapOf("s" to JsonPrimitive(v)))
+                is Long -> JsonObject(mapOf("l" to JsonPrimitive(v)))
+                is Boolean -> JsonObject(mapOf("b" to JsonPrimitive(v)))
+                else -> error("unsupported preference type ${v::class}")
+            }
+        },
+    ).toString()
+
+    override val all: Map<String, Any?> get() = synchronized(lock) { values }
+    override fun getString(key: String, defValue: String?): String? = synchronized(lock) { values[key] as? String ?: defValue }
+    override fun getLong(key: String, defValue: Long): Long = synchronized(lock) { values[key] as? Long ?: defValue }
+    override fun getBoolean(key: String, defValue: Boolean): Boolean = synchronized(lock) { values[key] as? Boolean ?: defValue }
+    override fun contains(key: String): Boolean = synchronized(lock) { key in values }
+    override fun edit(): SharedPreferences.Editor = EditorImpl()
+
+    private inner class EditorImpl : SharedPreferences.Editor {
+        private val ops = mutableListOf<(MutableMap<String, Any>) -> Unit>()
+        override fun putString(key: String, value: String?) = apply { ops += { m -> if (value == null) m.remove(key) else m[key] = value } }
+        override fun putLong(key: String, value: Long) = apply { ops += { m -> m[key] = value } }
+        override fun putBoolean(key: String, value: Boolean) = apply { ops += { m -> m[key] = value } }
+        override fun remove(key: String) = apply { ops += { m -> m.remove(key) } }
+        override fun clear() = apply { ops += { m -> m.clear() } }
+        override fun commit(): Boolean = synchronized(lock) {
+            val next = values.toMutableMap().also { m -> ops.forEach { it(m) } }
+            if (!store.write(serialize(next))) return false
+            values = next
+            true
+        }
+        override fun apply() { commit() }
+    }
+}
+```
+
+`shared/src/desktopMain/kotlin/org/siloserver/silo/platform/SecureBlobStore.kt`:
+```kotlin
+package org.siloserver.silo.platform
+
+import com.github.javakeyring.Keyring
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.PosixFilePermissions
+
+/** Atomic file store, created with owner-only permissions. */
+class FileBlobStore(private val path: Path) : BlobStore {
+    override fun read(): String? = if (Files.exists(path)) Files.readString(path) else null
+
+    override fun write(contents: String): Boolean = runCatching {
+        Files.createDirectories(path.parent)
+        val tmp = path.resolveSibling("${path.fileName}.tmp")
+        Files.deleteIfExists(tmp)
+        Files.createFile(tmp, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+        Files.writeString(tmp, contents)
+        Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    }.isSuccess
+}
+
+/** One secret in the desktop keyring (Secret Service: KWallet or GNOME Keyring). */
+interface KeyringAccess {
+    fun get(): String?
+    fun set(value: String)
+
+    companion object {
+        const val SERVICE = "silage"
+        const val ACCOUNT = "session"
+
+        /** Null when no Secret Service is reachable on this session bus. */
+        fun system(): KeyringAccess? = runCatching {
+            val keyring = Keyring.create()
+            // Probe once so a locked-out or absent backend fails here, not mid-sign-in.
+            runCatching { keyring.getPassword(SERVICE, ACCOUNT) }
+            object : KeyringAccess {
+                override fun get(): String? = runCatching { keyring.getPassword(SERVICE, ACCOUNT) }.getOrNull()
+                override fun set(value: String) = keyring.setPassword(SERVICE, ACCOUNT, value)
+            }
+        }.getOrNull()
+    }
+}
+
+private class KeyringBlobStore(private val keyring: KeyringAccess) : BlobStore {
+    override fun read(): String? = keyring.get()
+    override fun write(contents: String): Boolean = runCatching { keyring.set(contents) }.isSuccess
+}
+
+object SecureBlobStore {
+    /**
+     * Keyring when available, otherwise [fallbackFile]. If the keyring is
+     * empty but an older fallback file exists (keyring installed later), the
+     * file's contents migrate into the keyring and the file is deleted.
+     */
+    fun create(
+        fallbackFile: Path,
+        keyring: KeyringAccess? = KeyringAccess.system(),
+        log: (String) -> Unit = System.err::println,
+    ): BlobStore {
+        val file = FileBlobStore(fallbackFile)
+        if (keyring == null) {
+            log("Silage: no Secret Service keyring found; storing session in $fallbackFile (mode 0600)")
+            return file
+        }
+        val store = KeyringBlobStore(keyring)
+        if (store.read() == null) {
+            file.read()?.let { legacy -> if (store.write(legacy)) Files.deleteIfExists(fallbackFile) }
+        }
+        return store
+    }
+}
+```
+
+- [ ] **Step 4: Run the preferences tests**
+
+Run: `./gradlew :shared:desktopTest --tests 'org.siloserver.silo.platform.*'`
+Expected: PASS (8 tests).
+
+- [ ] **Step 5: Write the failing secure-store tests**
+
+`shared/src/desktopTest/kotlin/org/siloserver/silo/platform/SecureBlobStoreTest.kt`:
+```kotlin
+package org.siloserver.silo.platform
+
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class FakeKeyring(var value: String? = null) : KeyringAccess {
+    override fun get() = value
+    override fun set(value: String) { this.value = value }
+}
+
+class SecureBlobStoreTest {
+    private val dir = Files.createTempDirectory("silage-test")
+    private val file = dir.resolve("data/session.json")
+
+    @Test fun usesKeyringWhenAvailable() {
+        val keyring = FakeKeyring()
+        val store = SecureBlobStore.create(file, keyring) {}
+        assertTrue(store.write("{\"a\":1}"))
+        assertEquals("{\"a\":1}", keyring.value)
+        assertFalse(Files.exists(file))
+    }
+
+    @Test fun fallsBackToOwnerOnlyFileWithWarning() {
+        val logs = mutableListOf<String>()
+        val store = SecureBlobStore.create(file, keyring = null) { logs += it }
+        assertTrue(store.write("{}"))
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
+        assertTrue(logs.single().contains("no Secret Service"))
+        assertEquals("{}", SecureBlobStore.create(file, keyring = null) {}.read())
+    }
+
+    @Test fun migratesFallbackFileIntoKeyring() {
+        FileBlobStore(file).write("{\"old\":true}")
+        val keyring = FakeKeyring()
+        SecureBlobStore.create(file, keyring) {}
+        assertEquals("{\"old\":true}", keyring.value)
+        assertFalse(Files.exists(file))
+    }
+}
+```
+
+- [ ] **Step 6: Run them**
+
+Run: `./gradlew :shared:desktopTest --tests 'org.siloserver.silo.platform.SecureBlobStoreTest'`
+Expected: PASS (3 tests). Step 3 already implemented these. If one fails, fix `SecureBlobStore.kt`, not the test.
+
+- [ ] **Step 7: Re-run the vendoring script so the upstream persistence classes come back**
+
+```bash
+scripts/vendor-shared.sh ~/src/silo-android
+./gradlew :shared:compileKotlinDesktop
+```
+Expected: `BUILD SUCCESSFUL`. If the compiler reports a `SharedPreferences` member that's missing (for example `getInt` or `getStringSet`), add it to the interface and to `PersistentPreferences` with Android's exact signature and semantics, then re-run. Never edit the vendored file.
+
+- [ ] **Step 8: Write the failing integration test (registry and tokens survive a restart)**
+
+`shared/src/desktopTest/kotlin/org/siloserver/silo/network/DesktopPersistenceTest.kt`:
+```kotlin
+package org.siloserver.silo.network
+
+import kotlinx.coroutines.test.runTest
+import org.siloserver.silo.platform.MemoryBlobStore
+import org.siloserver.silo.platform.PersistentPreferences
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class DesktopPersistenceTest {
+    @Test fun activeServerAndTokensSurviveRestart() = runTest {
+        val blob = MemoryBlobStore()
+
+        val prefs1 = PersistentPreferences(blob)
+        val barrier1 = DefaultIdentityTransitionBarrier()
+        val registry1 = AndroidServerRegistry(prefs1, barrier1)
+        val id = registry1.addOrUpdate("https://media.example:8096")
+        registry1.switchTo(id)
+        val tokens1 = EncryptedTokenManagerImpl(prefs1, registry1, barrier1)
+        tokens1.switchActiveServer(id)
+        tokens1.saveTokens("access-1", "refresh-1", expiresIn = 3600)
+
+        // Simulated app restart: fresh objects over the same stored blob.
+        val prefs2 = PersistentPreferences(blob)
+        val barrier2 = DefaultIdentityTransitionBarrier()
+        val registry2 = AndroidServerRegistry(prefs2, barrier2)
+        val tokens2 = EncryptedTokenManagerImpl(prefs2, registry2, barrier2)
+
+        assertEquals(id, registry2.activeServerId.value)
+        assertEquals("https://media.example:8096", registry2.activeEntry.value?.url)
+        assertEquals("refresh-1", tokens2.getRefreshToken())
+    }
+}
+```
+
+- [ ] **Step 9: Run it**
+
+Run: `./gradlew :shared:desktopTest --tests 'org.siloserver.silo.network.DesktopPersistenceTest'`
+Expected: PASS. If `switchActiveServer` or `saveTokens` has a different signature upstream, check `TokenManager.kt` and adjust **the test** to the upstream signature. Then run the full suite: `./gradlew :shared:desktopTest`. Expected: upstream count + 12, 0 failures.
+
+- [ ] **Step 10: Record the changes and commit**
+
+Append to the table in `shared/UPSTREAM.md`:
+```markdown
+| desktopMain/platform/SharedPreferences.kt, Base64.kt | shims so upstream persistence classes compile with an import swap |
+| desktopMain/platform/PersistentPreferences.kt, SecureBlobStore.kt | JSON blob in Secret Service keyring; 0600 file fallback |
+| desktopMain/network/vendored/{EncryptedTokenManagerImpl,AndroidServerRegistry}.kt | androidMain copies; script swaps `android.content.SharedPreferences` and `android.util.Base64` imports |
+```
+
+In the spec, replace §4.2's "Settings, servers" and "Tokens" rows with:
+```markdown
+| Settings | `$XDG_CONFIG_HOME/silage/` |
+| Servers and tokens (one blob, as on Android) | System keyring, service `silage`, account `session` (fallback: `$XDG_DATA_HOME/silage/session.json`, mode 0600) |
+```
+
+```bash
+git add -A
+git commit -m "feat(shared): keyring-backed desktop persistence for servers and tokens"
+```
+
+---
+
+### Task 3: `:player` — libmpv wrapper over JNA
+
+**Files:**
+- Modify: `player/build.gradle.kts`
+- Create: `player/src/main/kotlin/dev/silage/player/LibMpv.kt`
+- Create: `player/src/main/kotlin/dev/silage/player/MpvStructs.kt`
+- Create: `player/src/main/kotlin/dev/silage/player/PlayerModels.kt`
+- Create: `player/src/main/kotlin/dev/silage/player/MpvPlayer.kt`
+- Test: `player/src/test/kotlin/dev/silage/player/TestClips.kt`, `MpvPlayerTest.kt`
+
+**Interfaces:**
+- Consumes: nothing from other modules.
+- Produces (used by Tasks 4 and 6):
+```kotlin
+class MpvPlayer(options: Map<String, String> = emptyMap(), lib: LibMpv = LibMpv.load()) : AutoCloseable {
+    val state: StateFlow<PlayerState>
+    val events: SharedFlow<PlayerEvent>
+    fun load(url: String, headers: Map<String, String> = emptyMap(), startSeconds: Double? = null)
+    fun setPaused(paused: Boolean)
+    fun togglePause()
+    fun seekAbsolute(seconds: Double)
+    fun seekRelative(seconds: Double)
+    fun stop()
+    fun command(vararg args: String): Int
+    fun setProperty(name: String, value: String): Int
+    fun getProperty(name: String): String?
+    fun addOverlay(id: Int, address: Long, width: Int, height: Int, displayWidth: Int, displayHeight: Int): Int
+    override fun close()
+}
+data class PlayerState(val positionSeconds: Double = 0.0, val durationSeconds: Double = 0.0,
+                       val paused: Boolean = false, val buffering: Boolean = false, val loaded: Boolean = false)
+sealed interface PlayerEvent {
+    data object FileLoaded : PlayerEvent
+    data object PlaybackRestart : PlayerEvent
+    data class Ended(val reason: EndReason, val error: String?) : PlayerEvent
+    data class ClientMessage(val args: List<String>) : PlayerEvent
+    data object Shutdown : PlayerEvent
+}
+enum class EndReason { EOF, STOP, QUIT, ERROR, REDIRECT, UNKNOWN }
+```
+
+- [ ] **Step 1: Module build file**
+
+`player/build.gradle.kts`:
+```kotlin
+plugins { alias(libs.plugins.kotlin.jvm) }
+
+kotlin { jvmToolchain(21) }
+
+dependencies {
+    api(libs.jna)
+    implementation(libs.kotlinx.coroutines.core)
+    testImplementation(kotlin("test"))
+    testImplementation(libs.kotlinx.coroutines.test)
+}
+
+tasks.test { useJUnitPlatform() }
+```
+
+- [ ] **Step 2: Test clip helper and failing tests**
+
+`player/src/test/kotlin/dev/silage/player/TestClips.kt`:
+```kotlin
+package dev.silage.player
+
+import java.nio.file.Files
+import java.nio.file.Path
+
+/** Generates small media files with ffmpeg once per JVM. */
+object TestClips {
+    private val dir: Path by lazy { Files.createTempDirectory("silage-clips") }
+
+    /** 5 s, 320x240, 24 fps H.264 + AAC sine, one SRT subtitle track. */
+    val fiveSeconds: Path by lazy {
+        val srt = dir.resolve("subs.srt").also {
+            Files.writeString(it, "1\n00:00:00,500 --> 00:00:04,000\nHello\n")
+        }
+        val out = dir.resolve("five.mkv")
+        val p = ProcessBuilder(
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=24",
+            "-f", "lavfi", "-i", "sine=frequency=440",
+            "-i", srt.toString(),
+            "-t", "5", "-map", "0:v", "-map", "1:a", "-map", "2:s",
+            "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-c:s", "srt",
+            out.toString(),
+        ).inheritIO().start()
+        check(p.waitFor() == 0) { "ffmpeg failed to create test clip" }
+        out
+    }
+}
+```
+
+`player/src/test/kotlin/dev/silage/player/MpvPlayerTest.kt`:
+```kotlin
+package dev.silage.player
+
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class MpvPlayerTest {
+    // Headless: no window, no audio device.
+    private val player = MpvPlayer(mapOf("vo" to "null", "ao" to "null"))
+
+    @AfterTest fun tearDown() = player.close()
+
+    @Test fun loadsAndReportsDuration() = runBlocking {
+        player.load(TestClips.fiveSeconds.toString())
+        withTimeout(5_000) { player.events.filterIsInstance<PlayerEvent.FileLoaded>().first() }
+        withTimeout(5_000) { player.state.first { it.durationSeconds > 4.5 } }
+        assertTrue(player.state.value.loaded)
+    }
+
+    @Test fun seeksAbsolute() = runBlocking {
+        player.load(TestClips.fiveSeconds.toString())
+        withTimeout(5_000) { player.events.filterIsInstance<PlayerEvent.FileLoaded>().first() }
+        player.setPaused(true)
+        player.seekAbsolute(3.0)
+        withTimeout(5_000) { player.state.first { it.positionSeconds in 2.9..3.5 } }
+    }
+
+    @Test fun startPositionIsHonored() = runBlocking {
+        player.setPaused(true)
+        player.load(TestClips.fiveSeconds.toString(), startSeconds = 2.0)
+        withTimeout(5_000) { player.state.first { it.loaded && it.positionSeconds in 1.9..2.5 } }
+    }
+
+    @Test fun playsToEndOfFile() = runBlocking {
+        player.load(TestClips.fiveSeconds.toString())
+        val ended = withTimeout(10_000) { player.events.filterIsInstance<PlayerEvent.Ended>().first() }
+        assertEquals(EndReason.EOF, ended.reason)
+    }
+
+    @Test fun missingFileReportsError() = runBlocking {
+        player.load("/definitely/not/here.mkv")
+        val ended = withTimeout(5_000) { player.events.filterIsInstance<PlayerEvent.Ended>().first() }
+        assertEquals(EndReason.ERROR, ended.reason)
+        assertNotNull(ended.error)
+    }
+
+    @Test fun headersWithCommasSurvive() {
+        player.load(TestClips.fiveSeconds.toString(), headers = mapOf("Authorization" to "Bearer a,b:c"))
+        val fields = player.getProperty("http-header-fields")
+        assertNotNull(fields)
+        assertTrue(fields.contains("Bearer a,b:c"), "got: $fields")
+    }
+
+    @Test fun scriptMessagesArriveAsClientMessages() = runBlocking {
+        val msg = kotlinx.coroutines.async {
+            withTimeout(5_000) { player.events.filterIsInstance<PlayerEvent.ClientMessage>().first() }
+        }
+        kotlinx.coroutines.delay(100)
+        player.command("script-message", "silage-key", "ENTER")
+        assertEquals(listOf("silage-key", "ENTER"), msg.await().args)
+    }
+
+    @Test fun quitEmitsShutdown() = runBlocking {
+        val shut = kotlinx.coroutines.async {
+            withTimeout(5_000) { player.events.filterIsInstance<PlayerEvent.Shutdown>().first() }
+        }
+        kotlinx.coroutines.delay(100)
+        player.command("quit")
+        shut.await()
+        Unit
+    }
+
+    @Test fun closeIsIdempotent() {
+        player.close(); player.close()
+    }
+}
+```
+
+- [ ] **Step 3: Run to verify failure**
+
+Run: `./gradlew :player:test`
+Expected: compilation FAILURE, `Unresolved reference: MpvPlayer`.
+
+- [ ] **Step 4: JNA bindings**
+
+`player/src/main/kotlin/dev/silage/player/LibMpv.kt`:
+```kotlin
+package dev.silage.player
+
+import com.sun.jna.Library
+import com.sun.jna.Native
+import com.sun.jna.Pointer
+
+/** Direct mapping of the libmpv client API (client.h) functions Silage uses. */
+@Suppress("FunctionName")
+interface LibMpv : Library {
+    fun mpv_client_api_version(): Long
+    fun mpv_create(): Pointer?
+    fun mpv_initialize(ctx: Pointer): Int
+    fun mpv_terminate_destroy(ctx: Pointer)
+    fun mpv_error_string(error: Int): String
+    fun mpv_set_option_string(ctx: Pointer, name: String, data: String): Int
+    fun mpv_set_property_string(ctx: Pointer, name: String, data: String): Int
+    fun mpv_get_property_string(ctx: Pointer, name: String): Pointer?
+    fun mpv_free(data: Pointer)
+    /** JNA passes String[] as a NULL-terminated char**. */
+    fun mpv_command(ctx: Pointer, args: Array<String>): Int
+    fun mpv_observe_property(ctx: Pointer, replyUserdata: Long, name: String, format: Int): Int
+    fun mpv_wait_event(ctx: Pointer, timeout: Double): MpvEvent
+    fun mpv_wakeup(ctx: Pointer)
+
+    companion object {
+        const val FORMAT_FLAG = 3
+        const val FORMAT_DOUBLE = 5
+
+        const val EVENT_NONE = 0
+        const val EVENT_SHUTDOWN = 1
+        const val EVENT_END_FILE = 7
+        const val EVENT_FILE_LOADED = 8
+        const val EVENT_CLIENT_MESSAGE = 16
+        const val EVENT_PLAYBACK_RESTART = 21
+        const val EVENT_PROPERTY_CHANGE = 22
+
+        /** Requires client API ≥ 2.0 (mpv ≥ 0.35). */
+        fun load(): LibMpv {
+            val lib = Native.load("mpv", LibMpv::class.java)
+            val major = lib.mpv_client_api_version() ushr 16
+            check(major >= 2) { "libmpv client API $major is too old; install mpv ≥ 0.38" }
+            return lib
+        }
+    }
+}
+```
+
+`player/src/main/kotlin/dev/silage/player/MpvStructs.kt`:
+```kotlin
+package dev.silage.player
+
+import com.sun.jna.Pointer
+import com.sun.jna.Structure
+
+@Structure.FieldOrder("event_id", "error", "reply_userdata", "data")
+class MpvEvent : Structure() {
+    @JvmField var event_id: Int = 0
+    @JvmField var error: Int = 0
+    @JvmField var reply_userdata: Long = 0
+    @JvmField var data: Pointer? = null
+}
+
+@Structure.FieldOrder("name", "format", "data")
+class MpvEventProperty(p: Pointer) : Structure(p) {
+    @JvmField var name: String? = null
+    @JvmField var format: Int = 0
+    @JvmField var data: Pointer? = null
+    init { read() }
+}
+
+@Structure.FieldOrder("reason", "error")
+class MpvEventEndFile(p: Pointer) : Structure(p) {
+    @JvmField var reason: Int = 0
+    @JvmField var error: Int = 0
+    init { read() }
+}
+
+@Structure.FieldOrder("num_args", "args")
+class MpvEventClientMessage(p: Pointer) : Structure(p) {
+    @JvmField var num_args: Int = 0
+    @JvmField var args: Pointer? = null
+    init { read() }
+    fun strings(): List<String> = args?.getStringArray(0, num_args)?.toList() ?: emptyList()
+}
+```
+
+`player/src/main/kotlin/dev/silage/player/PlayerModels.kt`:
+```kotlin
+package dev.silage.player
+
+data class PlayerState(
+    val positionSeconds: Double = 0.0,
+    val durationSeconds: Double = 0.0,
+    val paused: Boolean = false,
+    val buffering: Boolean = false,
+    val loaded: Boolean = false,
+)
+
+sealed interface PlayerEvent {
+    data object FileLoaded : PlayerEvent
+    data object PlaybackRestart : PlayerEvent
+    data class Ended(val reason: EndReason, val error: String?) : PlayerEvent
+    data class ClientMessage(val args: List<String>) : PlayerEvent
+    data object Shutdown : PlayerEvent
+}
+
+/** Mirrors mpv_end_file_reason. */
+enum class EndReason {
+    EOF, STOP, QUIT, ERROR, REDIRECT, UNKNOWN;
+
+    companion object {
+        fun of(code: Int) = when (code) {
+            0 -> EOF; 2 -> STOP; 3 -> QUIT; 4 -> ERROR; 5 -> REDIRECT; else -> UNKNOWN
+        }
+    }
+}
+```
+
+- [ ] **Step 5: The player**
+
+`player/src/main/kotlin/dev/silage/player/MpvPlayer.kt`:
+```kotlin
+package dev.silage.player
+
+import com.sun.jna.Pointer
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+
+/**
+ * One mpv instance. Knows nothing about Silo: callers hand it URLs and
+ * headers. Events are read on a dedicated thread; every public method is
+ * safe to call from any thread (libmpv's API is thread-safe).
+ */
+class MpvPlayer(
+    options: Map<String, String> = emptyMap(),
+    private val lib: LibMpv = LibMpv.load(),
+) : AutoCloseable {
+
+    private val ctx: Pointer = checkNotNull(lib.mpv_create()) { "mpv_create failed" }
+    private val _state = MutableStateFlow(PlayerState())
+    val state: StateFlow<PlayerState> = _state.asStateFlow()
+    private val _events = MutableSharedFlow<PlayerEvent>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val events: SharedFlow<PlayerEvent> = _events.asSharedFlow()
+
+    @Volatile private var closed = false
+    private val eventThread: Thread
+
+    init {
+        val defaults = mapOf(
+            "input-default-bindings" to "no",
+            "input-vo-keyboard" to "yes",
+            "osc" to "no",
+            "idle" to "yes",
+            "keep-open" to "no",
+            "terminal" to "no",
+        )
+        (defaults + options).forEach { (k, v) -> lib.mpv_set_option_string(ctx, k, v) }
+        check(lib.mpv_initialize(ctx) >= 0) { "mpv_initialize failed" }
+        lib.mpv_observe_property(ctx, 1, "time-pos", LibMpv.FORMAT_DOUBLE)
+        lib.mpv_observe_property(ctx, 2, "duration", LibMpv.FORMAT_DOUBLE)
+        lib.mpv_observe_property(ctx, 3, "pause", LibMpv.FORMAT_FLAG)
+        lib.mpv_observe_property(ctx, 4, "paused-for-cache", LibMpv.FORMAT_FLAG)
+        eventThread = Thread(::eventLoop, "mpv-events").apply { isDaemon = true; start() }
+    }
+
+    fun load(url: String, headers: Map<String, String> = emptyMap(), startSeconds: Double? = null) {
+        // change-list append takes one raw entry per call, so commas and colons
+        // inside header values need no escaping (a joined string would split).
+        command("change-list", "http-header-fields", "clr", "")
+        headers.forEach { (k, v) -> command("change-list", "http-header-fields", "append", "$k: $v") }
+        setProperty("start", startSeconds?.let { "%.3f".format(java.util.Locale.ROOT, it) } ?: "none")
+        _state.update { PlayerState(paused = it.paused) }
+        command("loadfile", url, "replace")
+    }
+
+    fun setPaused(paused: Boolean) { setProperty("pause", if (paused) "yes" else "no") }
+    fun togglePause() { command("cycle", "pause") }
+    fun seekAbsolute(seconds: Double) { command("seek", seconds.toString(), "absolute+exact") }
+    fun seekRelative(seconds: Double) { command("seek", seconds.toString(), "relative+exact") }
+    fun stop() { command("stop") }
+
+    fun command(vararg args: String): Int = if (closed) -1 else lib.mpv_command(ctx, arrayOf(*args))
+    fun setProperty(name: String, value: String): Int = if (closed) -1 else lib.mpv_set_property_string(ctx, name, value)
+
+    fun getProperty(name: String): String? {
+        if (closed) return null
+        val p = lib.mpv_get_property_string(ctx, name) ?: return null
+        return try { p.getString(0, "UTF-8") } finally { lib.mpv_free(p) }
+    }
+
+    /**
+     * Shows a premultiplied BGRA bitmap at [address] (native memory owned by
+     * the caller, valid only for the duration of this call: mpv copies it).
+     */
+    fun addOverlay(id: Int, address: Long, width: Int, height: Int, displayWidth: Int, displayHeight: Int): Int =
+        command(
+            "overlay-add", id.toString(), "0", "0", "&$address", "0", "bgra",
+            width.toString(), height.toString(), (width * 4).toString(),
+            displayWidth.toString(), displayHeight.toString(),
+        )
+
+    private fun eventLoop() {
+        while (!closed) {
+            val ev = lib.mpv_wait_event(ctx, -1.0)
+            when (ev.event_id) {
+                LibMpv.EVENT_NONE -> Unit
+                LibMpv.EVENT_SHUTDOWN -> { _events.tryEmit(PlayerEvent.Shutdown); return }
+                LibMpv.EVENT_FILE_LOADED -> {
+                    _state.update { it.copy(loaded = true) }
+                    _events.tryEmit(PlayerEvent.FileLoaded)
+                }
+                LibMpv.EVENT_PLAYBACK_RESTART -> _events.tryEmit(PlayerEvent.PlaybackRestart)
+                LibMpv.EVENT_END_FILE -> ev.data?.let { p ->
+                    val end = MpvEventEndFile(p)
+                    val reason = EndReason.of(end.reason)
+                    _state.update { it.copy(loaded = false) }
+                    _events.tryEmit(PlayerEvent.Ended(reason, if (reason == EndReason.ERROR) lib.mpv_error_string(end.error) else null))
+                }
+                LibMpv.EVENT_CLIENT_MESSAGE -> ev.data?.let { p ->
+                    _events.tryEmit(PlayerEvent.ClientMessage(MpvEventClientMessage(p).strings()))
+                }
+                LibMpv.EVENT_PROPERTY_CHANGE -> ev.data?.let { p -> onProperty(MpvEventProperty(p)) }
+            }
+        }
+    }
+
+    private fun onProperty(prop: MpvEventProperty) {
+        val data = prop.data ?: return
+        when (prop.name) {
+            "time-pos" -> if (prop.format == LibMpv.FORMAT_DOUBLE) _state.update { it.copy(positionSeconds = data.getDouble(0)) }
+            "duration" -> if (prop.format == LibMpv.FORMAT_DOUBLE) _state.update { it.copy(durationSeconds = data.getDouble(0)) }
+            "pause" -> if (prop.format == LibMpv.FORMAT_FLAG) _state.update { it.copy(paused = data.getInt(0) != 0) }
+            "paused-for-cache" -> if (prop.format == LibMpv.FORMAT_FLAG) _state.update { it.copy(buffering = data.getInt(0) != 0) }
+        }
+    }
+
+    override fun close() {
+        synchronized(this) {
+            if (closed) return
+            closed = true
+        }
+        lib.mpv_wakeup(ctx)
+        eventThread.join(2_000)
+        lib.mpv_terminate_destroy(ctx)
+    }
+}
+```
+
+- [ ] **Step 6: Run the tests**
+
+Run: `./gradlew :player:test`
+Expected: PASS (9 tests). Two caveats:
+- If `startPositionIsHonored` fails because `start` was reset before the file loaded, keep the test. Move the start option into `loadfile`'s per-file options instead: `command("loadfile", url, "replace", "-1", "start=$s")` (mpv ≥ 0.38 syntax).
+- If `scriptMessagesArriveAsClientMessages` times out because mpv doesn't deliver `script-message` back to its sender, send it with `script-message-to <name>` instead, where `<name>` is `getProperty("client-name")`.
+- If `quitEmitsShutdown` leaves `close()` waiting, that's expected: the loop already returned on SHUTDOWN, so `join` returns immediately.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add player
+git commit -m "feat(player): libmpv wrapper with state, events, headers and overlays"
+```
+
+---
+
+### Task 4: Overlay spike — go/no-go for Compose-drawn controls over mpv
+
+This task produces a **decision**, not product code. The spike file stays in the repo under `spike/` for reference, and Plan 3 deletes it.
+
+**Files:**
+- Modify: `app/build.gradle.kts` (full version, also used by Task 5)
+- Create: `app/src/main/kotlin/dev/silage/app/spike/OverlaySpike.kt`
+- Create: `docs/spikes/2026-10-overlay.md`
+
+**Interfaces:**
+- Consumes: `MpvPlayer.addOverlay(id, address, width, height, displayWidth, displayHeight)`, `MpvPlayer.getProperty("osd-width")`.
+- Produces: the decision recorded in `docs/spikes/2026-10-overlay.md`. Plan 3 reads it to choose between the Compose overlay and the Lua control bar.
+
+- [ ] **Step 1: App build file**
+
+`app/build.gradle.kts`:
+```kotlin
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
+plugins {
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.compose.compiler)
+}
+
+kotlin { jvmToolchain(21) }
+
+dependencies {
+    implementation(project(":shared"))
+    implementation(project(":player"))
+    implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
+    implementation(libs.kotlinx.coroutines.swing)
+    testImplementation(kotlin("test"))
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.koin.test)
+    testImplementation(libs.ktor.client.mock)
+}
+
+tasks.test { useJUnitPlatform() }
+
+compose.desktop {
+    application {
+        mainClass = "dev.silage.app.MainKt"
+        nativeDistributions {
+            targetFormats(TargetFormat.AppImage)
+            packageName = "silage"
+            packageVersion = "0.1.0"
+        }
+    }
+}
+
+tasks.register<JavaExec>("runOverlaySpike") {
+    group = "spike"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("dev.silage.app.spike.OverlaySpikeKt")
+    args = listOfNotNull(project.findProperty("video") as String?)
+}
+```
+
+- [ ] **Step 2: The spike**
+
+`app/src/main/kotlin/dev/silage/app/spike/OverlaySpike.kt`:
+```kotlin
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
+package dev.silage.app.spike
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.sun.jna.Memory
+import dev.silage.player.MpvPlayer
+import dev.silage.player.PlayerEvent
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
+import org.jetbrains.skia.ImageInfo
+
+private const val W = 1920
+private const val H = 1080
+private const val SECONDS = 20
+
+@Composable
+private fun SpikeBar(progress: Float) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        Column(
+            Modifier.fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
+                .padding(horizontal = 96.dp, vertical = 64.dp),
+        ) {
+            Text("Overlay spike — Compose → mpv", color = Color(0xFFEDEDED), fontSize = 40.sp)
+            Box(Modifier.padding(top = 24.dp).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color.White.copy(alpha = 0.2f))) {
+                Box(Modifier.fillMaxWidth(progress).height(8.dp).background(Color(0xFFEDEDED)))
+            }
+        }
+    }
+}
+
+/**
+ * Plays a video fullscreen with HDR-capable settings and animates a
+ * Compose-drawn control bar over it at 60 Hz for 20 s, then prints timing.
+ * Usage: ./gradlew :app:runOverlaySpike -Pvideo=/path/to/4k-hdr.mkv
+ */
+fun main(args: Array<String>) = runBlocking {
+    val video = args.firstOrNull() ?: error("pass -Pvideo=/path/to/file")
+    val player = MpvPlayer(
+        mapOf(
+            "vo" to "gpu-next", "hwdec" to "auto-safe", "target-colorspace-hint" to "yes",
+            "fullscreen" to "yes", "force-window" to "yes", "keep-open" to "yes",
+        ),
+    )
+    player.load(video)
+    withTimeout(15_000) { player.events.filterIsInstance<PlayerEvent.FileLoaded>().first() }
+
+    val progress = mutableFloatStateOf(0f)
+    val scene = ImageComposeScene(W, H, Density(1f)) { SpikeBar(progress.floatValue) }
+    val bitmap = Bitmap().apply { allocPixels(ImageInfo(W, H, ColorType.BGRA_8888, ColorAlphaType.PREMUL)) }
+    val native = Memory(W.toLong() * H * 4)
+    val frameMs = ArrayList<Double>()
+
+    val start = System.nanoTime()
+    val frameNanos = 1_000_000_000L / 60
+    var frame = 0L
+    while (System.nanoTime() - start < SECONDS * 1_000_000_000L) {
+        val t0 = System.nanoTime()
+        progress.floatValue = ((t0 - start) / (SECONDS * 1e9)).toFloat()
+        scene.render(t0).readPixels(bitmap)
+        val bytes = bitmap.readPixels() ?: error("readPixels failed")
+        native.write(0, bytes, 0, bytes.size)
+        val dw = player.getProperty("osd-width")?.toIntOrNull()?.takeIf { it > 0 } ?: W
+        val dh = player.getProperty("osd-height")?.toIntOrNull()?.takeIf { it > 0 } ?: H
+        player.addOverlay(0, com.sun.jna.Pointer.nativeValue(native), W, H, dw, dh)
+        frameMs += (System.nanoTime() - t0) / 1e6
+        frame++
+        val next = start + frame * frameNanos
+        val sleep = next - System.nanoTime()
+        if (sleep > 0) Thread.sleep(sleep / 1_000_000, (sleep % 1_000_000).toInt())
+    }
+    frameMs.sort()
+    val elapsed = (System.nanoTime() - start) / 1e9
+    println("frames=%d fps=%.1f p50=%.1fms p95=%.1fms max=%.1fms".format(
+        frameMs.size, frameMs.size / elapsed, frameMs[frameMs.size / 2], frameMs[(frameMs.size * 0.95).toInt()], frameMs.last()))
+    println("video: " + player.getProperty("video-params/primaries") + " / " + player.getProperty("video-params/gamma") +
+        "  hwdec=" + player.getProperty("hwdec-current") + "  dropped=" + player.getProperty("frame-drop-count"))
+    scene.close(); player.close()
+}
+```
+
+- [ ] **Step 3: Run it on the reference machine with a real 4K HDR file**
+
+Run: `./gradlew :app:runOverlaySpike -Pvideo=/path/to/a/4k-hdr10-file.mkv`
+
+Watch the TV, then note:
+1. The bar's progress fill moves smoothly, with no stutter or tearing.
+2. The video looks like HDR (on Plasma, HDR enabled in Display Settings).
+3. The printed line: `fps`, `p95`, `hwdec`, `dropped`.
+
+**Go:** fps ≥ 30, p95 ≤ 33 ms, no visible stutter, video `dropped` stays near 0.
+**No-go:** anything else. Run once more with `W=1280,H=720` (overlay scaled by `dw`/`dh`). If that passes, it's a **go at 720p**.
+
+- [ ] **Step 4: Record the decision**
+
+`docs/spikes/2026-10-overlay.md`:
+```markdown
+# Spike: Compose overlay through mpv overlay-add
+
+Date: <run date> · Machine: <GPU, compositor, display mode> · File: <codec, HDR format>
+
+| Overlay size | fps | p50 | p95 | max | dropped video frames | Smooth to the eye? |
+|---|---|---|---|---|---|---|
+| 1920×1080 | | | | | | |
+| 1280×720 (if run) | | | | | | |
+
+HDR signaled on the display: yes/no. hwdec: <value>.
+
+**Decision:** GO at <size> | NO-GO → Plan 3 uses the mpv Lua control bar.
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/build.gradle.kts app/src/main/kotlin/dev/silage/app/spike docs/spikes
+git commit -m "spike: measure Compose overlay rendering through mpv overlay-add"
+```
+
+---
+
+### Task 5: App shell — DI wiring, connect, sign in, pick a profile
+
+**Files:**
+- Create: `app/src/main/kotlin/dev/silage/app/{Main.kt, BuildInfo.kt, XdgPaths.kt}`
+- Create: `app/src/main/kotlin/dev/silage/app/di/{DesktopModule.kt, DesktopDeviceMetadataProvider.kt}`
+- Create: `app/src/main/kotlin/dev/silage/app/nav/AppNavigator.kt`
+- Create: `app/src/main/kotlin/dev/silage/app/connect/{ServerAddress.kt, ConnectPresenter.kt, ConnectScreen.kt}`
+- Create: `app/src/main/kotlin/dev/silage/app/signin/{SignInPresenter.kt, SignInScreen.kt}`
+- Create: `app/src/main/kotlin/dev/silage/app/profiles/{ProfilesPresenter.kt, ProfilesScreen.kt}`
+- Test: `app/src/test/kotlin/dev/silage/app/{connect/ServerAddressTest.kt, connect/ConnectPresenterTest.kt, signin/SignInPresenterTest.kt, profiles/ProfilesPresenterTest.kt, di/DesktopModuleTest.kt}`
+
+**Interfaces:**
+- Consumes: `org.siloserver.silo.di.sharedModules()`, `AuthRepository.setServerUrl(url)`, `AuthRepository.login(username, password): ApiResult<User>`, `ProfileRepository.listProfiles(): ApiResult<List<Profile>>`, `ProfileRepository.verifyPin(profileId, pin): ApiResult<VerifyPinResponse>`, `ProfileRepository.selectProfile(profileId, profileToken): ProfileCommitResult`, `Profile(id, name, hasPin, …)`, Task 2's `PersistentPreferences`, `SecureBlobStore`, `AndroidServerRegistry`, `EncryptedTokenManagerImpl`.
+- Produces (Task 6 uses these):
+  - `object XdgPaths { val config: Path; val cache: Path; val state: Path; val data: Path }`
+  - `val desktopModule: org.koin.core.module.Module`
+  - `class AppNavigator { val route: StateFlow<Route>; fun go(route: Route) }`
+  - `sealed interface Route { Connect; SignIn; Profiles; Home; data class Playing(val contentId: String) }`
+
+- [ ] **Step 1: Write the failing address and presenter tests**
+
+`app/src/test/kotlin/dev/silage/app/connect/ServerAddressTest.kt`:
+```kotlin
+package dev.silage.app.connect
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+class ServerAddressTest {
+    @Test fun addsHttpWhenSchemeMissing() = assertEquals("http://192.168.1.5:8096", ServerAddress.normalize("192.168.1.5:8096"))
+    @Test fun keepsHttps() = assertEquals("https://media.example.com", ServerAddress.normalize("https://media.example.com/"))
+    @Test fun lowercasesSchemeAndHost() = assertEquals("https://media.example.com:443", ServerAddress.normalize("HTTPS://Media.Example.com:443"))
+    @Test fun trimsWhitespaceAndTrailingSlashes() = assertEquals("http://nas:8096/silo", ServerAddress.normalize("  nas:8096/silo//  "))
+    @Test fun rejectsBlank() = assertNull(ServerAddress.normalize("   "))
+    @Test fun rejectsGarbage() = assertNull(ServerAddress.normalize("http://"))
+    @Test fun rejectsOtherSchemes() = assertNull(ServerAddress.normalize("ftp://nas"))
+}
+```
+
+`app/src/test/kotlin/dev/silage/app/connect/ConnectPresenterTest.kt`:
+```kotlin
+package dev.silage.app.connect
+
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+
+class ConnectPresenterTest {
+    @Test fun connectsWithNormalizedUrl() = runTest {
+        var connected: String? = null
+        val p = ConnectPresenter(connect = { url -> connected = url; Result.success(Unit) })
+        assertIs<ConnectState.Connected>(p.submit("nas:8096"))
+        assertEquals("http://nas:8096", connected)
+    }
+
+    @Test fun invalidAddressNeverCallsServer() = runTest {
+        val p = ConnectPresenter(connect = { error("must not be called") })
+        val s = p.submit("ftp://x")
+        assertIs<ConnectState.Error>(s)
+        assertEquals("Enter an address like 192.168.1.5:8096 or https://media.example.com", s.message)
+    }
+
+    @Test fun unreachableServerShowsMessage() = runTest {
+        val p = ConnectPresenter(connect = { Result.failure(java.net.ConnectException("refused")) })
+        val s = p.submit("nas:8096")
+        assertIs<ConnectState.Error>(s)
+        assertEquals("Couldn't reach http://nas:8096. Check the address and that the server is running.", s.message)
+    }
+}
+```
+
+`app/src/test/kotlin/dev/silage/app/signin/SignInPresenterTest.kt`:
+```kotlin
+package dev.silage.app.signin
+
+import kotlinx.coroutines.test.runTest
+import org.siloserver.silo.network.ApiResult
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+
+class SignInPresenterTest {
+    @Test fun success() = runTest {
+        val p = SignInPresenter(login = { _, _ -> ApiResult.Success(Unit) })
+        assertIs<SignInState.SignedIn>(p.submit("ann", "pw"))
+    }
+
+    @Test fun wrongPassword() = runTest {
+        val p = SignInPresenter(login = { _, _ -> ApiResult.Error(401, "invalid_credentials", "bad") })
+        assertEquals(SignInState.Error("Wrong username or password."), p.submit("ann", "nope"))
+    }
+
+    @Test fun networkError() = runTest {
+        val p = SignInPresenter(login = { _, _ -> ApiResult.NetworkError(java.io.IOException("down")) })
+        assertEquals(SignInState.Error("Can't reach the server. Try again."), p.submit("ann", "pw"))
+    }
+
+    @Test fun blankFieldsRejectedLocally() = runTest {
+        val p = SignInPresenter(login = { _, _ -> error("must not be called") })
+        assertEquals(SignInState.Error("Enter your username and password."), p.submit(" ", ""))
+    }
+}
+```
+
+`app/src/test/kotlin/dev/silage/app/profiles/ProfilesPresenterTest.kt`:
+```kotlin
+package dev.silage.app.profiles
+
+import kotlinx.coroutines.test.runTest
+import org.siloserver.silo.network.ApiResult
+import org.siloserver.silo.repository.ProfileCommitResult
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+
+class ProfilesPresenterTest {
+    private fun presenter(
+        verify: suspend (String, String) -> ApiResult<String?> = { _, _ -> ApiResult.Success("tok") },
+        selected: MutableList<Pair<String, String?>> = mutableListOf(),
+    ) = ProfilesPresenter(
+        list = { ApiResult.Success(listOf(ProfileRow("p1", "Ann", hasPin = false), ProfileRow("p2", "Kids", hasPin = true))) },
+        verifyPin = verify,
+        select = { id, token -> selected += id to token; ProfileCommitResult.Committed },
+    )
+
+    @Test fun loadsProfiles() = runTest {
+        assertEquals(listOf("Ann", "Kids"), (presenter().load() as ProfilesState.Loaded).profiles.map { it.name })
+    }
+
+    @Test fun selectWithoutPin() = runTest {
+        val selected = mutableListOf<Pair<String, String?>>()
+        assertIs<ProfilesState.Selected>(presenter(selected = selected).choose(ProfileRow("p1", "Ann", false), pin = null))
+        assertEquals(listOf("p1" to null), selected)
+    }
+
+    @Test fun pinProfileNeedsPin() = runTest {
+        assertIs<ProfilesState.NeedsPin>(presenter().choose(ProfileRow("p2", "Kids", true), pin = null))
+    }
+
+    @Test fun correctPinSelectsWithToken() = runTest {
+        val selected = mutableListOf<Pair<String, String?>>()
+        assertIs<ProfilesState.Selected>(presenter(selected = selected).choose(ProfileRow("p2", "Kids", true), pin = "1234"))
+        assertEquals(listOf("p2" to "tok"), selected)
+    }
+
+    @Test fun wrongPin() = runTest {
+        val p = presenter(verify = { _, _ -> ApiResult.Success(null) })
+        assertEquals(ProfilesState.PinError("Wrong PIN."), p.choose(ProfileRow("p2", "Kids", true), pin = "0000"))
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `./gradlew :app:test`
+Expected: compilation FAILURE (unresolved `ServerAddress`, `ConnectPresenter`, and so on).
+
+- [ ] **Step 3: Implement the address helper and presenters**
+
+`app/src/main/kotlin/dev/silage/app/connect/ServerAddress.kt`:
+```kotlin
+package dev.silage.app.connect
+
+import java.net.URI
+
+object ServerAddress {
+    /** Returns `scheme://host[:port][/path]` with no trailing slash, or null if unusable. */
+    fun normalize(input: String): String? {
+        val trimmed = input.trim().trimEnd('/')
+        if (trimmed.isEmpty()) return null
+        val withScheme = if ("://" in trimmed) trimmed else "http://$trimmed"
+        val uri = runCatching { URI(withScheme) }.getOrNull() ?: return null
+        val scheme = uri.scheme?.lowercase() ?: return null
+        if (scheme != "http" && scheme != "https") return null
+        val host = uri.host?.lowercase() ?: return null
+        val port = if (uri.port == -1) "" else ":${uri.port}"
+        val path = uri.rawPath.orEmpty().trimEnd('/')
+        return "$scheme://$host$port$path"
+    }
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/connect/ConnectPresenter.kt`:
+```kotlin
+package dev.silage.app.connect
+
+sealed interface ConnectState {
+    data object Idle : ConnectState
+    data object Connecting : ConnectState
+    data object Connected : ConnectState
+    data class Error(val message: String) : ConnectState
+}
+
+class ConnectPresenter(private val connect: suspend (url: String) -> Result<Unit>) {
+    suspend fun submit(input: String): ConnectState {
+        val url = ServerAddress.normalize(input)
+            ?: return ConnectState.Error("Enter an address like 192.168.1.5:8096 or https://media.example.com")
+        return connect(url).fold(
+            onSuccess = { ConnectState.Connected },
+            onFailure = { ConnectState.Error("Couldn't reach $url. Check the address and that the server is running.") },
+        )
+    }
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/signin/SignInPresenter.kt`:
+```kotlin
+package dev.silage.app.signin
+
+import org.siloserver.silo.network.ApiResult
+
+sealed interface SignInState {
+    data object Idle : SignInState
+    data object Working : SignInState
+    data object SignedIn : SignInState
+    data class Error(val message: String) : SignInState
+}
+
+class SignInPresenter(private val login: suspend (username: String, password: String) -> ApiResult<*>) {
+    suspend fun submit(username: String, password: String): SignInState {
+        if (username.isBlank() || password.isEmpty()) return SignInState.Error("Enter your username and password.")
+        return when (val r = login(username.trim(), password)) {
+            is ApiResult.Success -> SignInState.SignedIn
+            is ApiResult.Error -> if (r.code == 401 || r.code == 403) SignInState.Error("Wrong username or password.")
+                                  else SignInState.Error("Sign-in failed: ${r.message}")
+            is ApiResult.NetworkError -> SignInState.Error("Can't reach the server. Try again.")
+        }
+    }
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/profiles/ProfilesPresenter.kt`:
+```kotlin
+package dev.silage.app.profiles
+
+import org.siloserver.silo.network.ApiResult
+import org.siloserver.silo.repository.ProfileCommitResult
+
+data class ProfileRow(val id: String, val name: String, val hasPin: Boolean)
+
+sealed interface ProfilesState {
+    data object Loading : ProfilesState
+    data class Loaded(val profiles: List<ProfileRow>) : ProfilesState
+    data class NeedsPin(val profile: ProfileRow) : ProfilesState
+    data class PinError(val message: String) : ProfilesState
+    data object Selected : ProfilesState
+    data class Error(val message: String) : ProfilesState
+}
+
+/** [verifyPin] returns the profile token, or null when the PIN is wrong. */
+class ProfilesPresenter(
+    private val list: suspend () -> ApiResult<List<ProfileRow>>,
+    private val verifyPin: suspend (profileId: String, pin: String) -> ApiResult<String?>,
+    private val select: suspend (profileId: String, token: String?) -> ProfileCommitResult,
+) {
+    suspend fun load(): ProfilesState = when (val r = list()) {
+        is ApiResult.Success -> ProfilesState.Loaded(r.data)
+        is ApiResult.Error -> ProfilesState.Error("Couldn't load profiles: ${r.message}")
+        is ApiResult.NetworkError -> ProfilesState.Error("Can't reach the server. Try again.")
+    }
+
+    suspend fun choose(profile: ProfileRow, pin: String?): ProfilesState {
+        var token: String? = null
+        if (profile.hasPin) {
+            if (pin.isNullOrEmpty()) return ProfilesState.NeedsPin(profile)
+            token = when (val r = verifyPin(profile.id, pin)) {
+                is ApiResult.Success -> r.data ?: return ProfilesState.PinError("Wrong PIN.")
+                is ApiResult.Error -> return ProfilesState.PinError("Couldn't check PIN: ${r.message}")
+                is ApiResult.NetworkError -> return ProfilesState.PinError("Can't reach the server. Try again.")
+            }
+        }
+        return when (select(profile.id, token)) {
+            ProfileCommitResult.Committed -> ProfilesState.Selected
+            else -> ProfilesState.Error("Couldn't switch profile. Try again.")
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Run the presenter tests**
+
+Run: `./gradlew :app:test --tests 'dev.silage.app.connect.*' --tests 'dev.silage.app.signin.*' --tests 'dev.silage.app.profiles.*'`
+Expected: PASS (19 tests). If `ProfileCommitResult` has a single value besides `Committed`, keep the `else` branch: it covers every other upstream value.
+
+- [ ] **Step 5: Write the failing DI wiring test**
+
+`app/src/test/kotlin/dev/silage/app/di/DesktopModuleTest.kt`:
+```kotlin
+package dev.silage.app.di
+
+import org.koin.core.context.startKoin
+import org.koin.core.context.stopKoin
+import org.koin.dsl.module
+import org.siloserver.silo.di.sharedModules
+import org.siloserver.silo.network.ServerRegistry
+import org.siloserver.silo.network.TokenManager
+import org.siloserver.silo.platform.BlobStore
+import org.siloserver.silo.repository.AuthRepository
+import org.siloserver.silo.repository.PlaybackRepository
+import org.siloserver.silo.repository.ProfileRepository
+import org.siloserver.silo.viewmodel.HomeViewModel
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class DesktopModuleTest {
+    @AfterTest fun tearDown() = stopKoin()
+
+    @Test fun graphResolves() {
+        val memory = object : BlobStore {
+            var s: String? = null
+            override fun read() = s
+            override fun write(contents: String): Boolean { s = contents; return true }
+        }
+        val koin = startKoin {
+            modules(sharedModules() + desktopModule + module { single<BlobStore> { memory } })
+        }.koin
+        koin.get<AuthRepository>()
+        koin.get<ProfileRepository>()
+        koin.get<PlaybackRepository>()
+        koin.get<ServerRegistry>()
+        koin.get<HomeViewModel>()
+        assertEquals("EncryptedTokenManagerImpl", koin.get<TokenManager>()::class.simpleName)
+    }
+}
+```
+
+- [ ] **Step 6: Implement paths, device metadata, and the module**
+
+`app/src/main/kotlin/dev/silage/app/BuildInfo.kt`:
+```kotlin
+package dev.silage.app
+
+object BuildInfo {
+    const val NAME = "Silage"
+    const val VERSION = "0.1.0"
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/XdgPaths.kt`:
+```kotlin
+package dev.silage.app
+
+import java.nio.file.Path
+import java.nio.file.Paths
+
+object XdgPaths {
+    private val home: Path = Paths.get(System.getProperty("user.home"))
+    private fun dir(env: String, fallback: String): Path =
+        (System.getenv(env)?.takeIf { it.isNotBlank() }?.let(Paths::get) ?: home.resolve(fallback)).resolve("silage")
+
+    val config: Path get() = dir("XDG_CONFIG_HOME", ".config")
+    val cache: Path get() = dir("XDG_CACHE_HOME", ".cache")
+    val state: Path get() = dir("XDG_STATE_HOME", ".local/state")
+    val data: Path get() = dir("XDG_DATA_HOME", ".local/share")
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/di/DesktopDeviceMetadataProvider.kt`:
+```kotlin
+package dev.silage.app.di
+
+import dev.silage.app.BuildInfo
+import org.siloserver.silo.network.DeviceMetadataProvider
+import org.siloserver.silo.network.SiloDeviceMetadata
+import java.net.InetAddress
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.UUID
+
+/** Stable per-install device id, stored once in [idFile]. */
+class DesktopDeviceMetadataProvider(private val idFile: Path) : DeviceMetadataProvider {
+    private val id: String by lazy {
+        if (Files.exists(idFile)) Files.readString(idFile).trim()
+        else UUID.randomUUID().toString().also { Files.createDirectories(idFile.parent); Files.writeString(idFile, it) }
+    }
+
+    override suspend fun current(): SiloDeviceMetadata = SiloDeviceMetadata(
+        id = id,
+        name = runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("Linux HTPC"),
+        platform = "linux",
+        clientName = BuildInfo.NAME,
+        clientVersion = BuildInfo.VERSION,
+    )
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/di/DesktopModule.kt`:
+```kotlin
+package dev.silage.app.di
+
+import dev.silage.app.XdgPaths
+import org.koin.dsl.module
+import org.siloserver.silo.network.AndroidServerRegistry
+import org.siloserver.silo.network.DeviceMetadataProvider
+import org.siloserver.silo.network.DurableLoginAuthorityProvider
+import org.siloserver.silo.network.EncryptedTokenManagerImpl
+import org.siloserver.silo.network.ServerRegistry
+import org.siloserver.silo.network.TokenManager
+import org.siloserver.silo.platform.BlobStore
+import org.siloserver.silo.platform.PersistentPreferences
+import org.siloserver.silo.platform.SecureBlobStore
+import org.siloserver.silo.platform.SharedPreferences
+import org.siloserver.silo.viewmodel.HomeViewModel
+
+/**
+ * Desktop bindings. Load AFTER sharedModules(): same-type bindings here
+ * replace upstream's in-memory defaults (TokenManagerImpl), exactly as the
+ * Android TV app's module does.
+ */
+val desktopModule = module {
+    single<BlobStore> { SecureBlobStore.create(XdgPaths.data.resolve("session.json")) }
+    single<SharedPreferences> { PersistentPreferences(get()) }
+    single<ServerRegistry> { AndroidServerRegistry(get(), get()) }
+    single { EncryptedTokenManagerImpl(get(), get(), get()) }
+    single<TokenManager> { get<EncryptedTokenManagerImpl>() }
+    single<DurableLoginAuthorityProvider> { get<EncryptedTokenManagerImpl>() }
+    single<DeviceMetadataProvider> { DesktopDeviceMetadataProvider(XdgPaths.config.resolve("device-id")) }
+    factory { HomeViewModel(get(), get()) }
+}
+```
+
+- [ ] **Step 7: Run the DI test**
+
+Run: `./gradlew :app:test --tests 'dev.silage.app.di.*'`
+Expected: PASS. If Koin reports a missing definition, find which upstream class needs it. `grep -n "single" ~/src/silo-android/androidTvApp/src/androidMain/kotlin/org/siloserver/silo/tv/di/AndroidTvModule.kt` shows how Android TV provides it. Add the desktop equivalent to `desktopModule`, or an inert default when it's Android-only (Room caches, WorkManager). Then re-run.
+
+- [ ] **Step 8: Navigator and screens**
+
+`app/src/main/kotlin/dev/silage/app/nav/AppNavigator.kt`:
+```kotlin
+package dev.silage.app.nav
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+sealed interface Route {
+    data object Connect : Route
+    data object SignIn : Route
+    data object Profiles : Route
+    data object Home : Route
+    data class Playing(val contentId: String) : Route
+}
+
+class AppNavigator(start: Route) {
+    private val _route = MutableStateFlow(start)
+    val route: StateFlow<Route> = _route.asStateFlow()
+    fun go(route: Route) { _route.value = route }
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/connect/ConnectScreen.kt`:
+```kotlin
+package dev.silage.app.connect
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+
+@Composable
+fun ConnectScreen(presenter: ConnectPresenter, onConnected: () -> Unit) {
+    var address by remember { mutableStateOf("") }
+    var state by remember { mutableStateOf<ConnectState>(ConnectState.Idle) }
+    val scope = rememberCoroutineScope()
+    Column(Modifier.padding(96.dp).width(720.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Connect to your Silo server", style = MaterialTheme.typography.headlineLarge)
+        OutlinedTextField(address, { address = it }, label = { Text("Server address") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Button(enabled = state != ConnectState.Connecting, onClick = {
+            state = ConnectState.Connecting
+            scope.launch {
+                state = presenter.submit(address)
+                if (state == ConnectState.Connected) onConnected()
+            }
+        }) { Text("Connect") }
+        (state as? ConnectState.Error)?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
+    }
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/signin/SignInScreen.kt`:
+```kotlin
+package dev.silage.app.signin
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+
+@Composable
+fun SignInScreen(presenter: SignInPresenter, onSignedIn: () -> Unit) {
+    var user by remember { mutableStateOf("") }
+    var pass by remember { mutableStateOf("") }
+    var state by remember { mutableStateOf<SignInState>(SignInState.Idle) }
+    val scope = rememberCoroutineScope()
+    Column(Modifier.padding(96.dp).width(720.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Sign in", style = MaterialTheme.typography.headlineLarge)
+        OutlinedTextField(user, { user = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(pass, { pass = it }, label = { Text("Password") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+        Button(enabled = state != SignInState.Working, onClick = {
+            state = SignInState.Working
+            scope.launch {
+                state = presenter.submit(user, pass)
+                if (state == SignInState.SignedIn) onSignedIn()
+            }
+        }) { Text("Sign in") }
+        (state as? SignInState.Error)?.let { Text(it.message, color = MaterialTheme.colorScheme.error) }
+    }
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/profiles/ProfilesScreen.kt`:
+```kotlin
+package dev.silage.app.profiles
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+
+@Composable
+fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit) {
+    var state by remember { mutableStateOf<ProfilesState>(ProfilesState.Loading) }
+    var profiles by remember { mutableStateOf(emptyList<ProfileRow>()) }
+    var pin by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        state = presenter.load()
+        (state as? ProfilesState.Loaded)?.let { profiles = it.profiles }
+    }
+    fun choose(p: ProfileRow, pinValue: String?) = scope.launch {
+        state = presenter.choose(p, pinValue)
+        if (state == ProfilesState.Selected) onSelected()
+    }
+    Column(Modifier.padding(96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Who's watching?", style = MaterialTheme.typography.headlineLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            profiles.forEach { p -> Button(onClick = { pin = ""; choose(p, null) }) { Text(p.name) } }
+        }
+        val pinTarget = (state as? ProfilesState.NeedsPin)?.profile
+        if (pinTarget != null || state is ProfilesState.PinError) {
+            val target = pinTarget ?: profiles.first { it.hasPin }
+            OutlinedTextField(pin, { pin = it.filter(Char::isDigit) }, label = { Text("PIN for ${target.name}") },
+                visualTransformation = PasswordVisualTransformation(), singleLine = true)
+            Button(onClick = { choose(target, pin) }) { Text("OK") }
+        }
+        when (val s = state) {
+            is ProfilesState.PinError -> Text(s.message, color = MaterialTheme.colorScheme.error)
+            is ProfilesState.Error -> Text(s.message, color = MaterialTheme.colorScheme.error)
+            else -> Unit
+        }
+    }
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/Main.kt`:
+```kotlin
+package dev.silage.app
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import dev.silage.app.connect.ConnectPresenter
+import dev.silage.app.connect.ConnectScreen
+import dev.silage.app.di.desktopModule
+import dev.silage.app.nav.AppNavigator
+import dev.silage.app.nav.Route
+import dev.silage.app.profiles.ProfileRow
+import dev.silage.app.profiles.ProfilesPresenter
+import dev.silage.app.profiles.ProfilesScreen
+import dev.silage.app.signin.SignInPresenter
+import dev.silage.app.signin.SignInScreen
+import kotlinx.coroutines.runBlocking
+import org.koin.core.Koin
+import org.koin.core.context.startKoin
+import org.siloserver.silo.di.sharedModules
+import org.siloserver.silo.network.ApiResult
+import org.siloserver.silo.network.ServerRegistry
+import org.siloserver.silo.network.TokenManager
+import org.siloserver.silo.repository.AuthRepository
+import org.siloserver.silo.repository.ProfileRepository
+
+fun main() {
+    val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
+    val navigator = AppNavigator(runBlocking { startRoute(koin) })
+    application {
+        val windowState = rememberWindowState(placement = WindowPlacement.Fullscreen)
+        Window(onCloseRequest = ::exitApplication, state = windowState, title = BuildInfo.NAME) {
+            MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black)) {
+                Surface(Modifier.fillMaxSize(), color = Color.Black) {
+                    val route by navigator.route.collectAsState()
+                    AppRoutes(koin, navigator, route)
+                }
+            }
+        }
+    }
+}
+
+private suspend fun startRoute(koin: Koin): Route {
+    val registry = koin.get<ServerRegistry>()
+    if (registry.activeEntry.value == null) return Route.Connect
+    if (koin.get<TokenManager>().getRefreshToken() == null) return Route.SignIn
+    return Route.Profiles
+}
+
+@androidx.compose.runtime.Composable
+private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
+    val auth = koin.get<AuthRepository>()
+    val profiles = koin.get<ProfileRepository>()
+    when (route) {
+        Route.Connect -> ConnectScreen(
+            ConnectPresenter { url -> runCatching { auth.setServerUrl(url) } },
+            onConnected = { nav.go(Route.SignIn) },
+        )
+        Route.SignIn -> SignInScreen(SignInPresenter { u, p -> auth.login(u, p) }, onSignedIn = { nav.go(Route.Profiles) })
+        Route.Profiles -> ProfilesScreen(
+            ProfilesPresenter(
+                list = {
+                    when (val r = profiles.listProfiles()) {
+                        is ApiResult.Success -> ApiResult.Success(r.data.map { ProfileRow(it.id, it.name, it.hasPin) })
+                        is ApiResult.Error -> r
+                        is ApiResult.NetworkError -> r
+                    }
+                },
+                verifyPin = { id, pin ->
+                    when (val r = profiles.verifyPin(id, pin)) {
+                        is ApiResult.Success -> ApiResult.Success(r.data.profileToken.takeIf { r.data.valid })
+                        is ApiResult.Error -> r
+                        is ApiResult.NetworkError -> r
+                    }
+                },
+                select = { id, token -> profiles.selectProfile(id, token) },
+            ),
+            onSelected = { nav.go(Route.Home) },
+        )
+        Route.Home -> dev.silage.app.home.HomeListScreen(koin, onPlay = { nav.go(Route.Playing(it)) })
+        is Route.Playing -> dev.silage.app.playback.PlayingScreen(koin, route.contentId, onDone = { nav.go(Route.Home) })
+    }
+}
+```
+
+`Route.Home` and `Route.Playing` reference Task 6 files. To keep this task compiling, add temporary stubs and replace them in Task 6:
+
+`app/src/main/kotlin/dev/silage/app/home/HomeListScreen.kt`:
+```kotlin
+package dev.silage.app.home
+
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import org.koin.core.Koin
+
+@Composable
+fun HomeListScreen(koin: Koin, onPlay: (String) -> Unit) { Text("Signed in. Home arrives in Task 6.") }
+```
+
+`app/src/main/kotlin/dev/silage/app/playback/PlayingScreen.kt`:
+```kotlin
+package dev.silage.app.playback
+
+import androidx.compose.runtime.Composable
+import org.koin.core.Koin
+
+@Composable
+fun PlayingScreen(koin: Koin, contentId: String, onDone: () -> Unit) = onDone()
+```
+
+- [ ] **Step 9: Run all app tests, then check against a real server**
+
+Run: `./gradlew :app:test`
+Expected: PASS (all tests so far).
+
+Run: `./gradlew :app:run`
+Expected: a fullscreen black window. Enter your server address, sign in, pick a profile (try a PIN profile if you have one), and land on "Signed in. Home arrives in Task 6." Quit with Alt+F4, then run again: it should start at the profile picker, which proves tokens persisted. Check `secret-tool search service silage` shows one item (on KDE, `kwallet-query` works too).
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add app
+git commit -m "feat(app): desktop DI, connect, sign-in and profile picker"
+```
+
+---
+
+### Task 6: Home list and end-to-end playback with progress sync
+
+**Files:**
+- Create: `app/src/main/kotlin/dev/silage/app/playback/DesktopCapabilities.kt`
+- Create: `app/src/main/kotlin/dev/silage/app/playback/PlaybackLauncher.kt`
+- Create: `app/src/main/kotlin/dev/silage/app/playback/PlaybackController.kt`
+- Replace: `app/src/main/kotlin/dev/silage/app/playback/PlayingScreen.kt`, `app/src/main/kotlin/dev/silage/app/home/HomeListScreen.kt`
+- Test: `app/src/test/kotlin/dev/silage/app/playback/{PlaybackLauncherTest.kt, PlaybackControllerTest.kt}`
+
+**Interfaces:**
+- Consumes: `WatchDetailV2Api.capture(): AuthScopeSnapshot?`, `WatchDetailV2Api.detail(id, owner): ApiResult<WatchDetail>` (`WatchDetail.versions: List<FileVersion>`, `FileVersion.fileId: Int`), `PlaybackRepository.startPlaybackV3(request): ApiResult<PlaybackDecisionResponseV3>` (`.sessionId`, `.playbackPlan?.stream?.url`, `.effectiveRequestHeaders`, `.terminal`), `PlaybackRepository.updateProgress(sessionId, position, isPaused)`, `PlaybackRepository.stopPlayback(sessionId)`, `PlaybackStartRequestV3(...)`, `ClientCodecCapabilities(...)`, `ClientPlaybackContext(formFactor, appVersion)`, `playbackClientFeaturesV3(context)`, `SubtitleFidelityPreference.PRESERVE`, `HomeViewModel.uiState` / `loadSections()` (`ResolvedSection.title/items`, `SectionItem.contentId/title/type`), Task 3's `MpvPlayer`.
+- Produces:
+  - `class PlaybackLauncher(...) { suspend fun launch(contentId: String): LaunchResult }`
+  - `sealed interface LaunchResult { data class Ready(val sessionId: String, val url: String, val headers: Map<String, String>, val startSeconds: Double?); data class Failed(val message: String) }`
+  - `class PlaybackController(player: PlayerPort, progress: suspend (String, Double, Boolean) -> Unit, stop: suspend (String) -> Unit, intervalMs: Long = 10_000) { suspend fun run(ready: LaunchResult.Ready) }`
+  - `interface PlayerPort` (the `MpvPlayer` subset the controller needs, so tests can fake it)
+
+- [ ] **Step 1: Write the failing launcher tests**
+
+`app/src/test/kotlin/dev/silage/app/playback/PlaybackLauncherTest.kt`:
+```kotlin
+package dev.silage.app.playback
+
+import kotlinx.coroutines.test.runTest
+import org.siloserver.silo.model.catalog.FileVersion
+import org.siloserver.silo.model.catalog.WatchDetail
+import org.siloserver.silo.model.playback.PlaybackDecisionResponseV3
+import org.siloserver.silo.model.playback.PlaybackStartRequestV3
+import org.siloserver.silo.network.ApiResult
+import org.siloserver.silo.network.SiloJson
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+
+class PlaybackLauncherTest {
+    private fun decision(url: String, headers: String = "{}") = SiloJson.decodeFromString(
+        PlaybackDecisionResponseV3.serializer(),
+        """{"protocol_version":3,"session_id":"sess-1","playback_plan":{"plan_id":"p1","delivery":"original_http",
+            "stream":{"url":"$url","protocol":"http_progressive","headers":$headers},"decision_reason":"direct"}}""",
+    )
+
+    private fun launcher(
+        versions: List<FileVersion> = listOf(FileVersion(fileId = 77)),
+        response: ApiResult<PlaybackDecisionResponseV3> = ApiResult.Success(decision("/api/v2/stream/77")),
+        sent: MutableList<PlaybackStartRequestV3> = mutableListOf(),
+    ) = PlaybackLauncher(
+        detail = { ApiResult.Success(WatchDetail(contentId = it, type = "movie", title = "M", versions = versions)) },
+        start = { req -> sent += req; response },
+        profileId = { "prof-1" },
+        serverUrl = { "http://nas:8096" },
+    )
+
+    @Test fun resolvesRelativeUrlAndUsesFirstVersion() = runTest {
+        val sent = mutableListOf<PlaybackStartRequestV3>()
+        val r = launcher(sent = sent).launch("movie-1")
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals("http://nas:8096/api/v2/stream/77", r.url)
+        assertEquals("sess-1", r.sessionId)
+        assertEquals(77, sent.single().fileId)
+        assertEquals("prof-1", sent.single().profileId)
+    }
+
+    @Test fun keepsAbsoluteUrlAndHeaders() = runTest {
+        val r = launcher(response = ApiResult.Success(decision("https://cdn.example/x.mkv", """{"Authorization":"Bearer t"}"""))).launch("m")
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals("https://cdn.example/x.mkv", r.url)
+        assertEquals(mapOf("Authorization" to "Bearer t"), r.headers)
+    }
+
+    @Test fun noVersionsFails() = runTest {
+        assertEquals(LaunchResult.Failed("This item has no playable file."), launcher(versions = emptyList()).launch("series-1"))
+    }
+
+    @Test fun serverErrorFails() = runTest {
+        val r = launcher(response = ApiResult.Error(403, "forbidden", "Not allowed")).launch("m")
+        assertEquals(LaunchResult.Failed("The server refused playback: Not allowed"), r)
+    }
+
+    @Test fun advertisesDesktopCapabilities() = runTest {
+        val sent = mutableListOf<PlaybackStartRequestV3>()
+        launcher(sent = sent).launch("m")
+        val caps = sent.single().capabilities
+        assertEquals(true, "hevc" in caps.codecsVideo && "av1" in caps.codecsVideo)
+        assertEquals("tv", sent.single().clientPlaybackContext.formFactor)
+    }
+}
+```
+
+`FileVersion` and `WatchDetail` may have more required constructor parameters than these tests pass. If compilation says so, fill in the minimum required values in **the test**. Use `SiloJson` from `org.siloserver.silo.network` as written; if it lives in a different package, fix the import to wherever `grep -rn "val SiloJson" shared/src/commonMain` finds it.
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `./gradlew :app:test --tests 'dev.silage.app.playback.PlaybackLauncherTest'`
+Expected: compilation FAILURE, `Unresolved reference: PlaybackLauncher`.
+
+- [ ] **Step 3: Implement capabilities and the launcher**
+
+`app/src/main/kotlin/dev/silage/app/playback/DesktopCapabilities.kt`:
+```kotlin
+package dev.silage.app.playback
+
+import dev.silage.app.BuildInfo
+import org.siloserver.silo.model.playback.ClientCodecCapabilities
+import org.siloserver.silo.model.playback.ClientPlaybackContext
+
+/**
+ * What mpv/FFmpeg can play on a modern Linux PC. Plan 3 replaces this static
+ * list with probing (GPU decode, HDR, passthrough). Evidence tier is left at
+ * the upstream default; passthrough is not claimed yet.
+ */
+object DesktopCapabilities {
+    val codecs = ClientCodecCapabilities(
+        codecsVideo = listOf("h264", "hevc", "av1", "vp9", "vp8", "mpeg2video", "mpeg4", "vc1"),
+        codecsVideoHardware = listOf("h264", "hevc", "av1", "vp9"),
+        codecsAudio = listOf("aac", "mp3", "opus", "vorbis", "flac", "alac", "ac3", "eac3", "dts", "truehd", "pcm"),
+        containers = listOf("mkv", "mp4", "mov", "webm", "ts", "m2ts", "avi"),
+        maxResolution = "2160p",
+        hdr = true,
+    )
+
+    val context = ClientPlaybackContext(formFactor = "tv", appVersion = BuildInfo.VERSION)
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/playback/PlaybackLauncher.kt`:
+```kotlin
+package dev.silage.app.playback
+
+import org.siloserver.silo.model.catalog.WatchDetail
+import org.siloserver.silo.model.playback.ClientCodecCapabilities
+import org.siloserver.silo.model.playback.ClientPlaybackContext
+import org.siloserver.silo.model.playback.PlaybackDecisionResponseV3
+import org.siloserver.silo.model.playback.PlaybackStartRequestV3
+import org.siloserver.silo.model.playback.SubtitleFidelityPreference
+import org.siloserver.silo.model.playback.playbackClientFeaturesV3
+import org.siloserver.silo.network.ApiResult
+import java.util.UUID
+
+sealed interface LaunchResult {
+    data class Ready(val sessionId: String, val url: String, val headers: Map<String, String>, val startSeconds: Double?) : LaunchResult
+    data class Failed(val message: String) : LaunchResult
+}
+
+/** Detail → first file version → v3 playback start → a URL mpv can open. */
+class PlaybackLauncher(
+    private val detail: suspend (contentId: String) -> ApiResult<WatchDetail>,
+    private val start: suspend (PlaybackStartRequestV3) -> ApiResult<PlaybackDecisionResponseV3>,
+    private val profileId: suspend () -> String?,
+    private val serverUrl: suspend () -> String,
+    private val capabilities: ClientCodecCapabilities = DesktopCapabilities.codecs,
+    private val context: ClientPlaybackContext = DesktopCapabilities.context,
+    private val newAttemptId: () -> String = { UUID.randomUUID().toString() },
+) {
+    suspend fun launch(contentId: String): LaunchResult {
+        val item = when (val r = detail(contentId)) {
+            is ApiResult.Success -> r.data
+            is ApiResult.Error -> return LaunchResult.Failed("Couldn't load this item: ${r.message}")
+            is ApiResult.NetworkError -> return LaunchResult.Failed("Can't reach the server. Try again.")
+        }
+        val fileId = item.versions.firstOrNull()?.fileId ?: return LaunchResult.Failed("This item has no playable file.")
+        val profile = profileId() ?: return LaunchResult.Failed("No profile selected.")
+
+        val request = PlaybackStartRequestV3(
+            clientFeatures = playbackClientFeaturesV3(context),
+            fileId = fileId,
+            profileId = profile,
+            playbackAttemptId = newAttemptId(),
+            subtitleFidelityPreference = SubtitleFidelityPreference.PRESERVE,
+            capabilities = capabilities,
+            clientPlaybackContext = context,
+        )
+        val decision = when (val r = start(request)) {
+            is ApiResult.Success -> r.data
+            is ApiResult.Error -> return LaunchResult.Failed("The server refused playback: ${r.message}")
+            is ApiResult.NetworkError -> return LaunchResult.Failed("Can't reach the server. Try again.")
+        }
+        val plan = decision.playbackPlan ?: return LaunchResult.Failed("The server couldn't plan playback for this file.")
+        val sessionId = decision.sessionId ?: plan.sessionId ?: return LaunchResult.Failed("The server didn't open a playback session.")
+        val url = plan.stream.url.let { if (it.startsWith("/")) serverUrl().trimEnd('/') + it else it }
+        return LaunchResult.Ready(sessionId, url, plan.stream.effectiveRequestHeaders, startSeconds = null)
+    }
+}
+```
+
+Resume positions come with Plan 2's detail page. For now `startSeconds` is always null, so playback starts from the beginning.
+
+- [ ] **Step 4: Run the launcher tests**
+
+Run: `./gradlew :app:test --tests 'dev.silage.app.playback.PlaybackLauncherTest'`
+Expected: PASS (5 tests).
+
+- [ ] **Step 5: Write the failing controller tests**
+
+`app/src/test/kotlin/dev/silage/app/playback/PlaybackControllerTest.kt`:
+```kotlin
+package dev.silage.app.playback
+
+import dev.silage.player.EndReason
+import dev.silage.player.PlayerEvent
+import dev.silage.player.PlayerState
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class FakePlayer : PlayerPort {
+    override val state = MutableStateFlow(PlayerState())
+    override val events = MutableSharedFlow<PlayerEvent>(extraBufferCapacity = 8)
+    val loaded = mutableListOf<String>()
+    var stopped = false
+    override fun load(url: String, headers: Map<String, String>, startSeconds: Double?) { loaded += url }
+    override fun stop() { stopped = true }
+}
+
+class PlaybackControllerTest {
+    private val ready = LaunchResult.Ready("sess-1", "http://nas/x", emptyMap(), null)
+
+    @Test fun reportsProgressEveryIntervalAndStopsAtEof() = runTest {
+        val player = FakePlayer()
+        val progress = mutableListOf<Double>()
+        val stops = mutableListOf<String>()
+        val job = launch {
+            PlaybackController(player, { _, pos, _ -> progress += pos }, { stops += it }, intervalMs = 10_000).run(ready)
+        }
+        runCurrent()
+        assertEquals(listOf("http://nas/x"), player.loaded)
+        player.state.value = PlayerState(positionSeconds = 12.0, loaded = true)
+        advanceTimeBy(10_001)
+        player.state.value = PlayerState(positionSeconds = 22.0, loaded = true)
+        advanceTimeBy(10_000)
+        player.events.emit(PlayerEvent.Ended(EndReason.EOF, null))
+        job.join()
+        assertTrue(progress.containsAll(listOf(12.0, 22.0)), "progress=$progress")
+        assertEquals(listOf("sess-1"), stops)
+    }
+
+    @Test fun shutdownStopsSession() = runTest {
+        val player = FakePlayer()
+        val stops = mutableListOf<String>()
+        val job = launch { PlaybackController(player, { _, _, _ -> }, { stops += it }).run(ready) }
+        runCurrent()
+        player.events.emit(PlayerEvent.Shutdown)
+        job.join()
+        assertEquals(listOf("sess-1"), stops)
+    }
+
+    @Test fun pauseChangeReportsImmediately() = runTest {
+        val player = FakePlayer()
+        val paused = mutableListOf<Boolean>()
+        val job = launch { PlaybackController(player, { _, _, p -> paused += p }, { }).run(ready) }
+        runCurrent()
+        player.state.value = PlayerState(positionSeconds = 5.0, paused = true, loaded = true)
+        runCurrent()
+        assertEquals(listOf(true), paused)
+        player.events.emit(PlayerEvent.Ended(EndReason.STOP, null)); job.join()
+    }
+
+    @Test fun cancellationStillStopsSession() = runTest {
+        val player = FakePlayer()
+        val stops = mutableListOf<String>()
+        val job = launch { PlaybackController(player, { _, _, _ -> }, { stops += it }).run(ready) }
+        runCurrent()
+        job.cancel(); job.join()
+        assertEquals(listOf("sess-1"), stops)
+        assertTrue(player.stopped)
+    }
+}
+```
+
+- [ ] **Step 6: Run to verify failure**
+
+Run: `./gradlew :app:test --tests 'dev.silage.app.playback.PlaybackControllerTest'`
+Expected: compilation FAILURE, `Unresolved reference: PlayerPort`.
+
+- [ ] **Step 7: Implement the controller**
+
+`app/src/main/kotlin/dev/silage/app/playback/PlaybackController.kt`:
+```kotlin
+package dev.silage.app.playback
+
+import dev.silage.player.MpvPlayer
+import dev.silage.player.PlayerEvent
+import dev.silage.player.PlayerState
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** The parts of MpvPlayer the controller needs (fakeable in tests). */
+interface PlayerPort {
+    val state: StateFlow<PlayerState>
+    val events: Flow<PlayerEvent>
+    fun load(url: String, headers: Map<String, String>, startSeconds: Double?)
+    fun stop()
+}
+
+fun MpvPlayer.asPort(): PlayerPort = object : PlayerPort {
+    override val state = this@asPort.state
+    override val events = this@asPort.events
+    override fun load(url: String, headers: Map<String, String>, startSeconds: Double?) = this@asPort.load(url, headers, startSeconds)
+    override fun stop() = this@asPort.stop()
+}
+
+/**
+ * Runs one playback session: loads the stream, reports progress on an
+ * interval and on every pause/resume, and always stops the server session
+ * when playback ends, mpv shuts down, or the caller cancels.
+ */
+class PlaybackController(
+    private val player: PlayerPort,
+    private val progress: suspend (sessionId: String, position: Double, paused: Boolean) -> Unit,
+    private val stop: suspend (sessionId: String) -> Unit,
+    private val intervalMs: Long = 10_000,
+) {
+    suspend fun run(ready: LaunchResult.Ready) {
+        try {
+            coroutineScope {
+                player.load(ready.url, ready.headers, ready.startSeconds)
+                val ticker = launch {
+                    while (true) {
+                        delay(intervalMs)
+                        val s = player.state.value
+                        if (s.loaded) progress(ready.sessionId, s.positionSeconds, s.paused)
+                    }
+                }
+                val pauses = launch {
+                    player.state.distinctUntilChangedBy { it.paused }.drop(1).collect { s ->
+                        progress(ready.sessionId, s.positionSeconds, s.paused)
+                    }
+                }
+                player.events.first { it is PlayerEvent.Ended || it is PlayerEvent.Shutdown }
+                ticker.cancel(); pauses.cancel()
+            }
+        } finally {
+            withContext(NonCancellable) {
+                player.stop()
+                runCatching { stop(ready.sessionId) }
+            }
+        }
+    }
+}
+```
+
+- [ ] **Step 8: Run the controller tests**
+
+Run: `./gradlew :app:test --tests 'dev.silage.app.playback.PlaybackControllerTest'`
+Expected: PASS (4 tests).
+
+- [ ] **Step 9: Replace the stub screens**
+
+`app/src/main/kotlin/dev/silage/app/home/HomeListScreen.kt`:
+```kotlin
+package dev.silage.app.home
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import org.koin.core.Koin
+import org.siloserver.silo.viewmodel.HomeViewModel
+
+/** Plain Home rows; Plan 2 replaces this with the Skyline Home. */
+@Composable
+fun HomeListScreen(koin: Koin, onPlay: (String) -> Unit) {
+    val vm = remember { koin.get<HomeViewModel>() }
+    LaunchedEffect(vm) { vm.loadSections() }
+    val state by vm.uiState.collectAsState()
+    if (state.isLoading && state.sections.isEmpty()) { Text("Loading…", Modifier.padding(96.dp)); return }
+    LazyColumn(Modifier.padding(64.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        items(state.sections, key = { it.id }) { section ->
+            Text(section.title, style = MaterialTheme.typography.titleLarge)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(section.items, key = { it.contentId }) { item ->
+                    Card(Modifier.width(220.dp).clickable { onPlay(item.contentId) }) {
+                        Text(item.title, Modifier.padding(16.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+`app/src/main/kotlin/dev/silage/app/playback/PlayingScreen.kt`:
+```kotlin
+package dev.silage.app.playback
+
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import dev.silage.player.MpvPlayer
+import org.koin.core.Koin
+import org.siloserver.silo.network.ApiResult
+import org.siloserver.silo.network.TokenManager
+import org.siloserver.silo.network.apiv2.WatchDetailV2Api
+import org.siloserver.silo.repository.PlaybackRepository
+import org.siloserver.silo.repository.ProfileRepository
+
+/** Starts a session, plays it in mpv's own window, returns when done. */
+@Composable
+fun PlayingScreen(koin: Koin, contentId: String, onDone: () -> Unit) {
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(contentId) {
+        val details = koin.get<WatchDetailV2Api>()
+        val playback = koin.get<PlaybackRepository>()
+        val launcher = PlaybackLauncher(
+            detail = { id ->
+                val owner = details.capture() ?: return@PlaybackLauncher ApiResult.Error(401, "no_scope", "Not signed in")
+                details.detail(id, owner)
+            },
+            start = { playback.startPlaybackV3(it) },
+            profileId = { koin.get<ProfileRepository>().getActiveProfileId() },
+            serverUrl = { koin.get<TokenManager>().getServerUrl() },
+        )
+        when (val r = launcher.launch(contentId)) {
+            is LaunchResult.Failed -> error = r.message
+            is LaunchResult.Ready -> {
+                val mpv = MpvPlayer(mapOf(
+                    "vo" to "gpu-next", "hwdec" to "auto-safe", "target-colorspace-hint" to "yes",
+                    "fullscreen" to "yes", "force-window" to "yes",
+                ))
+                // Until Plan 3's overlay: q / Esc in the mpv window end playback.
+                mpv.command("keybind", "q", "quit")
+                mpv.command("keybind", "ESC", "quit")
+                mpv.command("keybind", "SPACE", "cycle pause")
+                mpv.command("keybind", "LEFT", "seek -10")
+                mpv.command("keybind", "RIGHT", "seek 10")
+                try {
+                    PlaybackController(
+                        mpv.asPort(),
+                        progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
+                        stop = { s -> playback.stopPlayback(s) },
+                    ).run(r)
+                } finally { mpv.close() }
+                onDone()
+            }
+        }
+    }
+    error?.let { msg ->
+        Column(Modifier.padding(96.dp)) {
+            Text(msg, style = MaterialTheme.typography.titleLarge)
+            Button(onClick = onDone) { Text("Back") }
+        }
+    }
+}
+```
+
+- [ ] **Step 10: Run all tests, then do the end-to-end check on the real server**
+
+Run: `./gradlew test`
+Expected: PASS across `:shared`, `:player`, `:app`.
+
+Run: `./gradlew :app:run`, then:
+1. Home shows your server's rows (Continue Watching and so on) as text cards.
+2. Click a **movie** card. mpv opens fullscreen and plays it; check HDR on an HDR file. Space pauses, Left/Right seek.
+3. After about 30 s, press `q`. The app returns to Home.
+4. Open the same movie on the Silo web UI or a phone: its progress shows roughly where you stopped, which proves progress sync.
+5. Click a **series** card. You see "This item has no playable file." and a Back button, with no crash.
+
+- [ ] **Step 11: Commit and push**
+
+```bash
+git add app
+git commit -m "feat(app): Home rows and end-to-end playback with progress sync"
+git push
+```
+
+---
+
+## Plan 1 exit criteria
+
+- `./gradlew test` is green, and upstream's 1869 tests pass inside `:shared`.
+- On the reference machine: connect → sign in → profile → Home → play a 4K HDR movie in mpv with hardware decoding → progress visible on another Silo client.
+- `docs/spikes/2026-10-overlay.md` records a GO or NO-GO decision.
+- Next: write Plan 2 (Browsing UI) from spec §5. It replaces `ConnectScreen`, `SignInScreen` (adding device pairing), `ProfilesScreen` and `HomeListScreen` with the Skyline design.
