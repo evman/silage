@@ -4,7 +4,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -58,17 +58,15 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
         ?: rows.firstOrNull()?.third?.firstOrNull()
     val firstCard = rememberInitialFocus(rows.isNotEmpty())
 
+    val listState = rememberLazyListState()
+    // Developer switch for screenshots: start scrolled down N rows.
+    LaunchedEffect(rows.isNotEmpty()) { System.getenv("SILAGE_DEV_HOME_SCROLL")?.toIntOrNull()?.let { if (rows.size > it) listState.scrollToItem(it) } }
     Box(Modifier.fillMaxSize().background(Silage.Black)) {
-        Marquee(marquee)
         when {
-            rows.isEmpty() && state.isLoading -> Skeleton()
-            rows.isEmpty() && state.error != null -> ErrorState(state.error!!) { vm.refresh() }
-            rows.isEmpty() -> Text("Nothing on Home yet", color = Silage.Text2, fontSize = 24.sp, modifier = Modifier.align(Alignment.Center))
-            else -> LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = 560.dp, bottom = 80.dp),
-                verticalArrangement = Arrangement.spacedBy(36.dp),
-            ) {
+            rows.isEmpty() && state.isLoading -> { Marquee(marquee); Skeleton() }
+            rows.isEmpty() && state.error != null -> { Marquee(marquee); ErrorState(state.error!!) { vm.refresh() } }
+            rows.isEmpty() -> { Marquee(marquee); Text("Nothing on Home yet", color = Silage.Text2, fontSize = 24.sp, modifier = Modifier.align(Alignment.Center)) }
+            else -> HomeLayout(marquee = { Marquee(marquee) }, listState = listState) {
                 items(rows, key = { it.first.id }) { (section, progress, cards) ->
                     CardRow(
                         section.title, cards,

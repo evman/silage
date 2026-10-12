@@ -41,6 +41,11 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.1.1" date="2026-10-12">
+      <description>
+        <p>Home's rows no longer scroll over the banner's title and description. Packages declare the display libraries they need.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-12">
       <description>
         <p>First release.</p>

@@ -90,6 +90,7 @@ afterEvaluate {
         (project.findProperty("devBackAfter") as String?)?.let { environment("SILAGE_DEV_BACK_AFTER", it) }
         (project.findProperty("devMute") as String?)?.let { environment("SILAGE_DEV_MUTE", it) }
         (project.findProperty("devOpenVersions") as String?)?.let { environment("SILAGE_DEV_OPEN_VERSIONS", it) }
+        (project.findProperty("devHomeScroll") as String?)?.let { environment("SILAGE_DEV_HOME_SCROLL", it) }
     }
 }
 
