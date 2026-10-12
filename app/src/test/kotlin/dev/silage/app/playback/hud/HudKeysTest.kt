@@ -77,7 +77,11 @@ class HudKeysTest {
 
     @Test fun backPeelsMenuThenHudThenLeaves() {
         val menu = shown.copy(focus = Audio, menu = HudMenu.Audio, menuSize = 2)
-        assertEquals(shown.copy(focus = Audio) to HudEffect.None, menu.on(HudKey.Back))
+        val (closed, effect) = menu.on(HudKey.Back)
+        assertEquals(HudMenu.None, closed.menu)
+        assertEquals(Audio, closed.focus)
+        assertEquals(true, closed.visible)
+        assertEquals(HudEffect.None, effect)
         assertEquals(hidden.copy(focus = PlayPause) to HudEffect.None, shown.on(HudKey.Back))
         assertEquals(HudEffect.Exit, hidden.on(HudKey.Back).second)
     }
