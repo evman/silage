@@ -42,13 +42,33 @@ interface LibMpv : Library {
         }
 
         /**
+         * Library names to try, in order. Distro runtime packages (Ubuntu's
+         * libmpv2, Fedora's mpv-libs) ship only the soname libmpv.so.2; the
+         * bare libmpv.so comes with -dev packages (Arch ships both).
+         */
+        val NAMES = listOf("libmpv.so.2", "mpv")
+
+        /** The first of [names] that [loader] can load; the error lists every attempt. */
+        fun <T> loadFirst(names: List<String>, loader: (String) -> T): T {
+            val errors = mutableListOf<String>()
+            for (name in names) {
+                try {
+                    return loader(name)
+                } catch (e: UnsatisfiedLinkError) {
+                    errors += "$name: ${e.message?.lineSequence()?.firstOrNull()}"
+                }
+            }
+            throw UnsatisfiedLinkError("libmpv not found (tried ${errors.joinToString("; ")})")
+        }
+
+        /**
          * Requires client API ≥ 2.0 (mpv ≥ 0.35). mpv_create returns NULL
          * unless LC_NUMERIC is "C", and the JVM sets it from the user's
          * environment, so reset it first (number parsing only).
          */
         fun load(): LibMpv {
             Native.load("c", LibC::class.java).setlocale(LC_NUMERIC, "C")
-            val lib = Native.load("mpv", LibMpv::class.java)
+            val lib = loadFirst(NAMES) { Native.load(it, LibMpv::class.java) }
             val major = lib.mpv_client_api_version() ushr 16
             check(major >= 2) { "libmpv client API $major is too old; install mpv ≥ 0.38" }
             return lib

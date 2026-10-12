@@ -60,7 +60,28 @@ import org.siloserver.silo.network.apiv2.ApiV2ProbeResult
 import org.siloserver.silo.repository.AuthRepository
 import org.siloserver.silo.repository.ProfileRepository
 
-fun main() {
+fun main(args: Array<String>) {
+    if ("--version" in args) {
+        println("${BuildInfo.NAME} ${BuildInfo.VERSION}")
+        return
+    }
+    val mpv = dev.silage.player.MpvRuntime.check()
+    if ("--check" in args) {
+        println(mpvCheckLine(mpv))
+        kotlin.system.exitProcess(if (mpv is dev.silage.player.MpvStatus.Ok) 0 else 2)
+    }
+    mpvProblem(mpv)?.let { problem ->
+        // Without a usable libmpv nothing can play: explain how to install it.
+        application {
+            Window(onCloseRequest = ::exitApplication, title = BuildInfo.NAME, icon = LogoIcon,
+                state = rememberWindowState(placement = WindowPlacement.Fullscreen)) {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(LocalDensity provides Density(constraints.maxHeight / 1080f, 1f)) { MpvMissingScreen(problem) }
+                }
+            }
+        }
+        return
+    }
     val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
     val crashLog = CrashLog()
     // Developer hook for reproducing exits: post a real Esc key press after N seconds.
