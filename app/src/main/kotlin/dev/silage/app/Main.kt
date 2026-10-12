@@ -77,12 +77,12 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
                 },
                 save = { url -> auth.setServerUrl(url) },
             ),
-            onConnected = { nav.go(Route.SignIn) },
+            onConnected = { nav.root(Route.SignIn) },
         )
         Route.SignIn -> SignInScreen(
             SignInPresenter { u, p -> auth.login(u, p) },
-            onSignedIn = { nav.go(Route.Profiles) },
-            onChangeServer = { nav.go(Route.Connect) },
+            onSignedIn = { nav.root(Route.Profiles) },
+            onChangeServer = { nav.root(Route.Connect) },
         )
         Route.Profiles -> ProfilesScreen(
             ProfilesPresenter(
@@ -102,10 +102,11 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
                 },
                 select = { id, token -> profiles.selectProfile(id, token) },
             ),
-            onSelected = { nav.go(Route.Home) },
-            onChangeServer = { nav.go(Route.Connect) },
+            onSelected = { nav.root(Route.Home) },
+            onChangeServer = { nav.root(Route.Connect) },
         )
-        Route.Home -> HomeListScreen(koin, onPlay = { nav.go(Route.Playing(it)) })
-        is Route.Playing -> PlayingScreen(koin, route.contentId, onDone = { nav.go(Route.Home) })
+        is Route.Playing -> PlayingScreen(koin, route.contentId, onDone = { if (!nav.back()) nav.root(Route.Home) })
+        // Until the sidebar shell (Plan 2 Task 5), every browsing route shows the Home list.
+        else -> HomeListScreen(koin, onPlay = { nav.go(Route.Playing(it)) })
     }
 }
