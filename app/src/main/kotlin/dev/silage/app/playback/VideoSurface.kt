@@ -9,13 +9,22 @@ import com.sun.jna.Native
 import java.awt.Canvas
 
 /**
+ * The window's real pixel density, before Silage's uniform 1080p layout
+ * scale. Native (Swing) panels must be sized with it: SwingPanel divides
+ * layout pixels by LocalDensity to get AWT size, so under the 2× layout scale
+ * on a 4K screen a full-size panel came out at half width and height.
+ */
+val LocalWindowDensity = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.ui.unit.Density?> { null }
+
+/**
  * A heavyweight, black AWT canvas filling its slot. [onReady] fires once the
  * canvas has a native window, with its X window id (null when the toolkit
  * has no X window to give, so the caller can fall back).
  */
 @Composable
 fun VideoSurface(onReady: (canvas: Canvas, wid: Long?) -> Unit, modifier: Modifier = Modifier.fillMaxSize()) {
-    SwingPanel(
+    val real = LocalWindowDensity.current ?: androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides real) { SwingPanel(
         background = Color.Black,
         modifier = modifier,
         factory = {
@@ -30,5 +39,5 @@ fun VideoSurface(onReady: (canvas: Canvas, wid: Long?) -> Unit, modifier: Modifi
                 isFocusable = true
             }
         },
-    )
+    ) }
 }

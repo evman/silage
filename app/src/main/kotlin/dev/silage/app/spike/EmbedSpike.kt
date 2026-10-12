@@ -1,5 +1,6 @@
 package dev.silage.app.spike
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
@@ -19,6 +20,14 @@ fun main(args: Array<String>) {
     application {
         Window(onCloseRequest = ::exitApplication, title = "Silage embed spike",
             state = rememberWindowState(placement = WindowPlacement.Fullscreen)) {
+            // Same uniform 1080p scaling as Main.kt (SPIKE_SCALE=1 to disable).
+            androidx.compose.foundation.layout.BoxWithConstraints(androidx.compose.ui.Modifier.fillMaxSize()) {
+            val scale = if (System.getenv("SPIKE_SCALE") == "1") androidx.compose.ui.platform.LocalDensity.current.density else constraints.maxHeight / 1080f
+            val windowDensity = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(scale, 1f),
+                dev.silage.app.playback.LocalWindowDensity provides windowDensity,
+            ) {
             VideoSurface(onReady = { canvas, wid ->
                 val out = System.getenv("SILAGE_HDR")?.let { VideoOutput.choose(wid, null, it) }
                     ?: (wid?.let { VideoOutput.Embedded(it) } ?: VideoOutput.OwnWindow(null))
@@ -57,6 +66,8 @@ fun main(args: Array<String>) {
                 }
                 }
             })
+            }
+            }
         }
     }
 }

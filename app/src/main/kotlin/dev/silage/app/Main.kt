@@ -63,7 +63,11 @@ fun main() {
                 // Layouts are specified at 1080p and scaled uniformly to the window (4K is 2×).
                 BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
                     val scale = constraints.maxHeight / 1080f
-                    CompositionLocalProvider(LocalDensity provides Density(scale, fontScale = 1f)) {
+                    val windowDensity = LocalDensity.current
+                    CompositionLocalProvider(
+                        LocalDensity provides Density(scale, fontScale = 1f),
+                        dev.silage.app.playback.LocalWindowDensity provides windowDensity,
+                    ) {
                         val route by navigator.route.collectAsState()
                         KeyRoot(route, onBack = navigator::back) { EntryHost(navigator) { entry -> AppRoutes(koin, navigator, entry.route) } }
                     }
