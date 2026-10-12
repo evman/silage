@@ -1,5 +1,6 @@
 package dev.silage.app.playback
 
+import dev.silage.app.detail.resumePosition
 import org.siloserver.silo.model.catalog.TimeRange
 import org.siloserver.silo.model.catalog.WatchDetail
 import org.siloserver.silo.model.playback.ClientCodecCapabilities
@@ -39,9 +40,12 @@ data class PlaybackMeta(
     }
 }
 
-/** Where playback starts: the saved position of an unfinished item, unless starting over. */
+/**
+ * Where playback starts: the saved position of an unfinished item, unless
+ * starting over. Same rule as the detail page's "Resume from…" label.
+ */
 fun playStart(userData: org.siloserver.silo.model.catalog.LeafItemUserData?, fromStart: Boolean): Double? =
-    if (fromStart || userData == null || userData.played) null else userData.positionSeconds?.takeIf { it > 0 }
+    if (fromStart) null else userData.resumePosition()
 
 /** A subtitle mpv loads from the server (`sub-add`), selected when the profile wants it shown. */
 data class SubtitleLoad(val url: String, val title: String, val language: String?, val select: Boolean)
