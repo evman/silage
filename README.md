@@ -21,25 +21,39 @@
 - **Resume anywhere.** Playback picks up where you left off; Back returns you to exactly where you were.
 - **Made for a remote.** Everything works with arrows, Enter and Esc, as well as the mouse.
 
-## Status
+## Install
 
-Early development. An AUR package is coming; for now, run it from source.
+Downloads are on the [Releases page](https://github.com/evman/silage/releases/latest). Every package needs **mpv 0.37 or newer** (libmpv) from your distribution; Java is bundled.
 
-## Requirements
+**Arch Linux** (AUR):
+```sh
+yay -S silage-bin
+```
 
-- Linux (X11, or Wayland via XWayland; HDR passthrough needs a native Wayland compositor such as KDE Plasma 6)
-- **mpv / libmpv 0.37 or newer** (`pacman -S mpv`)
-- **JDK 21** to build (`pacman -S jdk21-openjdk`)
+**Ubuntu 24.04+ / Debian 13**:
+```sh
+sudo apt install ./silage_<version>_amd64.deb
+```
 
-## Run from source
+**Fedora 40+**:
+```sh
+sudo dnf install ./silage-<version>-1.x86_64.rpm
+```
+Fedora's stock FFmpeg leaves out H.264/HEVC; for full codec support, install FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
 
+**Any other distro**: download the `.tar.gz`, extract it, and run `./install.sh` (installs into `~/.local`; `sudo ./install.sh` installs system-wide; `--uninstall` removes it).
+
+Run `silage --check` to confirm Silage can find mpv. On first launch, enter your Silo server's address, sign in, and pick your profile.
+
+### Build from source
+
+Needs JDK 21 and mpv:
 ```sh
 git clone https://github.com/evman/silage.git
 cd silage
 ./gradlew :app:run
 ```
-
-On first launch, enter your Silo server's address, sign in, and pick your profile.
+`scripts/package.sh <version>` builds the release packages (needs [nfpm](https://nfpm.goreleaser.com)).
 
 ## Controls
 

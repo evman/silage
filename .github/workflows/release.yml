@@ -1,0 +1,91 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  NFPM_VERSION: '2.47.0'
+  NFPM_SHA256: '0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install nfpm
+        run: |
+          curl -sSfL -o /tmp/nfpm.tgz "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          echo "${NFPM_SHA256}  /tmp/nfpm.tgz" | sha256sum -c
+          sudo tar -xzf /tmp/nfpm.tgz -C /usr/local/bin nfpm
+      - name: Build packages
+        run: scripts/package.sh "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  test-deb:
+    needs: build
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install the .deb
+        run: apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/silage_*.deb
+      - name: Run it
+        run: |
+          silage --version
+          silage --check
+
+  test-rpm:
+    needs: build
+    runs-on: ubuntu-24.04
+    container: fedora:41
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install the .rpm
+        run: dnf install -y ./dist/silage-*.rpm
+      - name: Run it
+        run: |
+          silage --version
+          silage --check
+
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y desktop-file-utils appstream
+      - run: desktop-file-validate packaging/dev.silage.Silage.desktop
+      - run: appstreamcli validate --no-net packaging/dev.silage.Silage.metainfo.xml
+
+  release:
+    needs: [build, test-deb, test-rpm, validate]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          sed "s/@VERSION@/$v/g" packaging/release-notes.md > /tmp/notes.md
+          gh release create "$GITHUB_REF_NAME" --title "Silage $v" --notes-file /tmp/notes.md \
+            dist/*.tar.gz dist/*.deb dist/*.rpm dist/SHA256SUMS

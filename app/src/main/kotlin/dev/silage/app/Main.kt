@@ -65,12 +65,13 @@ fun main(args: Array<String>) {
         println("${BuildInfo.NAME} ${BuildInfo.VERSION}")
         return
     }
-    WmClass.set("silage")
     val mpv = dev.silage.player.MpvRuntime.check()
     if ("--check" in args) {
         println(mpvCheckLine(mpv))
         kotlin.system.exitProcess(if (mpv is dev.silage.player.MpvStatus.Ok) 0 else 2)
     }
+    // After the headless flags: this touches the windowing system.
+    WmClass.set("silage")
     mpvProblem(mpv)?.let { problem ->
         // Without a usable libmpv nothing can play: explain how to install it.
         application {

@@ -1,0 +1,41 @@
+# .deb and .rpm from the app image that scripts/package.sh stages in dist/app.
+name: silage
+arch: amd64
+platform: linux
+version: ${SILAGE_VERSION}
+version_schema: semver
+section: video
+priority: optional
+maintainer: evman <evman311@gmail.com>
+description: |
+  An unofficial Silo client for Linux.
+  A fullscreen, couch-friendly home-theater app for Silo media servers:
+  direct play with mpv, HDR passthrough, and a remote-friendly interface.
+vendor: evman
+homepage: https://github.com/evman/silage
+license: AGPL-3.0-or-later
+contents:
+  - src: dist/app/
+    dst: /opt/silage
+    type: tree
+  - src: /opt/silage/bin/silage
+    dst: /usr/bin/silage
+    type: symlink
+  - src: packaging/dev.silage.Silage.desktop
+    dst: /usr/share/applications/dev.silage.Silage.desktop
+  - src: packaging/dev.silage.Silage.metainfo.xml
+    dst: /usr/share/metainfo/dev.silage.Silage.metainfo.xml
+  - src: packaging/icons/hicolor/
+    dst: /usr/share/icons/hicolor
+    type: tree
+  - src: LICENSE
+    dst: /usr/share/licenses/silage/LICENSE
+overrides:
+  deb:
+    # Ubuntu 24.04+ / Debian 13; earlier releases ship libmpv1 (mpv < 0.37).
+    depends:
+      - libmpv2 (>= 0.37)
+  rpm:
+    # Fedora 40+ (mpv-libs from Fedora or RPM Fusion).
+    depends:
+      - mpv-libs >= 0.37
