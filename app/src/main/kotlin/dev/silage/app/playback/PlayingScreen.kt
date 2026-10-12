@@ -31,7 +31,7 @@ private class Surface(val canvas: Canvas, val wid: Long?)
 
 /** The KDE output under the canvas, to see whether its monitor has HDR on. */
 private fun outputUnder(canvas: Canvas): Output? = runCatching {
-    val config = XdgPaths.config.resolve("kwinoutputconfig.json").toFile().takeIf { it.isFile } ?: return null
+    val config = XdgPaths.kwinOutputConfig.toFile().takeIf { it.isFile } ?: return null
     val origins = GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
         .map { it.defaultConfiguration.bounds.let { b -> b.x to b.y } }.toSet()
     val p = canvas.locationOnScreen
@@ -40,7 +40,8 @@ private fun outputUnder(canvas: Canvas): Output? = runCatching {
 
 private fun openMpv(surface: Surface?, ready: LaunchResult.Ready): OpenedPlayer {
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), System.getenv("SILAGE_HDR"))
-    val mpv = MpvPlayer(output.mpvOptions())
+    java.nio.file.Files.createDirectories(PlaybackLog.mpvLogFile.parent)
+    val mpv = MpvPlayer(output.mpvOptions() + ("log-file" to PlaybackLog.mpvLogFile.toString()))
     val hud = try { PlayerHud(mpv, ready.meta) } catch (t: Throwable) { mpv.close(); throw t }
     val canvas = surface?.canvas
     val detach = if (output is VideoOutput.Embedded && canvas != null) attachEmbeddedInput(canvas, hud) else ({})
@@ -70,7 +71,7 @@ fun PlayingScreen(koin: Koin, contentId: String, onDone: () -> Unit) {
                 val owner = details.capture() ?: return@PlaybackLauncher ApiResult.Error(401, "no_scope", "Not signed in")
                 details.detail(id, owner)
             },
-            start = { playback.startPlaybackV3(it) },
+            start = { req -> playback.startPlaybackV3(req).also { if (it is ApiResult.Success) PlaybackLog.record(it.data) } },
             profileId = { koin.get<ProfileRepository>().getActiveProfileId() },
             serverUrl = { koin.get<TokenManager>().getServerUrl() },
         )

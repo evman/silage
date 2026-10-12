@@ -12,4 +12,7 @@ object XdgPaths {
     val cache: Path get() = dir("XDG_CACHE_HOME", ".cache")
     val state: Path get() = dir("XDG_STATE_HOME", ".local/state")
     val data: Path get() = dir("XDG_DATA_HOME", ".local/share")
+
+    /** KDE Plasma's display settings, in the user's config dir (not Silage's). */
+    val kwinOutputConfig: Path get() = config.parent.resolve("kwinoutputconfig.json")
 }
