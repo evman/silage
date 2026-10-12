@@ -62,4 +62,16 @@ class PlaybackLauncherTest {
         assertEquals(true, "hevc" in caps.codecsVideo && "av1" in caps.codecsVideo)
         assertEquals("tv", sent.single().clientPlaybackContext.formFactor)
     }
+
+    @Test fun serverRefusalShowsItsReason() = runTest {
+        val refused = SiloJson.decodeFromString(
+            PlaybackDecisionResponseV3.serializer(),
+            """{"protocol_version":3,"outcome":"adaptation_unavailable",
+                "terminal":{"reason":"adaptation_unavailable","message":"No validated playback route is available for this source and output route."}}""",
+        )
+        assertEquals(
+            LaunchResult.Failed("The server couldn't plan playback: No validated playback route is available for this source and output route."),
+            launcher(response = ApiResult.Success(refused)).launch("m"),
+        )
+    }
 }

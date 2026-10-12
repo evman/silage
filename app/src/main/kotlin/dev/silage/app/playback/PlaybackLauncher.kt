@@ -48,7 +48,10 @@ class PlaybackLauncher(
             is ApiResult.Error -> return LaunchResult.Failed("The server refused playback: ${r.message}")
             is ApiResult.NetworkError -> return LaunchResult.Failed("Can't reach the server. Try again.")
         }
-        val plan = decision.playbackPlan ?: return LaunchResult.Failed("The server couldn't plan playback for this file.")
+        val plan = decision.playbackPlan ?: return LaunchResult.Failed(
+            decision.terminal?.message?.let { "The server couldn't plan playback: $it" }
+                ?: "The server couldn't plan playback for this file.",
+        )
         val sessionId = decision.sessionId ?: plan.sessionId ?: return LaunchResult.Failed("The server didn't open a playback session.")
         val url = plan.stream.url.let { if (it.startsWith("/")) serverUrl().trimEnd('/') + it else it }
         return LaunchResult.Ready(sessionId, url, plan.stream.effectiveRequestHeaders, startSeconds = null)
