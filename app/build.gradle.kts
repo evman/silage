@@ -39,3 +39,10 @@ tasks.register<JavaExec>("runOverlaySpike") {
     mainClass.set("dev.silage.app.spike.OverlaySpikeKt")
     args = listOfNotNull(project.findProperty("video") as String?)
 }
+
+tasks.register<JavaExec>("runEmbedSpike") {
+    group = "spike"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("dev.silage.app.spike.EmbedSpikeKt")
+    args = listOfNotNull(project.findProperty("video") as String?, project.findProperty("mpvLog") as String?)
+}

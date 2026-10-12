@@ -10,33 +10,59 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.silage.player.MpvPlayer
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import org.koin.core.Koin
+import java.awt.Canvas
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
+import javax.swing.SwingUtilities
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.network.apiv2.WatchDetailV2Api
 import org.siloserver.silo.repository.PlaybackRepository
 import org.siloserver.silo.repository.ProfileRepository
 
-private fun openMpv(): OpenedPlayer {
-    val mpv = MpvPlayer(mapOf(
-        "vo" to "gpu-next", "hwdec" to "auto-safe", "target-colorspace-hint" to "yes",
-        "fullscreen" to "yes", "force-window" to "yes",
-    ))
-    // Until Plan 3's overlay: q / Esc in the mpv window end playback.
-    mpv.command("keybind", "q", "quit")
-    mpv.command("keybind", "ESC", "quit")
-    mpv.command("keybind", "SPACE", "cycle pause")
-    mpv.command("keybind", "LEFT", "seek -10")
-    mpv.command("keybind", "RIGHT", "seek 10")
-    return mpv.asOpened()
+private class Surface(val canvas: Canvas, val wid: Long?)
+
+private fun openMpv(surface: Surface?): OpenedPlayer {
+    val wid = surface?.wid
+    val mpv = MpvPlayer(EmbeddedVideo.mpvOptions(wid))
+    if (wid == null) {
+        // Own window: mpv reads the keyboard itself.
+        mpv.command("keybind", "q", "stop")
+        mpv.command("keybind", "ESC", "stop")
+        mpv.command("keybind", "SPACE", "cycle pause")
+        mpv.command("keybind", "LEFT", "seek -10")
+        mpv.command("keybind", "RIGHT", "seek 10")
+        return mpv.asOpened()
+    }
+    val canvas = surface.canvas
+    val keys = object : KeyAdapter() {
+        override fun keyPressed(e: KeyEvent) {
+            EmbeddedVideo.commandFor(e.keyCode)?.let { mpv.command(*it) }
+        }
+    }
+    SwingUtilities.invokeLater { canvas.addKeyListener(keys); canvas.requestFocusInWindow() }
+    val port = mpv.asOpened()
+    return object : OpenedPlayer by port {
+        override fun close() {
+            SwingUtilities.invokeLater { canvas.removeKeyListener(keys) }
+            port.close()
+        }
+    }
 }
 
-/** Starts a session, plays it in mpv's own window, returns when done. */
+/** Starts a session, plays it inside the Silage window, returns when done. */
 @Composable
 fun PlayingScreen(koin: Koin, contentId: String, onDone: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
+    val surface = remember { CompletableDeferred<Surface>() }
+    if (error == null) {
+        VideoSurface(onReady = { canvas, wid -> surface.complete(Surface(canvas, wid)) })
+    }
     LaunchedEffect(contentId) {
         val details = koin.get<WatchDetailV2Api>()
         val playback = koin.get<PlaybackRepository>()
@@ -49,9 +75,12 @@ fun PlayingScreen(koin: Koin, contentId: String, onDone: () -> Unit) {
             profileId = { koin.get<ProfileRepository>().getActiveProfileId() },
             serverUrl = { koin.get<TokenManager>().getServerUrl() },
         )
+        // The canvas gets its native window on the next frame; without one in
+        // time, mpv falls back to its own fullscreen window.
+        val ready = withTimeoutOrNull(3_000) { surface.await() }
         val session = PlaybackSession(
             launch = launcher::launch,
-            openPlayer = ::openMpv,
+            openPlayer = { openMpv(ready) },
             progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
             stopSession = { s -> playback.stopPlayback(s) },
         )
