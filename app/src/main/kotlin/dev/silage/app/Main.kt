@@ -65,6 +65,7 @@ fun main(args: Array<String>) {
         println("${BuildInfo.NAME} ${BuildInfo.VERSION}")
         return
     }
+    WmClass.set("silage")
     val mpv = dev.silage.player.MpvRuntime.check()
     if ("--check" in args) {
         println(mpvCheckLine(mpv))

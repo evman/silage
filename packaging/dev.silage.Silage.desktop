@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Silage
+GenericName=Media Player
+Comment=An unofficial Silo client for Linux
+Exec=silage
+Icon=dev.silage.Silage
+Terminal=false
+Categories=AudioVideo;Video;Player;TV;
+Keywords=silo;media;movies;tv;shows;htpc;player;
+StartupWMClass=silage

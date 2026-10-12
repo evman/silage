@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.silage.Silage</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <name>Silage</name>
+  <summary>An unofficial Silo client for Linux</summary>
+  <description>
+    <p>
+      Silage is a fullscreen, couch-friendly home-theater app for Silo media servers.
+      It is not affiliated with the Silo project.
+    </p>
+    <ul>
+      <li>Direct play at full quality with mpv and hardware decoding</li>
+      <li>HDR passthrough on HDR-enabled Wayland displays</li>
+      <li>High-quality upscaling of 1080p films to 4K</li>
+      <li>Choose which copy of a title to play, such as 4K Dolby Vision or 1080p</li>
+      <li>A sidebar of your libraries, poster rows, detail pages, search and watchlist</li>
+      <li>Fully usable with a keyboard or remote</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">dev.silage.Silage.desktop</launchable>
+  <url type="homepage">https://github.com/evman/silage</url>
+  <url type="bugtracker">https://github.com/evman/silage/issues</url>
+  <url type="vcs-browser">https://github.com/evman/silage</url>
+  <developer id="io.github.evman">
+    <name>evman</name>
+  </developer>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/evman/silage/main/docs/media/home.png</image>
+      <caption>Home</caption>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <releases>
+    <release version="0.1.0" date="2026-10-12">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

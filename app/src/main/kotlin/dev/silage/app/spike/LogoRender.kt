@@ -37,7 +37,7 @@ fun main(args: Array<String>) {
             }
         }
     }
-    for (s in listOf(512, 256, 128)) render(s, "icon-$s.png") {
+    for (s in listOf(512, 256, 128, 64, 48)) render(s, "icon-$s.png") {
         Box(Modifier.fillMaxSize().clip(RoundedCornerShape((s * 0.22f).dp)).background(Color(0xFF0B0C0F)).padding((s * 0.17f).dp)) {
             Canvas(Modifier.fillMaxSize()) { drawPath(SilageLogo.path(size), Color.White) }
         }
