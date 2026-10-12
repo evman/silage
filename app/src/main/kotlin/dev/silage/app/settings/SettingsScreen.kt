@@ -91,10 +91,10 @@ private fun Heading(text: String, sub: String? = null) {
 @Composable
 private fun IconButton(icon: ImageVector, description: String, enabled: Boolean = true, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
-    val active = interaction.isActive() && enabled
+    val active = interaction.isActive()
     Box(
         Modifier.size(52.dp).clip(CircleShape).background(if (active) Color.White else Color.White.copy(alpha = if (enabled) 0.10f else 0.04f))
-            .hoverable(interaction).clickable(interaction, indication = null, enabled = enabled, onClick = onClick),
+            .hoverable(interaction).clickable(interaction, indication = null) { if (enabled) onClick() },
         contentAlignment = Alignment.Center,
     ) { Icon(icon, description, tint = if (active) Color.Black else if (enabled) Color.White else Silage.Text3, modifier = Modifier.size(28.dp)) }
 }
@@ -111,7 +111,16 @@ private fun InterfaceSection(koin: Koin) {
     val all = remember(server, version) { SidebarEntries.libraries(server, prefs.sidebar) }
     Column(Modifier.verticalScroll(rememberScrollState())) {
         Heading("Sidebar", "Choose which libraries appear in the sidebar, and their order.")
-        all.forEachIndexed { i, lib ->
+        SidebarEditorList(all) { prefs.sidebar = it }
+    }
+}
+
+/** Each library with show/hide and move up/down. */
+@Composable
+fun SidebarEditorList(all: List<dev.silage.app.shell.SidebarLibrary>, onChange: (List<dev.silage.app.ui.SidebarLibraryPref>) -> Unit) {
+    Column {
+        // Keyed by library so focus follows the library when it moves.
+        all.forEachIndexed { i, lib -> key(lib.id) {
             Row(
                 Modifier.widthIn(max = 900.dp).fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(16.dp))
                     .background(Color.White.copy(alpha = 0.05f)).padding(horizontal = 24.dp, vertical = 12.dp),
@@ -120,14 +129,14 @@ private fun InterfaceSection(koin: Koin) {
                 Icon(lib.kind.icon(), null, tint = if (lib.visible) Silage.Text else Silage.Text3, modifier = Modifier.size(28.dp))
                 Text(lib.name, color = if (lib.visible) Silage.Text else Silage.Text3, fontSize = 21.sp, modifier = Modifier.padding(start = 20.dp).weight(1f))
                 IconButton(if (lib.visible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff, if (lib.visible) "Hide" else "Show") {
-                    prefs.sidebar = SidebarEditor.toggle(all, lib.id)
+                    onChange(SidebarEditor.toggle(all, lib.id))
                 }
                 Spacer(Modifier.width(12.dp))
-                IconButton(Icons.Filled.KeyboardArrowUp, "Move up", enabled = i > 0) { prefs.sidebar = SidebarEditor.move(all, lib.id, -1) }
+                IconButton(Icons.Filled.KeyboardArrowUp, "Move up", enabled = i > 0) { onChange(SidebarEditor.move(all, lib.id, -1)) }
                 Spacer(Modifier.width(12.dp))
-                IconButton(Icons.Filled.KeyboardArrowDown, "Move down", enabled = i < all.lastIndex) { prefs.sidebar = SidebarEditor.move(all, lib.id, +1) }
+                IconButton(Icons.Filled.KeyboardArrowDown, "Move down", enabled = i < all.lastIndex) { onChange(SidebarEditor.move(all, lib.id, +1)) }
             }
-        }
+        } }
     }
 }
 
