@@ -105,6 +105,13 @@ class PlaybackLauncherTest {
         assertTrue(r.subtitles.none { it.select })
     }
 
+    @Test fun inProgressItemResumesAndFromStartDoesNot() = runTest {
+        val progress = org.siloserver.silo.model.catalog.LeafItemUserData(played = false, isInProgress = true, positionSeconds = 754.0, durationSeconds = 6000.0)
+        val l = launcher(item = { WatchDetail(contentId = it, type = "movie", title = "M", versions = listOf(FileVersion(fileId = 1)), userData = progress) })
+        assertEquals(754.0, (l.launch("m") as LaunchResult.Ready).startSeconds)
+        assertEquals(null, (l.launch("m", fromStart = true) as LaunchResult.Ready).startSeconds)
+    }
+
     @Test fun noVersionsFails() = runTest {
         assertEquals(LaunchResult.Failed("This item has no playable file."), launcher(versions = emptyList()).launch("series-1"))
     }

@@ -39,6 +39,10 @@ data class PlaybackMeta(
     }
 }
 
+/** Where playback starts: the saved position of an unfinished item, unless starting over. */
+fun playStart(userData: org.siloserver.silo.model.catalog.LeafItemUserData?, fromStart: Boolean): Double? =
+    if (fromStart || userData == null || userData.played) null else userData.positionSeconds?.takeIf { it > 0 }
+
 /** A subtitle mpv loads from the server (`sub-add`), selected when the profile wants it shown. */
 data class SubtitleLoad(val url: String, val title: String, val language: String?, val select: Boolean)
 
@@ -76,7 +80,7 @@ class PlaybackLauncher(
     private val context: ClientPlaybackContext = DesktopCapabilities.context,
     private val newAttemptId: () -> String = { UUID.randomUUID().toString() },
 ) {
-    suspend fun launch(contentId: String): LaunchResult {
+    suspend fun launch(contentId: String, fromStart: Boolean = false): LaunchResult {
         val item = when (val r = detail(contentId)) {
             is ApiResult.Success -> r.data
             is ApiResult.Error -> return LaunchResult.Failed("Couldn't load this item: ${r.message}")
@@ -123,7 +127,7 @@ class PlaybackLauncher(
             null
         }
         return LaunchResult.Ready(
-            sessionId, url, plan.stream.effectiveRequestHeaders, startSeconds = null, meta = PlaybackMeta.of(item),
+            sessionId, url, plan.stream.effectiveRequestHeaders, startSeconds = playStart(item.userData, fromStart), meta = PlaybackMeta.of(item),
             subtitles = subtitles, embeddedSubtitleStream = embeddedStream,
         )
     }

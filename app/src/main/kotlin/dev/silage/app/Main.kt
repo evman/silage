@@ -155,7 +155,7 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             onSelected = { nav.root(Route.Home) },
             onChangeServer = { nav.root(Route.Connect) },
         )
-        is Route.Playing -> PlayingScreen(koin, route.contentId, onDone = { if (!nav.back()) nav.root(Route.Home) })
+        is Route.Playing -> PlayingScreen(koin, route.contentId, route.fromStart, onDone = { if (!nav.back()) nav.root(Route.Home) })
         Route.Home -> AppShell(nav, koin, route) {
             HomeScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) })
         }
