@@ -11,6 +11,7 @@ import org.siloserver.silo.network.SiloJson
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class PlaybackLauncherTest {
     private fun decision(url: String, headers: String = "{}") = SiloJson.decodeFromString(
@@ -62,6 +63,46 @@ class PlaybackLauncherTest {
         val r = launcher(item = { WatchDetail(contentId = it, type = "movie", title = "Dune", year = 2021, versions = listOf(FileVersion(fileId = 1))) }).launch("m")
         assertIs<LaunchResult.Ready>(r)
         assertEquals(PlaybackMeta("Dune", "2021"), r.meta)
+    }
+
+    private fun withSubs(delivery: String, selected: String?, embedded: String = "") = SiloJson.decodeFromString(
+        PlaybackDecisionResponseV3.serializer(),
+        """{"protocol_version":3,"session_id":"s","playback_plan":{"plan_id":"p","delivery":"$delivery",
+            "stream":{"url":"/v","protocol":"hls","headers":{}},"decision_reason":"r",
+            ${selected?.let { "\"selected_tracks\":{\"subtitle\":{\"id\":\"$it\"}}," } ?: ""}
+            "subtitle":{"mode":"${if (selected != null) "render" else "off"}"$embedded,"inventory":[
+              {"track_id":"e0","combined_index":0,"source":"embedded","language":"en","label":"SUBRIP","delivery":"sidecar","url":"/s/0.vtt?embedded_stream_index=2"},
+              {"track_id":"e1","combined_index":1,"source":"embedded","language":"en","label":"SDH","hearing_impaired":true,"delivery":"sidecar","url":"/s/1.vtt?embedded_stream_index=3"},
+              {"track_id":"x2","combined_index":2,"source":"external","language":"ro","delivery":"sidecar","url":"/s/2.srt"}]}}}""",
+    )
+
+    @Test fun transcodedStreamLoadsEverySubtitleFromItsLink() = runTest {
+        val r = launcher(response = ApiResult.Success(withSubs("server_transcode_hls", selected = "e1"))).launch("m")
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals(
+            listOf(
+                SubtitleLoad("http://nas:8096/s/0.vtt?embedded_stream_index=2", "English", "en", select = false),
+                SubtitleLoad("http://nas:8096/s/1.vtt?embedded_stream_index=3", "English SDH", "en", select = true),
+                SubtitleLoad("http://nas:8096/s/2.srt", "Romanian", "ro", select = false),
+            ),
+            r.subtitles,
+        )
+        assertEquals(null, r.embeddedSubtitleStream)
+    }
+
+    @Test fun directPlayKeepsBuiltInSubtitlesAndLoadsOnlyExternalOnes() = runTest {
+        val r = launcher(response = ApiResult.Success(withSubs("original_http", selected = "e1",
+            embedded = ""","embedded":{"stream_index":3,"container_track_id":"4"}"""))).launch("m")
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals(listOf(SubtitleLoad("http://nas:8096/s/2.srt", "Romanian", "ro", select = false)), r.subtitles)
+        assertEquals(3, r.embeddedSubtitleStream)
+    }
+
+    @Test fun subtitlesOffSelectsNothing() = runTest {
+        val r = launcher(response = ApiResult.Success(withSubs("server_transcode_hls", selected = null))).launch("m")
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals(3, r.subtitles.size)
+        assertTrue(r.subtitles.none { it.select })
     }
 
     @Test fun noVersionsFails() = runTest {

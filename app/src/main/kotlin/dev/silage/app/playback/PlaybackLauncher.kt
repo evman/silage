@@ -5,6 +5,10 @@ import org.siloserver.silo.model.catalog.WatchDetail
 import org.siloserver.silo.model.playback.ClientCodecCapabilities
 import org.siloserver.silo.model.playback.ClientPlaybackContext
 import org.siloserver.silo.model.playback.PlaybackDecisionResponseV3
+import org.siloserver.silo.model.playback.PlaybackDelivery
+import org.siloserver.silo.model.playback.PlaybackSubtitleInventoryItemV3
+import org.siloserver.silo.model.playback.PlaybackSubtitleModeV3
+import org.siloserver.silo.model.playback.SUBTITLE_DELIVERY_SIDECAR
 import org.siloserver.silo.model.playback.PlaybackStartRequestV3
 import org.siloserver.silo.model.playback.SubtitleFidelityPreference
 import org.siloserver.silo.model.playback.playbackClientFeaturesV3
@@ -35,6 +39,18 @@ data class PlaybackMeta(
     }
 }
 
+/** A subtitle mpv loads from the server (`sub-add`), selected when the profile wants it shown. */
+data class SubtitleLoad(val url: String, val title: String, val language: String?, val select: Boolean)
+
+private fun subtitleTitle(item: PlaybackSubtitleInventoryItemV3): String {
+    val language = item.language?.let { java.util.Locale.forLanguageTag(it).getDisplayLanguage(java.util.Locale.ENGLISH).ifBlank { null } }
+    return listOfNotNull(
+        language ?: item.label ?: "Subtitle ${item.combinedIndex + 1}",
+        "SDH".takeIf { item.hearingImpaired },
+        "Forced".takeIf { item.forced },
+    ).joinToString(" ")
+}
+
 sealed interface LaunchResult {
     data class Ready(
         val sessionId: String,
@@ -42,6 +58,10 @@ sealed interface LaunchResult {
         val headers: Map<String, String>,
         val startSeconds: Double?,
         val meta: PlaybackMeta = PlaybackMeta(),
+        /** Subtitles to load from their links (all of them for a transcode; external ones for direct play). */
+        val subtitles: List<SubtitleLoad> = emptyList(),
+        /** FFmpeg stream index of a built-in subtitle to switch on in direct play. */
+        val embeddedSubtitleStream: Int? = null,
     ) : LaunchResult
     data class Failed(val message: String) : LaunchResult
 }
@@ -85,6 +105,26 @@ class PlaybackLauncher(
         )
         val sessionId = decision.sessionId ?: plan.sessionId ?: return LaunchResult.Failed("The server didn't open a playback session.")
         val url = plan.stream.url.let { if (it.startsWith("/")) serverUrl().trimEnd('/') + it else it }
-        return LaunchResult.Ready(sessionId, url, plan.stream.effectiveRequestHeaders, startSeconds = null, meta = PlaybackMeta.of(item))
+        val base = serverUrl().trimEnd('/')
+        val direct = plan.delivery == PlaybackDelivery.ORIGINAL_HTTP
+        val selectedId = plan.selectedTracks.subtitle?.id?.takeIf { plan.subtitle.mode != PlaybackSubtitleModeV3.OFF }
+        val subtitles = plan.subtitle.inventory
+            .filter { it.delivery == SUBTITLE_DELIVERY_SIDECAR && it.url != null && !(direct && it.source == "embedded") }
+            .map { s ->
+                val link = s.url!!.let { if (it.startsWith("/")) base + it else it }
+                SubtitleLoad(link, subtitleTitle(s), s.language, select = s.trackId == selectedId)
+            }
+        val embeddedStream = if (direct) {
+            plan.subtitle.inventory.firstOrNull { it.trackId == selectedId && it.source == "embedded" }?.let { sel ->
+                plan.subtitle.embedded?.streamIndex
+                    ?: sel.url?.substringAfter("embedded_stream_index=", "")?.takeWhile { it.isDigit() }?.toIntOrNull()
+            }
+        } else {
+            null
+        }
+        return LaunchResult.Ready(
+            sessionId, url, plan.stream.effectiveRequestHeaders, startSeconds = null, meta = PlaybackMeta.of(item),
+            subtitles = subtitles, embeddedSubtitleStream = embeddedStream,
+        )
     }
 }

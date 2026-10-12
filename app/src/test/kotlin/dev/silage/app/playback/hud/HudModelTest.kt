@@ -58,6 +58,11 @@ class HudModelTest {
         assertEquals("Track 2 · PGS · External", t.subtitles[1].label)
     }
 
+    @Test fun languageIsNotRepeatedWhenTheTitleAlreadyNamesIt() {
+        val t = Tracks.parse("""[{"id":3,"type":"sub","lang":"en","title":"English SDH","codec":"webvtt","external":true}]""")
+        assertEquals("English SDH · External", t.subtitles[0].label)
+    }
+
     @Test fun badTrackListIsEmpty() {
         val t = Tracks.parse("{oops")
         assertTrue(t.audio.isEmpty() && t.subtitles.isEmpty())

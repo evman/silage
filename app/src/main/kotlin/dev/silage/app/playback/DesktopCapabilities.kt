@@ -2,6 +2,7 @@ package dev.silage.app.playback
 
 import dev.silage.app.BuildInfo
 import org.siloserver.silo.model.playback.ClientCodecCapabilities
+import org.siloserver.silo.model.playback.HdrCapabilities
 import org.siloserver.silo.model.playback.ClientPlaybackContext
 import org.siloserver.silo.model.playback.DELIVERY_CLASS_HLS
 import org.siloserver.silo.model.playback.DELIVERY_CLASS_ORIGINAL_HTTP
@@ -29,6 +30,14 @@ object DesktopCapabilities {
         containers = originalContainers,
         maxResolution = "2160p",
         hdr = true,
+        // mpv (FFmpeg + libplacebo) decodes every listed codec, falling back to
+        // software, so flat lists are the truthful tier; "exact" without
+        // per-codec decoder entries makes the server transcode everything.
+        videoEvidence = "declared",
+        audioEvidence = "declared",
+        // HDR is passed through on an HDR monitor or tone-mapped by mpv, so the
+        // server must not tone-map (which would mean a transcode).
+        hdrDetails = HdrCapabilities(hdr10 = true, hdr10Plus = true, hlg = true, dolbyVisionProfiles = listOf(5, 8)),
     )
 
     /** mpv renders text, styled ASS (libass, with attached fonts) and bitmap subtitles itself. */

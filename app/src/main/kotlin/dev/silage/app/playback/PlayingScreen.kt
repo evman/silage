@@ -10,7 +10,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.silage.player.MpvPlayer
+import dev.silage.player.PlayerEvent
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
@@ -43,11 +49,20 @@ private fun openMpv(surface: Surface?, ready: LaunchResult.Ready): OpenedPlayer 
     java.nio.file.Files.createDirectories(PlaybackLog.mpvLogFile.parent)
     val mpv = MpvPlayer(output.mpvOptions() + ("log-file" to PlaybackLog.mpvLogFile.toString()))
     val hud = try { PlayerHud(mpv, ready.meta) } catch (t: Throwable) { mpv.close(); throw t }
+    // Subscribed before the controller loads the file, so FileLoaded can't be missed.
+    val subtitles = CoroutineScope(Dispatchers.Default).launch(start = CoroutineStart.UNDISPATCHED) {
+        mpv.events.filterIsInstance<PlayerEvent.FileLoaded>().first()
+        ready.subtitles.forEach { mpv.command(*SubtitleCommands.add(it)) }
+        ready.embeddedSubtitleStream?.let { stream ->
+            SubtitleCommands.sidForStream(mpv.getProperty("track-list") ?: "[]", stream)?.let { mpv.command("set", "sid", it.toString()) }
+        }
+    }
     val canvas = surface?.canvas
     val detach = if (output is VideoOutput.Embedded && canvas != null) attachEmbeddedInput(canvas, hud) else ({})
     val port = mpv.asOpened()
     return object : OpenedPlayer by port {
         override fun close() {
+            subtitles.cancel()
             detach()
             hud.close()
             port.close()

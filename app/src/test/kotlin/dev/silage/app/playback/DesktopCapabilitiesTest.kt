@@ -3,6 +3,7 @@ package dev.silage.app.playback
 import org.siloserver.silo.model.playback.DELIVERY_CLASS_HLS
 import org.siloserver.silo.model.playback.DELIVERY_CLASS_ORIGINAL_HTTP
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -28,5 +29,23 @@ class DesktopCapabilitiesTest {
     @Test fun mpvRendersEveryEmbeddedSubtitleKind() {
         val subs = deliveries.getValue(DELIVERY_CLASS_ORIGINAL_HTTP).subtitles
         assertTrue(subs.embeddedBitmap && subs.assStyling && subs.nativeEmbedded.isNotEmpty())
+    }
+
+    /**
+     * Under the default "exact" tier the server wants per-codec decoder
+     * entries and transcoded everything without them
+     * (evidence_insufficient_for_direct). mpv decodes every listed codec
+     * through FFmpeg, so the flat lists are the honest claim.
+     */
+    @Test fun codecListsAreDeclaredSoTheServerDirectPlays() {
+        assertEquals("declared", DesktopCapabilities.codecs.videoEvidence)
+        assertEquals("declared", DesktopCapabilities.codecs.audioEvidence)
+    }
+
+    /** mpv shows HDR natively (passthrough) or tone-maps locally; never ask the server to. */
+    @Test fun hdrIsHandledByThePlayerNotTheServer() {
+        val hdr = DesktopCapabilities.codecs.hdrDetails
+        assertTrue(hdr != null && hdr.hdr10 && hdr.hlg && hdr.hdr10Plus, "hdr=$hdr")
+        assertTrue(hdr!!.dolbyVisionProfiles.containsAll(listOf(5, 8)), "dv=${hdr.dolbyVisionProfiles}")
     }
 }

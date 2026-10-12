@@ -48,8 +48,16 @@ data class Tracks(val audio: List<Track>, val subtitles: List<Track>) {
             val language = t.str("lang")?.let { Locale.forLanguageTag(it).getDisplayLanguage(Locale.ENGLISH).ifBlank { it } }
             val codec = t.str("codec")?.let(::codecName)
             val parts = buildList {
-                t.str("title")?.let(::add)
-                add(language ?: if (t.str("title") == null) "Track ${t.int("id")}" else null)
+                val title = t.str("title")
+                title?.let(::add)
+                add(
+                    when {
+                        language != null && title?.contains(language, ignoreCase = true) == true -> null
+                        language != null -> language
+                        title == null -> "Track ${t.int("id")}"
+                        else -> null
+                    },
+                )
                 if (type == "audio") add(listOfNotNull(codec, channels(t.int("demux-channel-count"))).joinToString(" ").ifBlank { null })
                 else if (codec == "PGS" || codec == "VobSub") add(codec)
                 if (t.bool("forced")) add("Forced")
