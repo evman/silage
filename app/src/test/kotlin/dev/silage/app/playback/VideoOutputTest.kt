@@ -84,4 +84,13 @@ class VideoOutputTest {
             assertEquals("300", o["demuxer-readahead-secs"])
         }
     }
+
+    /** 1080p films on a 4K screen: mpv's high-quality profile and its sharpest upscaler (spec §6.3). */
+    @Test fun everyOutputUpscalesWithHighQualityScalers() {
+        for (o in listOf(VideoOutput.Embedded(1).mpvOptions(), VideoOutput.OwnWindow(null).mpvOptions())) {
+            assertEquals("high-quality", o["profile"])
+            assertEquals("ewa_lanczossharp", o["scale"])
+            assertEquals("yes", o["deband"])
+        }
+    }
 }

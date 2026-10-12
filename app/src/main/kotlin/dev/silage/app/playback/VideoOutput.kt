@@ -37,7 +37,13 @@ sealed interface VideoOutput {
 
     companion object {
         private val common = mapOf(
+            // First, so the explicit scaler settings below refine it.
+            "profile" to "high-quality",
             "vo" to "gpu-next",
+            // 1080p films are upscaled to 4K by mpv: use its sharpest scaler, and deband.
+            "scale" to "ewa_lanczossharp",
+            "cscale" to "ewa_lanczossharp",
+            "deband" to "yes",
             "hwdec" to "vaapi,auto-safe",
             "target-colorspace-hint" to "yes",
             "force-window" to "yes",
