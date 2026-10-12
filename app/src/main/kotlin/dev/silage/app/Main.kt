@@ -32,6 +32,7 @@ import dev.silage.app.connect.ProbeOutcome
 import dev.silage.app.di.desktopModule
 import dev.silage.app.browse.CollectionScreen
 import dev.silage.app.browse.LibraryScreen
+import dev.silage.app.detail.DetailScreen
 import dev.silage.app.home.HomeScreen
 import dev.silage.app.shell.AppShell
 import dev.silage.app.shell.PendingPage
@@ -96,6 +97,11 @@ private suspend fun startRoute(koin: Koin): Route {
     // Developer switch for screenshots/tests: skip the profile picker when one is already active.
     val dev = System.getenv("SILAGE_DEV_START")
     if (dev != null && koin.get<ProfileRepository>().getActiveProfileId() != null) {
+        if (dev.startsWith("detail:q:")) {
+            val hit = koin.get<org.siloserver.silo.repository.CatalogRepository>().browse(query = dev.removePrefix("detail:q:"), limit = 1)
+            (hit as? ApiResult.Success)?.data?.items?.firstOrNull()?.let { return Route.Detail(it.contentId) }
+        }
+        if (dev.startsWith("detail:")) return Route.Detail(dev.removePrefix("detail:"))
         if (dev == "library") {
             val libs = koin.get<org.siloserver.silo.repository.PersonalDataRepository>().listUserLibraries()
             (libs as? ApiResult.Success)?.data?.firstOrNull()?.let { return Route.Library(it.id, it.name) }
@@ -159,6 +165,7 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         is Route.Collection -> AppShell(nav, koin, route) {
             CollectionScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) })
         }
+        is Route.Detail -> DetailScreen(koin, route.contentId, onPlay = { id, fromStart -> nav.go(Route.Playing(id, fromStart)) })
         // Pages still to come in Plan 2 show their name inside the shell.
         else -> AppShell(nav, koin, route) { PendingPage(route) }
     }
