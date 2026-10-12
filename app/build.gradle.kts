@@ -78,5 +78,5 @@ tasks.register<JavaExec>("runSplashRender") {
     group = "spike"
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("dev.silage.app.spike.SplashRenderKt")
-    args = listOfNotNull(project.findProperty("out") as String?)
+    args = listOfNotNull(project.findProperty("out") as String? ?: "build/splash", project.findProperty("fps") as String? ?: "30", project.findProperty("width") as String? ?: "960")
 }
