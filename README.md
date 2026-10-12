@@ -23,27 +23,37 @@
 
 ## Install
 
-Downloads are on the [Releases page](https://github.com/evman/silage/releases/latest). Every package needs **mpv 0.37 or newer** (libmpv) from your distribution; Java is bundled.
+**One command, any distro.** Detects your distro and installs the latest release (the .deb, the .rpm, or the AUR package):
+```sh
+curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
+```
+
+Or pick yours:
 
 **Arch Linux** (AUR):
 ```sh
+paru -S silage-bin
+# or
 yay -S silage-bin
 ```
 
 **Ubuntu 24.04+ / Debian 13**:
 ```sh
-sudo apt install ./silage_<version>_amd64.deb
+curl -fLO https://github.com/evman/silage/releases/latest/download/silage_amd64.deb && sudo apt install ./silage_amd64.deb
 ```
 
 **Fedora 40+**:
 ```sh
-sudo dnf install ./silage-<version>-1.x86_64.rpm
+sudo dnf install https://github.com/evman/silage/releases/latest/download/silage.x86_64.rpm
 ```
 Fedora's stock FFmpeg leaves out H.264/HEVC; for full codec support, install FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
 
-**Any other distro**: download the `.tar.gz`, extract it, and run `./install.sh` (installs into `~/.local`; `sudo ./install.sh` installs system-wide; `--uninstall` removes it).
+**Any other distro** (portable build into `~/.local`):
+```sh
+curl -fL https://github.com/evman/silage/releases/latest/download/silage-linux-x86_64.tar.gz | tar xz && ./silage-*/install.sh
+```
 
-Run `silage --check` to confirm Silage can find mpv. On first launch, enter your Silo server's address, sign in, and pick your profile.
+Every package needs **mpv 0.37 or newer** (libmpv) from your distribution; Java is bundled. Run `silage --check` to confirm Silage can find mpv. On first launch, enter your Silo server's address, sign in, and pick your profile.
 
 ### Build from source
 

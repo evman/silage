@@ -1,25 +1,23 @@
-## Install
+## Install the latest
 
-**Arch Linux** (AUR):
+**Any distro:**
 ```sh
-yay -S silage-bin
+curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
 ```
 
-**Ubuntu 24.04+ / Debian 13**:
+**Arch:** `paru -S silage-bin` or `yay -S silage-bin`
+
+**Ubuntu 24.04+ / Debian 13:**
 ```sh
-sudo apt install ./silage_@VERSION@_amd64.deb
+curl -fLO https://github.com/evman/silage/releases/latest/download/silage_amd64.deb && sudo apt install ./silage_amd64.deb
 ```
 
-**Fedora 40+**:
+**Fedora 40+:**
 ```sh
-sudo dnf install ./silage-@VERSION@-1.x86_64.rpm
+sudo dnf install https://github.com/evman/silage/releases/latest/download/silage.x86_64.rpm
 ```
-Fedora's stock FFmpeg leaves out H.264/HEVC; for full codec support, install FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
+For full H.264/HEVC support on Fedora, install FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
 
-**Any distro** (needs mpv 0.37+ with libmpv):
-```sh
-tar xzf silage-@VERSION@-linux-x86_64.tar.gz
-./silage-@VERSION@/install.sh
-```
+Needs mpv 0.37+ (libmpv). Run `silage --check` to confirm Silage can find it.
 
-Run `silage --check` to confirm Silage can find mpv.
+The versioned files below (`@VERSION@`) are the same builds.

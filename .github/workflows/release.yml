@@ -87,5 +87,10 @@ jobs:
         run: |
           v="${GITHUB_REF_NAME#v}"
           sed "s/@VERSION@/$v/g" packaging/release-notes.md > /tmp/notes.md
+          # Version-free copies, so releases/latest/download/<name> always gets the newest.
+          cp "dist/silage_${v}_amd64.deb" dist/silage_amd64.deb
+          cp "dist/silage-${v}-1.x86_64.rpm" dist/silage.x86_64.rpm
+          cp "dist/silage-${v}-linux-x86_64.tar.gz" dist/silage-linux-x86_64.tar.gz
+          (cd dist && sha256sum silage_amd64.deb silage.x86_64.rpm silage-linux-x86_64.tar.gz >> SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" --title "Silage $v" --notes-file /tmp/notes.md \
             dist/*.tar.gz dist/*.deb dist/*.rpm dist/SHA256SUMS
