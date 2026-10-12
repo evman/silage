@@ -24,13 +24,19 @@ class PlaybackSessionTest {
 
     private fun session(
         launch: LaunchResult = ready,
-        open: () -> OpenedPlayer = { ScriptedPlayer(log, PlayerEvent.Ended(EndReason.EOF, null)) },
+        open: (LaunchResult.Ready) -> OpenedPlayer = { ScriptedPlayer(log, PlayerEvent.Ended(EndReason.EOF, null)) },
     ) = PlaybackSession(
         launch = { launch },
         openPlayer = open,
         progress = { _, _, _ -> },
         stopSession = { log += "session.stop:$it" },
     )
+
+    @Test fun playerOpensWithTheLaunchSoTheHudKnowsWhatIsPlaying() = runTest {
+        var opened: LaunchResult.Ready? = null
+        session(open = { opened = it; ScriptedPlayer(log, PlayerEvent.Ended(EndReason.EOF, null)) }).play("m")
+        assertEquals(ready, opened)
+    }
 
     @Test fun launchFailureIsReported() = runTest {
         assertEquals(PlayOutcome.Failed("nope"), session(launch = LaunchResult.Failed("nope")).play("m"))

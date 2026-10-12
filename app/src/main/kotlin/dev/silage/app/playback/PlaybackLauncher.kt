@@ -1,5 +1,6 @@
 package dev.silage.app.playback
 
+import org.siloserver.silo.model.catalog.TimeRange
 import org.siloserver.silo.model.catalog.WatchDetail
 import org.siloserver.silo.model.playback.ClientCodecCapabilities
 import org.siloserver.silo.model.playback.ClientPlaybackContext
@@ -10,8 +11,38 @@ import org.siloserver.silo.model.playback.playbackClientFeaturesV3
 import org.siloserver.silo.network.ApiResult
 import java.util.UUID
 
+/** What the player HUD shows about the item. */
+data class PlaybackMeta(
+    val title: String = "",
+    val line: String? = null,
+    val intro: TimeRange? = null,
+    val credits: TimeRange? = null,
+) {
+    companion object {
+        fun of(item: WatchDetail) = PlaybackMeta(
+            title = item.title,
+            line = if (item.seriesTitle != null) {
+                listOfNotNull(
+                    item.seriesTitle,
+                    listOfNotNull(item.seasonNumber?.let { "S$it" }, item.episodeNumber?.let { "E$it" }).joinToString(" ").ifBlank { null },
+                ).joinToString(" · ")
+            } else {
+                item.year?.toString()
+            },
+            intro = item.intro,
+            credits = item.credits,
+        )
+    }
+}
+
 sealed interface LaunchResult {
-    data class Ready(val sessionId: String, val url: String, val headers: Map<String, String>, val startSeconds: Double?) : LaunchResult
+    data class Ready(
+        val sessionId: String,
+        val url: String,
+        val headers: Map<String, String>,
+        val startSeconds: Double?,
+        val meta: PlaybackMeta = PlaybackMeta(),
+    ) : LaunchResult
     data class Failed(val message: String) : LaunchResult
 }
 
@@ -54,6 +85,6 @@ class PlaybackLauncher(
         )
         val sessionId = decision.sessionId ?: plan.sessionId ?: return LaunchResult.Failed("The server didn't open a playback session.")
         val url = plan.stream.url.let { if (it.startsWith("/")) serverUrl().trimEnd('/') + it else it }
-        return LaunchResult.Ready(sessionId, url, plan.stream.effectiveRequestHeaders, startSeconds = null)
+        return LaunchResult.Ready(sessionId, url, plan.stream.effectiveRequestHeaders, startSeconds = null, meta = PlaybackMeta.of(item))
     }
 }

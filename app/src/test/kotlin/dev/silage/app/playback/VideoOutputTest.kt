@@ -57,7 +57,8 @@ class VideoOutputTest {
         val o = VideoOutput.OwnWindow("DP-3").mpvOptions()
         assertEquals("yes", o["fullscreen"])
         assertEquals("DP-3", o["fs-screen-name"])
-        assertEquals("waylandvk", o["gpu-context"])
+        // Native Wayland for HDR; X11 keeps playback working where Wayland is unavailable.
+        assertEquals("waylandvk,x11vk", o["gpu-context"])
         assertEquals("yes", o["target-colorspace-hint"])
         assertEquals("silage", o["wayland-app-id"])
         assertFalse("wid" in o)

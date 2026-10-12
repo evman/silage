@@ -1,0 +1,187 @@
+package dev.silage.app.playback.hud
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.util.Locale
+
+/** `m:ss`, or `h:mm:ss` from an hour up. */
+fun formatTime(seconds: Double): String {
+    val total = if (seconds.isNaN() || seconds < 0) 0L else seconds.toLong()
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val s = total % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+/** Shows the HUD on activity and hides it [hideAfterMs] later, unless paused or in a menu. */
+class HudVisibility(private val hideAfterMs: Long, shownAt: Long = System.currentTimeMillis()) {
+    @Volatile private var lastActivity = shownAt
+
+    fun activity(now: Long = System.currentTimeMillis()) { lastActivity = now }
+
+    fun visible(now: Long, paused: Boolean, menuOpen: Boolean): Boolean =
+        paused || menuOpen || now - lastActivity < hideAfterMs
+}
+
+data class Track(val id: Int, val label: String, val selected: Boolean)
+
+data class Tracks(val audio: List<Track>, val subtitles: List<Track>) {
+    companion object {
+        val Empty = Tracks(emptyList(), emptyList())
+
+        /** Parses mpv's `track-list` property (JSON). */
+        fun parse(json: String): Tracks = runCatching {
+            val all = Json.parseToJsonElement(json).jsonArray.map { it.jsonObject }
+            fun of(type: String) = all.filter { it.str("type") == type }.map { t ->
+                Track(t.int("id") ?: 0, label(t, type), t.bool("selected"))
+            }
+            Tracks(of("audio"), of("sub"))
+        }.getOrDefault(Empty)
+
+        private fun label(t: JsonObject, type: String): String {
+            val language = t.str("lang")?.let { Locale.forLanguageTag(it).getDisplayLanguage(Locale.ENGLISH).ifBlank { it } }
+            val codec = t.str("codec")?.let(::codecName)
+            val parts = buildList {
+                t.str("title")?.let(::add)
+                add(language ?: if (t.str("title") == null) "Track ${t.int("id")}" else null)
+                if (type == "audio") add(listOfNotNull(codec, channels(t.int("demux-channel-count"))).joinToString(" ").ifBlank { null })
+                else if (codec == "PGS" || codec == "VobSub") add(codec)
+                if (t.bool("forced")) add("Forced")
+                if (t.bool("external")) add("External")
+            }
+            return parts.filterNotNull().joinToString(" · ")
+        }
+
+        private fun codecName(c: String) = when (c) {
+            "truehd" -> "TrueHD"; "eac3" -> "E-AC3"; "ac3" -> "AC3"; "dts" -> "DTS"; "aac" -> "AAC"
+            "flac" -> "FLAC"; "opus" -> "Opus"; "mp3" -> "MP3"; "pcm_s16le", "pcm_s24le" -> "PCM"
+            "hdmv_pgs_subtitle" -> "PGS"; "dvd_subtitle" -> "VobSub"
+            else -> c.uppercase()
+        }
+
+        private fun channels(n: Int?) = when (n) {
+            null -> null; 1 -> "Mono"; 2 -> "Stereo"; 6 -> "5.1"; 8 -> "7.1"; else -> "${n}ch"
+        }
+
+        private fun JsonObject.str(k: String) = this[k]?.jsonPrimitive?.contentOrNull
+        private fun JsonObject.int(k: String) = this[k]?.jsonPrimitive?.intOrNull
+        private fun JsonObject.bool(k: String) = this[k]?.jsonPrimitive?.booleanOrNull ?: false
+    }
+}
+
+object HudCommands {
+    fun audio(id: Int) = arrayOf("set", "aid", id.toString())
+    fun subtitle(id: Int?) = arrayOf("set", "sid", id?.toString() ?: "no")
+    fun speed(value: Double) = arrayOf("set", "speed", value.toString())
+    fun seekTo(seconds: Double) = arrayOf("seek", "%.3f".format(Locale.ROOT, seconds), "absolute+exact")
+}
+
+enum class HudKey {
+    Back, PlayPause, Left, Right, Up, Down, Enter, Info;
+
+    companion object {
+        fun ofAwt(code: Int): HudKey? = when (code) {
+            java.awt.event.KeyEvent.VK_ESCAPE, java.awt.event.KeyEvent.VK_BACK_SPACE, java.awt.event.KeyEvent.VK_Q -> Back
+            java.awt.event.KeyEvent.VK_SPACE, java.awt.event.KeyEvent.VK_K -> PlayPause
+            java.awt.event.KeyEvent.VK_LEFT -> Left
+            java.awt.event.KeyEvent.VK_RIGHT -> Right
+            java.awt.event.KeyEvent.VK_UP -> Up
+            java.awt.event.KeyEvent.VK_DOWN -> Down
+            java.awt.event.KeyEvent.VK_ENTER -> Enter
+            java.awt.event.KeyEvent.VK_I -> Info
+            else -> null
+        }
+
+        /** mpv key names, as bound in [MPV_KEYS]. */
+        fun ofMpv(name: String): HudKey? = when (name) {
+            "ESC", "BS", "q" -> Back
+            "SPACE", "k" -> PlayPause
+            "LEFT" -> Left
+            "RIGHT" -> Right
+            "UP" -> Up
+            "DOWN" -> Down
+            "ENTER" -> Enter
+            "i" -> Info
+            else -> null
+        }
+
+        val MPV_KEYS = listOf("ESC", "BS", "q", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i")
+    }
+}
+
+sealed interface HudAction {
+    data object Exit : HudAction
+    data object CloseMenu : HudAction
+    data object TogglePause : HudAction
+    data class SeekBy(val seconds: Double) : HudAction
+    data object ToggleInfo : HudAction
+    data object Show : HudAction
+}
+
+object HudKeys {
+    fun action(key: HudKey, menuOpen: Boolean): HudAction = when (key) {
+        HudKey.Back -> if (menuOpen) HudAction.CloseMenu else HudAction.Exit
+        HudKey.PlayPause -> HudAction.TogglePause
+        HudKey.Left -> HudAction.SeekBy(-10.0)
+        HudKey.Right -> HudAction.SeekBy(10.0)
+        HudKey.Info -> HudAction.ToggleInfo
+        HudKey.Up, HudKey.Down, HudKey.Enter -> HudAction.Show
+    }
+}
+
+/** A "Skip Intro" / "Skip Credits" button, shown while inside a server marker. */
+data class SkipPrompt(val label: String, val target: Double) {
+    companion object {
+        fun at(
+            position: Double,
+            intro: org.siloserver.silo.model.catalog.TimeRange?,
+            credits: org.siloserver.silo.model.catalog.TimeRange?,
+        ): SkipPrompt? {
+            fun inside(r: org.siloserver.silo.model.catalog.TimeRange?) = r != null && position >= r.start && position < r.end - 1.0
+            return when {
+                inside(intro) -> SkipPrompt("Skip Intro", intro!!.end)
+                inside(credits) -> SkipPrompt("Skip Credits", credits!!.end)
+                else -> null
+            }
+        }
+    }
+}
+
+/** The Playback Info panel's rows, from mpv properties. */
+object InfoRows {
+    fun build(prop: (String) -> String?): List<Pair<String, String>> = buildList {
+        val w = prop("video-params/w"); val h = prop("video-params/h")
+        prop("video-format")?.let { add("Video" to listOfNotNull(it.uppercase(), if (w != null && h != null) "$w×$h" else null).joinToString(" ")) }
+        val gamma = prop("video-params/gamma")
+        val hdr = gamma == "pq" || gamma == "hlg"
+        add("Dynamic range" to when (gamma) {
+            "pq" -> "HDR10 (PQ${prop("video-params/primaries")?.let { ", " + it.uppercase() } ?: ""})"
+            "hlg" -> "HLG"
+            else -> "SDR"
+        })
+        val target = prop("video-target-params/gamma")
+        add("Display" to when {
+            target == "pq" || target == "hlg" -> "HDR passthrough"
+            hdr -> "Tone-mapped to SDR"
+            else -> "SDR"
+        })
+        add("Decoder" to when (val d = prop("hwdec-current")) {
+            null, "no", "" -> "Software"
+            else -> "${d.replace("vaapi", "VA-API").replace("nvdec", "NVDEC").replace("vulkan", "Vulkan")} (hardware)"
+        })
+        prop("video-bitrate")?.toDoubleOrNull()?.let { add("Bitrate" to "%.1f Mbps".format(Locale.ROOT, it / 1e6)) }
+        prop("audio-codec-name")?.let { a -> add("Audio" to listOfNotNull(a.uppercase(), prop("audio-params/channel-count")?.let { "${it}ch" }).joinToString(" ")) }
+        val drops = listOf("frame-drop-count", "decoder-frame-drop-count").sumOf { prop(it)?.toIntOrNull() ?: 0 }
+        add("Dropped frames" to drops.toString())
+        prop("demuxer-cache-duration")?.toDoubleOrNull()?.let { ahead ->
+            val speed = prop("cache-speed")?.toDoubleOrNull()?.let { " · %.1f MB/s".format(Locale.ROOT, it / 1048576) } ?: ""
+            add("Buffer" to "${formatTime(ahead)} ahead$speed")
+        }
+    }
+}

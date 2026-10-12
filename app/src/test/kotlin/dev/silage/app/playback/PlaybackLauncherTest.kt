@@ -2,6 +2,7 @@ package dev.silage.app.playback
 
 import kotlinx.coroutines.test.runTest
 import org.siloserver.silo.model.catalog.FileVersion
+import org.siloserver.silo.model.catalog.TimeRange
 import org.siloserver.silo.model.catalog.WatchDetail
 import org.siloserver.silo.model.playback.PlaybackDecisionResponseV3
 import org.siloserver.silo.model.playback.PlaybackStartRequestV3
@@ -22,8 +23,9 @@ class PlaybackLauncherTest {
         versions: List<FileVersion> = listOf(FileVersion(fileId = 77)),
         response: ApiResult<PlaybackDecisionResponseV3> = ApiResult.Success(decision("/api/v2/stream/77")),
         sent: MutableList<PlaybackStartRequestV3> = mutableListOf(),
+        item: (String) -> WatchDetail = { WatchDetail(contentId = it, type = "movie", title = "M", versions = versions) },
     ) = PlaybackLauncher(
-        detail = { ApiResult.Success(WatchDetail(contentId = it, type = "movie", title = "M", versions = versions)) },
+        detail = { ApiResult.Success(item(it)) },
         start = { req -> sent += req; response },
         profileId = { "prof-1" },
         serverUrl = { "http://nas:8096" },
@@ -44,6 +46,22 @@ class PlaybackLauncherTest {
         assertIs<LaunchResult.Ready>(r)
         assertEquals("https://cdn.example/x.mkv", r.url)
         assertEquals(mapOf("Authorization" to "Bearer t"), r.headers)
+    }
+
+    @Test fun episodeCarriesTitleLineAndMarkersForTheHud() = runTest {
+        val r = launcher(item = {
+            WatchDetail(contentId = it, type = "episode", title = "Pilot", versions = listOf(FileVersion(fileId = 77)),
+                seriesTitle = "Severance", seasonNumber = 1, episodeNumber = 3,
+                intro = TimeRange(30.0, 95.0), credits = TimeRange(2900.0, 3000.0))
+        }).launch("ep-1")
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals(PlaybackMeta("Pilot", "Severance · S1 E3", TimeRange(30.0, 95.0), TimeRange(2900.0, 3000.0)), r.meta)
+    }
+
+    @Test fun movieLineIsItsYear() = runTest {
+        val r = launcher(item = { WatchDetail(contentId = it, type = "movie", title = "Dune", year = 2021, versions = listOf(FileVersion(fileId = 1))) }).launch("m")
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals(PlaybackMeta("Dune", "2021"), r.meta)
     }
 
     @Test fun noVersionsFails() = runTest {

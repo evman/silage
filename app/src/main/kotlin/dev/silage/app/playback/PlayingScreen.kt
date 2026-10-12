@@ -15,7 +15,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import org.koin.core.Koin
+import dev.silage.app.XdgPaths
+import dev.silage.app.playback.hud.HudKey
+import dev.silage.app.playback.hud.PlayerHud
 import java.awt.Canvas
+import java.awt.GraphicsEnvironment
+import java.io.File
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import javax.swing.SwingUtilities
@@ -27,29 +32,30 @@ import org.siloserver.silo.repository.ProfileRepository
 
 private class Surface(val canvas: Canvas, val wid: Long?)
 
-private fun openMpv(surface: Surface?): OpenedPlayer {
-    val wid = surface?.wid
-    val mpv = MpvPlayer((wid?.let { VideoOutput.Embedded(it) } ?: VideoOutput.OwnWindow(null)).mpvOptions())
-    if (wid == null) {
-        // Own window: mpv reads the keyboard itself.
-        mpv.command("keybind", "q", "stop")
-        mpv.command("keybind", "ESC", "stop")
-        mpv.command("keybind", "SPACE", "cycle pause")
-        mpv.command("keybind", "LEFT", "seek -10")
-        mpv.command("keybind", "RIGHT", "seek 10")
-        return mpv.asOpened()
-    }
-    val canvas = surface.canvas
+/** The KDE output under the canvas, to see whether its monitor has HDR on. */
+private fun outputUnder(canvas: Canvas): Output? = runCatching {
+    val config = XdgPaths.config.resolve("kwinoutputconfig.json").toFile().takeIf { it.isFile } ?: return null
+    val origins = GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
+        .map { it.defaultConfiguration.bounds.let { b -> b.x to b.y } }.toSet()
+    val p = canvas.locationOnScreen
+    KwinOutputs.outputAt(KwinOutputs.parse(config.readText(), origins), p.x + canvas.width / 2, p.y + canvas.height / 2)
+}.getOrNull()
+
+private fun openMpv(surface: Surface?, ready: LaunchResult.Ready): OpenedPlayer {
+    val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), System.getenv("SILAGE_HDR"))
+    val mpv = MpvPlayer(output.mpvOptions())
+    val hud = try { PlayerHud(mpv, ready.meta) } catch (t: Throwable) { mpv.close(); throw t }
+    val canvas = surface?.canvas
+    // In the embedded case the Silage window has keyboard focus, not mpv.
     val keys = object : KeyAdapter() {
-        override fun keyPressed(e: KeyEvent) {
-            EmbeddedVideo.commandFor(e.keyCode)?.let { mpv.command(*it) }
-        }
+        override fun keyPressed(e: KeyEvent) { HudKey.ofAwt(e.keyCode)?.let(hud::key) }
     }
-    SwingUtilities.invokeLater { canvas.addKeyListener(keys); canvas.requestFocusInWindow() }
+    if (canvas != null) SwingUtilities.invokeLater { canvas.addKeyListener(keys); canvas.requestFocusInWindow() }
     val port = mpv.asOpened()
     return object : OpenedPlayer by port {
         override fun close() {
-            SwingUtilities.invokeLater { canvas.removeKeyListener(keys) }
+            if (canvas != null) SwingUtilities.invokeLater { canvas.removeKeyListener(keys) }
+            hud.close()
             port.close()
         }
     }
@@ -77,10 +83,10 @@ fun PlayingScreen(koin: Koin, contentId: String, onDone: () -> Unit) {
         )
         // The canvas gets its native window on the next frame; without one in
         // time, mpv falls back to its own fullscreen window.
-        val ready = withTimeoutOrNull(3_000) { surface.await() }
+        val shown = withTimeoutOrNull(3_000) { surface.await() }
         val session = PlaybackSession(
             launch = launcher::launch,
-            openPlayer = { openMpv(ready) },
+            openPlayer = { ready -> openMpv(shown, ready) },
             progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
             stopSession = { s -> playback.stopPlayback(s) },
         )

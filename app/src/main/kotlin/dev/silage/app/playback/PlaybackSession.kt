@@ -30,7 +30,7 @@ sealed interface PlayOutcome {
  */
 class PlaybackSession(
     private val launch: suspend (contentId: String) -> LaunchResult,
-    private val openPlayer: () -> OpenedPlayer,
+    private val openPlayer: (LaunchResult.Ready) -> OpenedPlayer,
     private val progress: suspend (sessionId: String, position: Double, paused: Boolean) -> Unit,
     private val stopSession: suspend (sessionId: String) -> Unit,
 ) {
@@ -40,7 +40,7 @@ class PlaybackSession(
             is LaunchResult.Ready -> r
         }
         val player = try {
-            openPlayer()
+            openPlayer(ready)
         } catch (t: Throwable) {
             withContext(NonCancellable) { runCatching { stopSession(ready.sessionId) } }
             return PlayOutcome.Failed("Couldn't start the video player: ${t.message}")

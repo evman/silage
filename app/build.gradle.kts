@@ -13,6 +13,7 @@ dependencies {
     implementation(project(":player"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
+    implementation(compose.materialIconsExtended)
     implementation(libs.kotlinx.coroutines.swing)
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
@@ -45,4 +46,6 @@ tasks.register<JavaExec>("runEmbedSpike") {
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("dev.silage.app.spike.EmbedSpikeKt")
     args = listOfNotNull(project.findProperty("video") as String?, project.findProperty("mpvLog") as String?)
+    (project.findProperty("show") as String?)?.let { environment("SPIKE_SHOW", it) }
+    (project.findProperty("hdr") as String?)?.let { environment("SILAGE_HDR", it) }
 }
