@@ -60,6 +60,9 @@ data class HudUi(
     val buffering: Boolean = false,
     val visible: Boolean = true,
     val menu: HudMenu = HudMenu.None,
+    val menuIndex: Int = 0,
+    /** The keyboard focus ring, or null while the mouse is in use. */
+    val focus: HudFocus? = null,
     val tracks: Tracks = Tracks.Empty,
     val speed: Double = 1.0,
     val info: List<Pair<String, String>> = emptyList(),
@@ -106,6 +109,7 @@ fun HudContent(ui: HudUi, act: HudActions) {
         ui.skip?.takeIf { ui.menu == HudMenu.None }?.let { skip ->
             Box(
                 Modifier.align(Alignment.BottomEnd).padding(end = 64.dp, bottom = if (ui.visible) 200.dp else 72.dp)
+                    .focusRing(ui.focus == HudFocus.Skip, RoundedCornerShape(12.dp))
                     .clip(RoundedCornerShape(10.dp)).background(Color.White)
                     .clickable { act.seekTo(skip.target) }.padding(horizontal = 28.dp, vertical = 14.dp),
             ) { Text(skip.label, color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) }
@@ -123,7 +127,7 @@ fun HudContent(ui: HudUi, act: HudActions) {
 @Composable
 private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 48.dp).padding(bottom = 36.dp)) {
-        SeekBar(ui.position, ui.duration, ui.bufferedTo, onSeek = act::seekTo, markers = listOfNotNull(ui.meta.intro, ui.meta.credits).map { it.start })
+        SeekBar(ui.position, ui.duration, ui.bufferedTo, focused = ui.focus == HudFocus.Seek, onSeek = act::seekTo, markers = listOfNotNull(ui.meta.intro, ui.meta.credits).map { it.start })
         Spacer(Modifier.height(14.dp))
         Box(Modifier.fillMaxWidth()) {
             Column(Modifier.align(Alignment.CenterStart).fillMaxWidth(0.36f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -140,23 +144,23 @@ private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
                 }
             }
             Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Disc(Icons.Filled.Replay10, primary = false, size = 52) { act.seekBy(-10.0) }
-                Disc(if (ui.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, primary = true, size = 68, onClick = act::togglePause)
-                Disc(Icons.Filled.Forward10, primary = false, size = 52) { act.seekBy(10.0) }
+                Disc(Icons.Filled.Replay10, primary = false, size = 52, focused = ui.focus == HudFocus.Back10) { act.seekBy(-10.0) }
+                Disc(if (ui.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, primary = true, size = 68, focused = ui.focus == HudFocus.PlayPause, onClick = act::togglePause)
+                Disc(Icons.Filled.Forward10, primary = false, size = 52, focused = ui.focus == HudFocus.Fwd10) { act.seekBy(10.0) }
             }
             Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                UtilityButton(Icons.AutoMirrored.Outlined.VolumeUp, active = ui.menu == HudMenu.Audio) { act.openMenu(HudMenu.Audio) }
-                UtilityButton(Icons.Outlined.Subtitles, active = ui.menu == HudMenu.Subtitles) { act.openMenu(HudMenu.Subtitles) }
-                UtilityButton(Icons.Outlined.Speed, active = ui.menu == HudMenu.Speed) { act.openMenu(HudMenu.Speed) }
+                UtilityButton(Icons.AutoMirrored.Outlined.VolumeUp, active = ui.menu == HudMenu.Audio, focused = ui.focus == HudFocus.Audio) { act.openMenu(HudMenu.Audio) }
+                UtilityButton(Icons.Outlined.Subtitles, active = ui.menu == HudMenu.Subtitles, focused = ui.focus == HudFocus.Subtitles) { act.openMenu(HudMenu.Subtitles) }
+                UtilityButton(Icons.Outlined.Speed, active = ui.menu == HudMenu.Speed, focused = ui.focus == HudFocus.Speed) { act.openMenu(HudMenu.Speed) }
                 Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(28.dp).background(Color.White.copy(alpha = 0.14f)))
-                UtilityButton(Icons.Outlined.Info, active = ui.menu == HudMenu.Info) { act.openMenu(HudMenu.Info) }
+                UtilityButton(Icons.Outlined.Info, active = ui.menu == HudMenu.Info, focused = ui.focus == HudFocus.Info) { act.openMenu(HudMenu.Info) }
             }
         }
     }
 }
 
 @Composable
-private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, onSeek: (Double) -> Unit, markers: List<Double>) {
+private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, focused: Boolean, onSeek: (Double) -> Unit, markers: List<Double>) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     var width = remember { mutableIntStateOf(1) }
@@ -166,10 +170,15 @@ private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, onSe
             .pointerInput(duration) { detectTapGestures { o -> if (duration > 0) onSeek(duration * (o.x / width.intValue).coerceIn(0f, 1f)) } },
         contentAlignment = Alignment.CenterStart,
     ) {
-        val h = if (hovered) 7.dp else 4.dp
+        val h = if (hovered || focused) 7.dp else 4.dp
         Box(Modifier.fillMaxWidth().height(h).clip(CircleShape).background(Color.White.copy(alpha = 0.15f)))
         Box(Modifier.fillMaxWidth(frac(bufferedTo)).height(h).clip(CircleShape).background(Color.White.copy(alpha = 0.30f)))
         Box(Modifier.fillMaxWidth(frac(position)).height(h).shadow(6.dp, CircleShape, ambientColor = Color.White, spotColor = Color.White).clip(CircleShape).background(Color.White))
+        if (focused) {
+            Box(Modifier.fillMaxWidth(frac(position)).height(22.dp)) {
+                Box(Modifier.align(Alignment.CenterEnd).offset(x = 11.dp).size(22.dp).clip(CircleShape).background(Color.White))
+            }
+        }
         markers.forEach { m ->
             Box(Modifier.fillMaxWidth(frac(m)).height(14.dp)) {
                 Box(Modifier.align(Alignment.CenterEnd).width(2.dp).height(14.dp).background(Color.White.copy(alpha = 0.55f)))
@@ -179,27 +188,27 @@ private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, onSe
 }
 
 @Composable
-private fun Disc(icon: ImageVector, primary: Boolean, size: Int, onClick: () -> Unit) {
+private fun Disc(icon: ImageVector, primary: Boolean, size: Int, focused: Boolean, onClick: () -> Unit) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     val bg = if (primary) Color.White else Color.White.copy(alpha = if (hovered) 0.22f else 0.12f)
     Box(
-        Modifier.size(size.dp).clip(CircleShape).background(bg).hoverable(hover).clickable(onClick = onClick),
+        Modifier.focusRing(focused, CircleShape).size(size.dp).clip(CircleShape).background(bg).hoverable(hover).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, null, tint = if (primary) Color.Black else Color.White, modifier = Modifier.size((size * 0.5).dp)) }
 }
 
 @Composable
-private fun UtilityButton(icon: ImageVector, modifier: Modifier = Modifier, size: Int = 48, active: Boolean = false, onClick: () -> Unit) {
+private fun UtilityButton(icon: ImageVector, modifier: Modifier = Modifier, size: Int = 48, active: Boolean = false, focused: Boolean = false, onClick: () -> Unit) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     Box(
-        modifier.size(size.dp).clip(CircleShape)
-            .background(if (hovered) Color.White.copy(alpha = 0.08f) else Color.Transparent)
+        modifier.focusRing(focused, CircleShape).size(size.dp).clip(CircleShape)
+            .background(if (hovered || focused) Color.White.copy(alpha = if (focused) 0.16f else 0.08f) else Color.Transparent)
             .hoverable(hover).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, null, tint = if (hovered || active) Color.White else Dim, modifier = Modifier.size((size * 0.5).dp))
+        Icon(icon, null, tint = if (hovered || active || focused) Color.White else Dim, modifier = Modifier.size((size * 0.5).dp))
         if (active) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp).size(5.dp).clip(CircleShape).background(Amber))
     }
 }
@@ -221,23 +230,30 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
         }
         Text(title, color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
         if (rows.isEmpty()) Text("None available", color = Dim, fontSize = 17.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp))
-        rows.forEach { (label, selected, onClick) -> MenuRow(label, selected, onClick) }
+        rows.forEachIndexed { i, (label, selected, onClick) -> MenuRow(label, selected, highlighted = i == ui.menuIndex && ui.focus != null, onClick) }
     }
 }
 
 @Composable
-private fun MenuRow(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun MenuRow(label: String, selected: Boolean, highlighted: Boolean, onClick: () -> Unit) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp)
-            .background(if (selected || hovered) Color.White.copy(alpha = if (selected) 0.10f else 0.06f) else Color.Transparent)
+            .background(
+                when {
+                    highlighted -> Color.White.copy(alpha = 0.22f)
+                    selected -> Color.White.copy(alpha = 0.10f)
+                    hovered -> Color.White.copy(alpha = 0.06f)
+                    else -> Color.Transparent
+                },
+            )
             .hoverable(hover).clickable(onClick = onClick).padding(horizontal = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(if (selected) Amber else Color.Transparent))
         Spacer(Modifier.width(16.dp))
-        Text(label, color = if (selected) Color.White else Dim, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, color = if (selected || highlighted) Color.White else Dim, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -257,3 +273,7 @@ private fun InfoPanel(rows: List<Pair<String, String>>, modifier: Modifier) {
         }
     }
 }
+
+/** The white keyboard-focus ring (Silo's focus-visible outline, thicker for a TV). */
+private fun Modifier.focusRing(focused: Boolean, shape: androidx.compose.ui.graphics.Shape): Modifier =
+    if (focused) this.border(3.dp, Color.White, shape).padding(5.dp) else this.padding(5.dp)

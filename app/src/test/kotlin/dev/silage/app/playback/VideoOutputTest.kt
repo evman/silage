@@ -69,6 +69,8 @@ class VideoOutputTest {
         assertEquals("60817415", o["wid"])
         assertEquals("x11vk", o["gpu-context"])
         assertEquals("no", o["input-vo-keyboard"])
+        // mpv's child window would swallow the mouse; Silage handles it instead.
+        assertEquals("yes", o["input-cursor-passthrough"])
         assertFalse("fullscreen" in o)
     }
 

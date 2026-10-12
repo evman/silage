@@ -39,33 +39,63 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     @Volatile private var running = true
 
+    // HUD-thread state.
+    private var nav = HudNav()
+    private var keyboardFocus = false
+
     private val actions = object : HudActions {
         override fun togglePause() { mpv.command("cycle", "pause") }
         override fun seekBy(seconds: Double) { mpv.command("seek", seconds.toString(), "relative+exact") }
         override fun seekTo(seconds: Double) { mpv.command(*HudCommands.seekTo(seconds)) }
         override fun openMenu(menu: HudMenu) {
-            val current = ui.value.menu
-            ui.value = ui.value.copy(menu = if (current == menu) HudMenu.None else menu)
+            if (nav.menu == menu) {
+                nav = nav.copy(menu = HudMenu.None)
+                return
+            }
             if (menu == HudMenu.Audio || menu == HudMenu.Subtitles) refreshTracks()
+            val rows = rowsOf(menu)
+            nav = nav.copy(menu = menu, menuIndex = rows.indexOfFirst { it }.coerceAtLeast(0), menuSize = rows.size)
         }
-        override fun audio(id: Int) { mpv.command(*HudCommands.audio(id)); refreshTracks() }
-        override fun subtitle(id: Int?) { mpv.command(*HudCommands.subtitle(id)); refreshTracks() }
-        override fun speed(value: Double) { mpv.command(*HudCommands.speed(value)); ui.value = ui.value.copy(speed = value) }
+        override fun audio(id: Int) { mpv.command(*HudCommands.audio(id)); refreshTracks(); nav = nav.copy(menu = HudMenu.None) }
+        override fun subtitle(id: Int?) { mpv.command(*HudCommands.subtitle(id)); refreshTracks(); nav = nav.copy(menu = HudMenu.None) }
+        override fun speed(value: Double) {
+            mpv.command(*HudCommands.speed(value))
+            ui.value = ui.value.copy(speed = value)
+            nav = nav.copy(menu = HudMenu.None)
+        }
         override fun exit() { mpv.command("stop") }
+    }
+
+    /** Which rows of [menu] are selected, in display order. */
+    private fun rowsOf(menu: HudMenu): List<Boolean> = when (menu) {
+        HudMenu.Audio -> ui.value.tracks.audio.map { it.selected }
+        HudMenu.Subtitles -> listOf(ui.value.tracks.subtitles.none { it.selected }) + ui.value.tracks.subtitles.map { it.selected }
+        HudMenu.Speed -> SPEEDS.map { it == ui.value.speed }
+        else -> emptyList()
+    }
+
+    private fun selectRow(menu: HudMenu, index: Int) {
+        when (menu) {
+            HudMenu.Audio -> ui.value.tracks.audio.getOrNull(index)?.let { actions.audio(it.id) }
+            HudMenu.Subtitles -> if (index == 0) actions.subtitle(null) else ui.value.tracks.subtitles.getOrNull(index - 1)?.let { actions.subtitle(it.id) }
+            HudMenu.Speed -> SPEEDS.getOrNull(index)?.let(actions::speed)
+            else -> Unit
+        }
     }
 
     private val thread = Thread(::loop, "silage-hud").apply { isDaemon = true; start() }
 
     init {
-        // Mouse always comes from mpv: its window sits on top of ours.
+        // In mpv's own window (HDR) mpv has the keyboard and mouse; these
+        // bindings forward them. Embedded, input arrives through [key]/[pointer].
         mpv.command("keybind", "MOUSE_MOVE", "script-message silage-mouse")
         mpv.command("keybind", "MBTN_LEFT", "script-message silage-click")
         HudKey.MPV_KEYS.forEach { mpv.command("keybind", it, "script-message silage-key $it") }
         scope.launch {
             mpv.events.filterIsInstance<PlayerEvent.ClientMessage>().collect { m ->
                 when (m.args.firstOrNull()) {
-                    "silage-mouse" -> inbox += { pointer(PointerEventType.Move) }
-                    "silage-click" -> inbox += { pointer(PointerEventType.Press); pointer(PointerEventType.Release) }
+                    "silage-mouse" -> mousePos()?.let { pointer(PointerEventType.Move, it.x, it.y) }
+                    "silage-click" -> mousePos()?.let { click(it.x, it.y) }
                     "silage-key" -> m.args.getOrNull(1)?.let(HudKey::ofMpv)?.let(::key)
                 }
             }
@@ -73,21 +103,55 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
     }
 
     /** Opens (or toggles) a menu, as its HUD button would. */
-    fun open(menu: HudMenu) { inbox += { visibility.activity(); actions.openMenu(menu) } }
+    fun open(menu: HudMenu) { inbox += { visibility.activity(); nav = nav.copy(visible = true); actions.openMenu(menu) } }
 
     /** A key from any source (AWT or mpv). */
     fun key(key: HudKey) {
         inbox += {
             visibility.activity()
-            when (val a = HudKeys.action(key, ui.value.menu != HudMenu.None)) {
-                HudAction.Exit -> actions.exit()
-                HudAction.CloseMenu -> ui.value = ui.value.copy(menu = HudMenu.None)
-                HudAction.TogglePause -> actions.togglePause()
-                is HudAction.SeekBy -> actions.seekBy(a.seconds)
-                HudAction.ToggleInfo -> actions.openMenu(HudMenu.Info)
-                HudAction.Show -> Unit
+            keyboardFocus = true
+            val (next, effect) = nav.on(key)
+            nav = next
+            when (effect) {
+                HudEffect.None -> Unit
+                HudEffect.Exit -> actions.exit()
+                HudEffect.TogglePause -> actions.togglePause()
+                is HudEffect.SeekBy -> actions.seekBy(effect.seconds)
+                is HudEffect.SelectRow -> selectRow(effect.menu, effect.index)
+                is HudEffect.Activate -> when (effect.control) {
+                    HudFocus.Skip -> ui.value.skip?.let { actions.seekTo(it.target) }
+                    HudFocus.Seek, HudFocus.PlayPause -> actions.togglePause()
+                    HudFocus.Back10 -> actions.seekBy(-10.0)
+                    HudFocus.Fwd10 -> actions.seekBy(10.0)
+                    HudFocus.Audio -> actions.openMenu(HudMenu.Audio)
+                    HudFocus.Subtitles -> actions.openMenu(HudMenu.Subtitles)
+                    HudFocus.Speed -> actions.openMenu(HudMenu.Speed)
+                    HudFocus.Info -> actions.openMenu(HudMenu.Info)
+                }
             }
         }
+    }
+
+    /** Pointer movement in OSD pixels (the HUD's own coordinates). */
+    fun pointer(type: PointerEventType, x: Float, y: Float) {
+        inbox += { pointerNow(type, x, y) }
+    }
+
+    /** Pointer input as fractions (0..1) of the video surface, from the Silage window. */
+    fun pointerAt(fx: Float, fy: Float, press: Boolean) {
+        inbox += {
+            val b = bitmap
+            if (b != null) {
+                val x = fx * b.width
+                val y = fy * b.height
+                if (press) { pointerNow(PointerEventType.Press, x, y); pointerNow(PointerEventType.Release, x, y) }
+                else pointerNow(PointerEventType.Move, x, y)
+            }
+        }
+    }
+
+    fun click(x: Float, y: Float) {
+        inbox += { pointerNow(PointerEventType.Press, x, y); pointerNow(PointerEventType.Release, x, y) }
     }
 
     private var scene: ImageComposeScene? = null
@@ -96,12 +160,16 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
     private var overlayShown = false
     private var lastInfoAt = 0L
 
-    private fun pointer(type: PointerEventType) {
+    private fun pointerNow(type: PointerEventType, x: Float, y: Float) {
         visibility.activity()
-        val pos = mousePos() ?: return
+        keyboardFocus = false
+        if (!nav.visible) {
+            nav = nav.copy(visible = true)
+            if (type != PointerEventType.Move) return // the first click only reveals the HUD
+        }
         scene?.sendPointerEvent(
             eventType = type,
-            position = pos,
+            position = Offset(x, y),
             buttons = if (type == PointerEventType.Press) PointerButtons(isPrimaryPressed = true) else PointerButtons(),
             button = if (type == PointerEventType.Move) null else PointerButton.Primary,
         )
@@ -137,9 +205,11 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
 
         val s = mpv.state.value
         val now = System.currentTimeMillis()
-        val menuOpen = ui.value.menu != HudMenu.None
-        val visible = visibility.visible(now, s.paused, menuOpen)
-        val info = if (ui.value.menu == HudMenu.Info && now - lastInfoAt > 1_000) {
+        val skip = SkipPrompt.at(s.positionSeconds, ui.value.meta.intro, ui.value.meta.credits)
+        if (nav.visible && !visibility.visible(now, s.paused, nav.menu != HudMenu.None)) nav = nav.copy(visible = false, focus = HudFocus.PlayPause)
+        nav = nav.copy(hasSkip = skip != null, focus = if (skip == null && nav.focus == HudFocus.Skip) HudFocus.Seek else nav.focus)
+        val visible = nav.visible
+        val info = if (nav.menu == HudMenu.Info && now - lastInfoAt > 1_000) {
             lastInfoAt = now
             InfoRows.build(mpv::getProperty)
         } else {
@@ -153,8 +223,11 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
             paused = s.paused,
             buffering = s.buffering,
             visible = visible,
+            menu = nav.menu,
+            menuIndex = nav.menuIndex,
+            focus = if (keyboardFocus && visible) nav.focus else null,
             info = info,
-            skip = SkipPrompt.at(s.positionSeconds, ui.value.meta.intro, ui.value.meta.credits),
+            skip = skip,
         )
         if (next != ui.value) ui.value = next
 

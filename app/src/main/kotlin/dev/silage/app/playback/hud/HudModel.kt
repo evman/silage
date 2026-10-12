@@ -115,23 +115,75 @@ enum class HudKey {
     }
 }
 
-sealed interface HudAction {
-    data object Exit : HudAction
-    data object CloseMenu : HudAction
-    data object TogglePause : HudAction
-    data class SeekBy(val seconds: Double) : HudAction
-    data object ToggleInfo : HudAction
-    data object Show : HudAction
+/** The HUD controls reachable with the arrow keys. */
+enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Info }
+
+sealed interface HudEffect {
+    data object None : HudEffect
+    data object Exit : HudEffect
+    data object TogglePause : HudEffect
+    data class SeekBy(val seconds: Double) : HudEffect
+    data class Activate(val control: HudFocus) : HudEffect
+    data class SelectRow(val menu: HudMenu, val index: Int) : HudEffect
 }
 
-object HudKeys {
-    fun action(key: HudKey, menuOpen: Boolean): HudAction = when (key) {
-        HudKey.Back -> if (menuOpen) HudAction.CloseMenu else HudAction.Exit
-        HudKey.PlayPause -> HudAction.TogglePause
-        HudKey.Left -> HudAction.SeekBy(-10.0)
-        HudKey.Right -> HudAction.SeekBy(10.0)
-        HudKey.Info -> HudAction.ToggleInfo
-        HudKey.Up, HudKey.Down, HudKey.Enter -> HudAction.Show
+/**
+ * Remote-style navigation: hidden, ←/→ skip and anything else reveals the
+ * HUD; shown, arrows move a focus ring and Enter presses; Back peels menu,
+ * then HUD, then leaves the player.
+ */
+data class HudNav(
+    val visible: Boolean = true,
+    val focus: HudFocus = HudFocus.PlayPause,
+    val menu: HudMenu = HudMenu.None,
+    val menuIndex: Int = 0,
+    val menuSize: Int = 0,
+    val hasSkip: Boolean = false,
+) {
+    fun on(key: HudKey): Pair<HudNav, HudEffect> {
+        if (key == HudKey.PlayPause) return copy(visible = true) to HudEffect.TogglePause
+        if (key == HudKey.Info) return copy(visible = true, menu = if (menu == HudMenu.Info) HudMenu.None else HudMenu.Info) to HudEffect.None
+        if (!visible) return when (key) {
+            HudKey.Back -> this to HudEffect.Exit
+            HudKey.Left -> copy(visible = true, focus = HudFocus.Seek) to HudEffect.SeekBy(-10.0)
+            HudKey.Right -> copy(visible = true, focus = HudFocus.Seek) to HudEffect.SeekBy(10.0)
+            else -> copy(visible = true, focus = if (hasSkip) HudFocus.Skip else HudFocus.PlayPause) to HudEffect.None
+        }
+        if (menu != HudMenu.None && menu != HudMenu.Info) return when (key) {
+            HudKey.Back -> copy(menu = HudMenu.None) to HudEffect.None
+            HudKey.Up -> copy(menuIndex = (menuIndex - 1).coerceAtLeast(0)) to HudEffect.None
+            HudKey.Down -> copy(menuIndex = (menuIndex + 1).coerceAtMost((menuSize - 1).coerceAtLeast(0))) to HudEffect.None
+            HudKey.Enter -> copy(menu = HudMenu.None) to HudEffect.SelectRow(menu, menuIndex)
+            else -> this to HudEffect.None
+        }
+        return when (key) {
+            HudKey.Back -> if (menu == HudMenu.Info) copy(menu = HudMenu.None) to HudEffect.None
+                else copy(visible = false, focus = HudFocus.PlayPause) to HudEffect.None
+            HudKey.Left, HudKey.Right -> {
+                val step = if (key == HudKey.Left) -1 else 1
+                when (focus) {
+                    HudFocus.Seek -> this to HudEffect.SeekBy(10.0 * step)
+                    HudFocus.Skip -> this to HudEffect.None
+                    else -> copy(focus = ROW[(ROW.indexOf(focus) + step).coerceIn(0, ROW.size - 1)]) to HudEffect.None
+                }
+            }
+            HudKey.Up -> copy(focus = when (focus) {
+                HudFocus.Skip -> HudFocus.Skip
+                HudFocus.Seek -> if (hasSkip) HudFocus.Skip else HudFocus.Seek
+                else -> HudFocus.Seek
+            }) to HudEffect.None
+            HudKey.Down -> copy(focus = when (focus) {
+                HudFocus.Skip -> HudFocus.Seek
+                HudFocus.Seek -> HudFocus.PlayPause
+                else -> focus
+            }) to HudEffect.None
+            HudKey.Enter -> this to if (focus == HudFocus.Seek) HudEffect.TogglePause else HudEffect.Activate(focus)
+            else -> this to HudEffect.None
+        }
+    }
+
+    companion object {
+        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Info)
     }
 }
 

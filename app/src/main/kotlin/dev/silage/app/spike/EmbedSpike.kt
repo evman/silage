@@ -11,7 +11,6 @@ import dev.silage.app.playback.hud.HudKey
 import dev.silage.app.playback.hud.PlayerHud
 import dev.silage.player.MpvPlayer
 import org.siloserver.silo.model.catalog.TimeRange
-import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 
 /** `./gradlew :app:runEmbedSpike -Pvideo=FILE [-PmpvLog=FILE]`: mpv + HUD inside a Compose window. */
@@ -26,15 +25,25 @@ fun main(args: Array<String>) {
                 println("embed: output=$out")
                 val mpv = MpvPlayer(out.mpvOptions() + listOfNotNull(args.getOrNull(1)?.let { "log-file" to it }))
                 val hud = PlayerHud(mpv, PlaybackMeta("Test Pattern", "Silage · S1 E1", intro = TimeRange(2.0, 30.0)))
-                canvas.addKeyListener(object : KeyAdapter() {
-                    override fun keyPressed(e: KeyEvent) { HudKey.ofAwt(e.keyCode)?.let(hud::key) }
-                })
-                canvas.requestFocusInWindow()
+                if (out is VideoOutput.Embedded) dev.silage.app.playback.hud.attachEmbeddedInput(canvas, hud)
                 mpv.load(video)
                 // SPIKE_SHOW=pause|audio|subs|info: drive the HUD for screenshots without synthetic input.
                 System.getenv("SPIKE_SHOW")?.let { show ->
                     Thread {
                         Thread.sleep(6_000)
+                        if (show == "keys") {
+                            // Real AWT key events through the event queue, as a keyboard would send them.
+                            fun press(code: Int) {
+                                java.awt.Toolkit.getDefaultToolkit().systemEventQueue.postEvent(
+                                    KeyEvent(canvas, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, code, KeyEvent.CHAR_UNDEFINED))
+                                Thread.sleep(250)
+                            }
+                            press(KeyEvent.VK_SPACE)                       // pause (HUD stays up)
+                            repeat(3) { press(KeyEvent.VK_RIGHT) }         // play/pause → fwd10 → audio → subtitles
+                            press(KeyEvent.VK_ENTER)                       // open Subtitles
+                            press(KeyEvent.VK_DOWN)                        // highlight the first track
+                            return@Thread
+                        }
                         hud.key(HudKey.PlayPause)
                         when (show) {
                             "audio" -> hud.open(dev.silage.app.playback.hud.HudMenu.Audio)

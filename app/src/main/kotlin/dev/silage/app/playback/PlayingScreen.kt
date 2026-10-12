@@ -16,14 +16,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import org.koin.core.Koin
 import dev.silage.app.XdgPaths
-import dev.silage.app.playback.hud.HudKey
+import dev.silage.app.playback.hud.attachEmbeddedInput
 import dev.silage.app.playback.hud.PlayerHud
 import java.awt.Canvas
 import java.awt.GraphicsEnvironment
 import java.io.File
-import java.awt.event.KeyAdapter
-import java.awt.event.KeyEvent
-import javax.swing.SwingUtilities
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.network.apiv2.WatchDetailV2Api
@@ -46,15 +43,11 @@ private fun openMpv(surface: Surface?, ready: LaunchResult.Ready): OpenedPlayer 
     val mpv = MpvPlayer(output.mpvOptions())
     val hud = try { PlayerHud(mpv, ready.meta) } catch (t: Throwable) { mpv.close(); throw t }
     val canvas = surface?.canvas
-    // In the embedded case the Silage window has keyboard focus, not mpv.
-    val keys = object : KeyAdapter() {
-        override fun keyPressed(e: KeyEvent) { HudKey.ofAwt(e.keyCode)?.let(hud::key) }
-    }
-    if (canvas != null) SwingUtilities.invokeLater { canvas.addKeyListener(keys); canvas.requestFocusInWindow() }
+    val detach = if (output is VideoOutput.Embedded && canvas != null) attachEmbeddedInput(canvas, hud) else ({})
     val port = mpv.asOpened()
     return object : OpenedPlayer by port {
         override fun close() {
-            if (canvas != null) SwingUtilities.invokeLater { canvas.removeKeyListener(keys) }
+            detach()
             hud.close()
             port.close()
         }

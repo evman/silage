@@ -25,7 +25,7 @@ sealed interface VideoOutput {
 
     fun mpvOptions(): Map<String, String> = common + when (this) {
         // wid is an X11 window: skip the Wayland contexts mpv would try first.
-        is Embedded -> mapOf("wid" to wid.toString(), "gpu-context" to "x11vk", "input-vo-keyboard" to "no")
+        is Embedded -> mapOf("wid" to wid.toString(), "gpu-context" to "x11vk", "input-vo-keyboard" to "no", "input-cursor-passthrough" to "yes")
         is OwnWindow -> listOfNotNull(
             "fullscreen" to "yes",
             "gpu-context" to "waylandvk,x11vk",
