@@ -26,6 +26,11 @@ object MpvRuntime {
         }
         val ctx = lib.mpv_create() ?: return MpvStatus.Missing("mpv_create failed", hint)
         return try {
+            // mpv-version is only available once initialized; with no file loaded nothing opens.
+            lib.mpv_set_option_string(ctx, "vo", "null")
+            lib.mpv_set_option_string(ctx, "ao", "null")
+            lib.mpv_set_option_string(ctx, "terminal", "no")
+            if (lib.mpv_initialize(ctx) < 0) return MpvStatus.Missing("mpv_initialize failed", hint)
             val p = lib.mpv_get_property_string(ctx, "mpv-version")
             val text = p?.let { try { it.getString(0, "UTF-8") } finally { lib.mpv_free(it) } } ?: "mpv (unknown version)"
             val v = parseVersion(text)

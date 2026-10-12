@@ -60,5 +60,7 @@ class MpvRuntimeTest {
     @Test fun theInstalledMpvIsReportedUsable() {
         val status = MpvRuntime.check()
         assertTrue(status is MpvStatus.Ok, "status=$status")
+        // The version is only readable after mpv_initialize; without it the 0.37 check can't work.
+        assertTrue(MpvRuntime.parseVersion(status.version) != null, "version=${status.version}")
     }
 }
