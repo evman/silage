@@ -32,6 +32,16 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * All scene work happens on one thread; input from mpv (mouse, and keys in
  * mpv's own window) and from AWT is queued onto it.
  */
+/**
+ * The size the HUD is drawn at for an OSD of [w]×[h]: at most 1080 lines,
+ * scaled up by mpv. mpv copies each overlay on the thread that feeds audio,
+ * and full-4K redraws starved it (PipeWire underruns, crackling audio).
+ */
+fun hudSceneSize(w: Int, h: Int): Pair<Int, Int> {
+    val sh = minOf(h, 1080)
+    return (w.toLong() * sh / h).toInt() to sh
+}
+
 class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable {
     private val ui = mutableStateOf(HudUi(meta = meta))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
@@ -178,7 +188,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
     private fun mousePos(): Offset? {
         val x = mpv.getProperty("mouse-pos/x")?.toFloatOrNull() ?: return null
         val y = mpv.getProperty("mouse-pos/y")?.toFloatOrNull() ?: return null
-        return Offset(x, y)
+        val b = bitmap ?: return Offset(x, y)
+        return if (osdW > 0 && osdH > 0) Offset(x * b.width / osdW, y * b.height / osdH) else Offset(x, y)
     }
 
     private fun refreshTracks() {
@@ -240,13 +251,19 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
         }
     }
 
+    // OSD size (what mpv displays) vs. scene size (what we draw and copy).
+    private var osdW = 0
+    private var osdH = 0
+
     private fun ensureScene(w: Int, h: Int) {
+        osdW = w; osdH = h
+        val (sw, sh) = hudSceneSize(w, h)
         val sc = scene
-        if (sc != null && bitmap!!.width == w && bitmap!!.height == h) return
+        if (sc != null && bitmap!!.width == sw && bitmap!!.height == sh) return
         sc?.close()
-        scene = ImageComposeScene(w, h, Density(h / 1080f)) { HudContent(ui.value, actions) }
-        bitmap = Bitmap().apply { allocPixels(ImageInfo(w, h, ColorType.BGRA_8888, ColorAlphaType.PREMUL)) }
-        native = Memory(w.toLong() * h * 4)
+        scene = ImageComposeScene(sw, sh, Density(sh / 1080f)) { HudContent(ui.value, actions) }
+        bitmap = Bitmap().apply { allocPixels(ImageInfo(sw, sh, ColorType.BGRA_8888, ColorAlphaType.PREMUL)) }
+        native = Memory(sw.toLong() * sh * 4)
     }
 
     private fun render(sc: ImageComposeScene, w: Int, h: Int) {
@@ -254,7 +271,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
         sc.render(System.nanoTime()).readPixels(bmp)
         val bytes = bmp.readPixels() ?: return
         native!!.write(0, bytes, 0, bytes.size)
-        mpv.addOverlay(0, Pointer.nativeValue(native), w, h, w, h)
+        mpv.addOverlay(0, Pointer.nativeValue(native), bmp.width, bmp.height, w, h)
         overlayShown = true
     }
 

@@ -48,4 +48,6 @@ tasks.register<JavaExec>("runEmbedSpike") {
     args = listOfNotNull(project.findProperty("video") as String?, project.findProperty("mpvLog") as String?)
     (project.findProperty("show") as String?)?.let { environment("SPIKE_SHOW", it) }
     (project.findProperty("hdr") as String?)?.let { environment("SILAGE_HDR", it) }
+    (project.findProperty("mpvOpts") as String?)?.let { environment("SPIKE_MPV_OPTS", it) }
+    (project.findProperty("noHud") as String?)?.let { environment("SPIKE_NOHUD", it) }
 }
