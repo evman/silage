@@ -12,6 +12,12 @@ class FakeKeyring(var value: String? = null) : KeyringAccess {
     override fun set(value: String) { this.value = value }
 }
 
+class ThrowingKeyring(private val failRead: Boolean = false, private val failWrite: Boolean = false) : KeyringAccess {
+    var value: String? = null
+    override fun get(): String? = if (failRead) throw IllegalStateException("wallet locked") else value
+    override fun set(value: String) { if (failWrite) throw IllegalStateException("access denied"); this.value = value }
+}
+
 class SecureBlobStoreTest {
     private val dir = Files.createTempDirectory("silage-test")
     private val file = dir.resolve("data/session.json")
@@ -39,5 +45,20 @@ class SecureBlobStoreTest {
         SecureBlobStore.create(file, keyring) {}
         assertEquals("{\"old\":true}", keyring.value)
         assertFalse(Files.exists(file))
+    }
+
+    @Test fun refusedKeyringWriteFallsBackToFile() {
+        val logs = mutableListOf<String>()
+        val store = SecureBlobStore.create(file, ThrowingKeyring(failWrite = true)) { logs += it }
+        assertTrue(store.write("{\"t\":1}"), "write must still succeed")
+        assertEquals("{\"t\":1}", FileBlobStore(file).read())
+        assertEquals("{\"t\":1}", store.read())
+        assertTrue(logs.any { it.contains("keyring refused") }, "logs=$logs")
+    }
+
+    @Test fun unreadableKeyringUsesFileInsteadOfLookingEmpty() {
+        FileBlobStore(file).write("{\"saved\":true}")
+        val store = SecureBlobStore.create(file, ThrowingKeyring(failRead = true)) {}
+        assertEquals("{\"saved\":true}", store.read())
     }
 }

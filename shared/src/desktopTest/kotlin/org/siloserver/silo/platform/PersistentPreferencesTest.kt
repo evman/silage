@@ -72,4 +72,10 @@ class PersistentPreferencesTest {
         val p = PersistentPreferences(MemoryBlobStore("{not json"))
         assertTrue(p.all.isEmpty())
     }
+
+    @Test fun applyKeepsValueInMemoryEvenIfWriteFails() {
+        val p = PersistentPreferences(MemoryBlobStore(failWrites = true))
+        p.edit().putString("a", "1").apply()
+        assertEquals("1", p.getString("a", null))
+    }
 }

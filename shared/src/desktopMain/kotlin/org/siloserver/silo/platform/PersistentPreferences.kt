@@ -67,6 +67,13 @@ class PersistentPreferences(private val store: BlobStore) : SharedPreferences {
             values = next
             true
         }
-        override fun apply() { commit() }
+
+        /** Like Android: memory updates even if persisting fails. */
+        override fun apply() = synchronized(lock) {
+            val next = values.toMutableMap().also { m -> ops.forEach { it(m) } }
+            values = next
+            store.write(serialize(next))
+            Unit
+        }
     }
 }

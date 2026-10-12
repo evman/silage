@@ -1,6 +1,7 @@
 package org.siloserver.silo.platform
 
 import com.github.javakeyring.Keyring
+import com.github.javakeyring.PasswordAccessException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -29,22 +30,53 @@ interface KeyringAccess {
         const val SERVICE = "silage"
         const val ACCOUNT = "session"
 
-        /** Null when no Secret Service is reachable on this session bus. */
+        /**
+         * Null when no Secret Service is reachable on this session bus. The
+         * returned [get] yields null for "no entry" and throws when the
+         * backend refuses access, so callers can tell locked from empty.
+         */
         fun system(): KeyringAccess? = runCatching {
             val keyring = Keyring.create()
-            // Probe once so a locked-out or absent backend fails here, not mid-sign-in.
-            runCatching { keyring.getPassword(SERVICE, ACCOUNT) }
+            fun read(): String? = try {
+                keyring.getPassword(SERVICE, ACCOUNT)
+            } catch (_: PasswordAccessException) {
+                null // java-keyring reports a missing entry this way
+            }
+            read() // probe: an unreachable or refusing backend throws here
             object : KeyringAccess {
-                override fun get(): String? = runCatching { keyring.getPassword(SERVICE, ACCOUNT) }.getOrNull()
+                override fun get(): String? = read()
                 override fun set(value: String) = keyring.setPassword(SERVICE, ACCOUNT, value)
             }
         }.getOrNull()
     }
 }
 
-private class KeyringBlobStore(private val keyring: KeyringAccess) : BlobStore {
-    override fun read(): String? = keyring.get()
-    override fun write(contents: String): Boolean = runCatching { keyring.set(contents) }.isSuccess
+/**
+ * Keyring first; if the keyring refuses a write, switch to [file] for the rest
+ * of the session (logged once) instead of losing the session. A keyring that
+ * can't be read falls back to [file] rather than looking empty.
+ */
+private class KeyringBlobStore(
+    private val keyring: KeyringAccess,
+    private val file: FileBlobStore,
+    private val log: (String) -> Unit,
+) : BlobStore {
+    @Volatile private var degraded = false
+
+    override fun read(): String? =
+        if (degraded) file.read() else runCatching { keyring.get() }.getOrElse { file.read() }
+
+    override fun write(contents: String): Boolean {
+        if (!degraded) {
+            try {
+                keyring.set(contents); return true
+            } catch (e: Exception) {
+                degraded = true
+                log("Silage: keyring refused to save the session (${e.message}); storing it in an owner-only file instead")
+            }
+        }
+        return file.write(contents)
+    }
 }
 
 object SecureBlobStore {
@@ -63,9 +95,13 @@ object SecureBlobStore {
             log("Silage: no Secret Service keyring found; storing session in $fallbackFile (mode 0600)")
             return file
         }
-        val store = KeyringBlobStore(keyring)
-        if (store.read() == null) {
-            file.read()?.let { legacy -> if (store.write(legacy)) Files.deleteIfExists(fallbackFile) }
+        val store = KeyringBlobStore(keyring, file, log)
+        // Migrate only when the keyring answered "no entry"; a refused read is not empty.
+        val keyringRead = runCatching { keyring.get() }
+        if (keyringRead.isSuccess && keyringRead.getOrNull() == null) {
+            file.read()?.let { legacy ->
+                if (runCatching { keyring.set(legacy) }.isSuccess) Files.deleteIfExists(fallbackFile)
+            }
         }
         return store
     }
