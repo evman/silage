@@ -14,7 +14,7 @@ kotlin {
             implementation(libs.ktor.serialization.json)
             implementation(libs.ktor.client.logging)
             implementation(libs.ktor.client.websockets)
-            implementation(libs.kotlinx.serialization.json)
+            api(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
             api(libs.koin.core)
             api(libs.lifecycle.viewmodel.kmp)
