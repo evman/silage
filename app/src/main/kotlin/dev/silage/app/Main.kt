@@ -32,6 +32,8 @@ import dev.silage.app.connect.ProbeOutcome
 import dev.silage.app.di.desktopModule
 import dev.silage.app.browse.CollectionScreen
 import dev.silage.app.browse.LibraryScreen
+import dev.silage.app.browse.SearchScreen
+import dev.silage.app.browse.WatchlistScreen
 import dev.silage.app.detail.DetailScreen
 import dev.silage.app.home.HomeScreen
 import dev.silage.app.shell.AppShell
@@ -102,6 +104,8 @@ private suspend fun startRoute(koin: Koin): Route {
             (hit as? ApiResult.Success)?.data?.items?.firstOrNull()?.let { return Route.Detail(it.contentId) }
         }
         if (dev.startsWith("detail:")) return Route.Detail(dev.removePrefix("detail:"))
+        if (dev == "search") return Route.Search
+        if (dev == "watchlist") return Route.Watchlist
         if (dev == "library") {
             val libs = koin.get<org.siloserver.silo.repository.PersonalDataRepository>().listUserLibraries()
             (libs as? ApiResult.Success)?.data?.firstOrNull()?.let { return Route.Library(it.id, it.name) }
@@ -166,6 +170,8 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             CollectionScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) })
         }
         is Route.Detail -> DetailScreen(koin, route.contentId, onPlay = { id, fromStart -> nav.go(Route.Playing(id, fromStart)) })
+        Route.Search -> AppShell(nav, koin, route) { SearchScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
+        Route.Watchlist -> AppShell(nav, koin, route) { WatchlistScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         // Pages still to come in Plan 2 show their name inside the shell.
         else -> AppShell(nav, koin, route) { PendingPage(route) }
     }
