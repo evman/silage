@@ -29,7 +29,7 @@ private class Surface(val canvas: Canvas, val wid: Long?)
 
 private fun openMpv(surface: Surface?): OpenedPlayer {
     val wid = surface?.wid
-    val mpv = MpvPlayer(EmbeddedVideo.mpvOptions(wid))
+    val mpv = MpvPlayer((wid?.let { VideoOutput.Embedded(it) } ?: VideoOutput.OwnWindow(null)).mpvOptions())
     if (wid == null) {
         // Own window: mpv reads the keyboard itself.
         mpv.command("keybind", "q", "stop")
