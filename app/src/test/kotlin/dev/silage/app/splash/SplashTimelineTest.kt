@@ -37,4 +37,25 @@ class SplashTimelineTest {
         assertEquals(1f, t.frame(5000, readyAtMs = 5000).screenAlpha)
         assertTrue(t.frame(5450, readyAtMs = 5000).finished)
     }
+
+    @Test fun theNameFadesInAfterTheLogoAndLeavesWithTheSplash() {
+        assertEquals(0f, t.frame(0, null).textAlpha)
+        assertEquals(0f, t.frame(700, null).textAlpha, "the logo arrives first")
+        assertEquals(1f, t.frame(1600, null).textAlpha)
+        assertTrue(t.frame(1600, null).textRise == 0f)
+        assertTrue(t.frame(1000, null).textRise > 0f, "the name drifts up into place")
+    }
+
+    /** It felt abrupt: by default it lasts at least ~3.5 s and leaves slowly. */
+    @Test fun theDefaultSplashLingersAndLeavesGently() {
+        val d = SplashTimeline()
+        assertFalse(d.frame(3000, readyAtMs = 100).finished)
+        assertTrue(d.frame(3600, readyAtMs = 100).finished)
+    }
+
+    @Test fun theLogoGrowsAsTheSplashFadesIntoTheApp() {
+        val atStart = t.frame(1600, readyAtMs = 0).scale
+        val midFade = t.frame(1600 + 225, readyAtMs = 0).scale
+        assertTrue(midFade > atStart, "scale $atStart -> $midFade")
+    }
 }

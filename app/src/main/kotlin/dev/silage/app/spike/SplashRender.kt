@@ -13,7 +13,7 @@ fun main(args: Array<String>) {
     val out = File(args.firstOrNull() ?: "build/splash").apply { mkdirs() }
     val scene = ImageComposeScene(960, 540, Density(0.5f)) { SplashScreen(ready = false) {} }
     var t = 0L
-    for (ms in listOf(0L, 300, 600, 900, 1200, 1600, 2200, 2800, 3400, 4000, 4600, 5200)) {
+    for (ms in listOf(0L, 500, 1000, 1400, 1800, 2200, 2600, 3200, 3800, 4400, 5000, 5600)) {
         while (t < ms) { t += 16; scene.render(t * 1_000_000) }
         File(out, "f%05d.png".format(ms)).writeBytes(scene.render(t * 1_000_000).encodeToData(EncodedImageFormat.PNG)!!.bytes)
     }

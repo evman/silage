@@ -15,6 +15,10 @@ data class SplashFrame(
     /** Opacity of the whole splash; it fades out over the app. */
     val screenAlpha: Float,
     val finished: Boolean,
+    /** The name and tagline under the logo: they follow the logo in. */
+    val textAlpha: Float = 0f,
+    /** How far below its resting place the name is, 0..1 (it drifts up). */
+    val textRise: Float = 0f,
 )
 
 /**
@@ -22,7 +26,7 @@ data class SplashFrame(
  * grey, brightens to white, an amber glow breathes behind it while the app
  * loads, then the splash fades away — never before the intro has played.
  */
-class SplashTimeline(private val introMs: Long = 1600, private val fadeMs: Long = 450, private val pulseMs: Long = 2400) {
+class SplashTimeline(private val introMs: Long = 2600, private val fadeMs: Long = 900, private val pulseMs: Long = 2400) {
     private fun ease(x: Float) = (1 - cos(PI * x.coerceIn(0f, 1f)).toFloat()) / 2
 
     fun frame(elapsedMs: Long, readyAtMs: Long?): SplashFrame {
@@ -37,10 +41,13 @@ class SplashTimeline(private val introMs: Long = 1600, private val fadeMs: Long 
         return SplashFrame(
             logoAlpha = fadeIn,
             brightness = 0.72f + 0.28f * brighten,
-            scale = 0.94f + 0.06f * ease(intro),
+            // Settles in during the intro, then grows gently as it fades into the app.
+            scale = 0.94f + 0.06f * ease(intro) + 0.07f * ease(out),
             amber = min(1f, breath) * (1 - out),
             screenAlpha = 1 - ease(out),
             finished = outStart != null && elapsedMs >= outStart + fadeMs,
+            textAlpha = ease((intro - 0.5f) / 0.45f),
+            textRise = 1 - ease((intro - 0.5f) / 0.5f),
         )
     }
 }

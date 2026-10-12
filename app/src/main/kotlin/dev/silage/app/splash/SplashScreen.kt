@@ -6,6 +6,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +52,8 @@ fun SplashScreen(ready: Boolean, onFinished: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize().graphicsLayer { alpha = frame.screenAlpha }.background(Color.Black)) {
         // The layers are drawn in a box larger than the logo so the glows have room to spread.
         val box = maxHeight * 0.72f
-        Box(Modifier.align(Alignment.Center).size(box).graphicsLayer { scaleX = frame.scale; scaleY = frame.scale }) {
+        // Logo and name are centered as a group: the logo sits a little above center.
+        Box(Modifier.align(Alignment.Center).offset(y = -maxHeight * 0.07f).size(box).graphicsLayer { scaleX = frame.scale; scaleY = frame.scale }) {
             // 1 while the logo is soft grey, 0 once it is crisp white.
             val soft = ((1 - frame.brightness) / 0.28f).coerceIn(0f, 1f)
             // A deeper orange than the UI's amber accent, as in the concept video.
@@ -63,10 +71,25 @@ fun SplashScreen(ready: Boolean, onFinished: () -> Unit) {
                 drawLogo(logo)
             }
         }
+        Name(frame, Modifier.align(Alignment.Center).offset(y = maxHeight * 0.21f))
     }
 }
 
 private val Glow = Color(0xFFE0883A)
+
+/** "SILAGE" and the tagline, under the logo. */
+@Composable
+private fun Name(frame: SplashFrame, modifier: Modifier) {
+    Column(
+        modifier.graphicsLayer { alpha = frame.textAlpha; translationY = frame.textRise * 24.dp.toPx() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // letterSpacing leaves trailing space after the last letter; shift by half of it to look centered.
+        Text("SILAGE", color = Color.White, fontSize = 46.sp, fontWeight = FontWeight.Light, letterSpacing = 22.sp, modifier = Modifier.offset(x = 11.dp))
+        Spacer(Modifier.height(14.dp))
+        Text("An unofficial Silo client", color = Color.White.copy(alpha = 0.55f), fontSize = 18.sp, fontWeight = FontWeight.Light, letterSpacing = 3.sp)
+    }
+}
 
 /** The logo (or just its play triangle) at 55% of the canvas (times [grow]), centered. */
 private fun DrawScope.drawLogo(color: Color, play: Boolean = false, grow: Float = 1f) {
