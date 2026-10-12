@@ -39,7 +39,9 @@ import dev.silage.app.ui.Artwork
 import dev.silage.app.ui.Silage
 import dev.silage.app.ui.focusCard
 import dev.silage.app.ui.isActive
+import dev.silage.app.ui.rememberInitialFocus
 import org.koin.core.Koin
+import androidx.compose.runtime.saveable.rememberSaveable
 import org.siloserver.silo.model.catalog.EpisodeListItem
 import org.siloserver.silo.model.catalog.ItemDetail
 import org.siloserver.silo.model.catalog.Season
@@ -54,7 +56,7 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean) -> Uni
     var item by remember(contentId) { mutableStateOf<ItemDetail?>(null) }
     var error by remember(contentId) { mutableStateOf<String?>(null) }
     var seasons by remember(contentId) { mutableStateOf(emptyList<Season>()) }
-    var season by remember(contentId) { mutableStateOf<Int?>(null) }
+    var season by rememberSaveable(contentId) { mutableStateOf<Int?>(null) }
     var episodes by remember(contentId) { mutableStateOf(emptyList<EpisodeListItem>()) }
     var attempt by remember { mutableStateOf(0) }
 
@@ -70,7 +72,7 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean) -> Uni
             (catalog.getSeasons(contentId) as? ApiResult.Success)?.data?.seasons?.let { list ->
                 val plan = list.initialSeasonDisplayPlan(null)
                 seasons = plan.seasons
-                season = plan.selectedSeasonNumber
+                if (season == null) season = plan.selectedSeasonNumber
             }
         }
     }
@@ -97,10 +99,10 @@ private fun DetailContent(
     onPlay: (String, Boolean) -> Unit,
     contentId: String,
 ) {
-    val playFocus = remember { FocusRequester() }
     val next = if (m.isSeries) nextEpisode(episodes) else null
-    // A series' Play button appears once its episodes load; focus it then.
-    LaunchedEffect(!m.isSeries || next != null) { if (!m.isSeries || next != null) runCatching { playFocus.requestFocus() } }
+    // A series' Play button appears once its episodes load; focus it then, once per visit
+    // (picking another season keeps focus on the season pills).
+    val playFocus = rememberInitialFocus(!m.isSeries || next != null)
 
     Box(Modifier.fillMaxSize().background(Silage.Black)) {
         Artwork(m.backdropUrl, m.backdropThumbhash, "", Modifier.fillMaxWidth().fillMaxHeight(0.85f).align(Alignment.TopEnd), showTitleTile = false)

@@ -70,7 +70,9 @@ fun PosterGrid(
     onOpen: (CardModel) -> Unit,
     onFocus: (CardModel) -> Unit,
     emptyText: String = "Nothing here yet",
+    /** Attached to the card with [restoreId] (the last one focused), else the first card. */
     firstFocus: FocusRequester? = null,
+    restoreId: String? = null,
     header: LazyGridScope.() -> Unit = {},
 ) {
     val grid = rememberLazyGridState()
@@ -89,8 +91,9 @@ fun PosterGrid(
         modifier = Modifier.fillMaxSize(),
     ) {
         header()
-        itemsIndexed(items, key = { _, c -> c.id }) { i, card ->
-            MediaCard(card, 200.dp, onOpen = { onOpen(card) }, onFocus = { onFocus(card) }, focusRequester = if (i == 0) firstFocus else null)
+        val target = restoreId?.takeIf { id -> items.any { it.id == id } } ?: items.firstOrNull()?.id
+        itemsIndexed(items, key = { _, c -> c.id }) { _, card ->
+            MediaCard(card, 200.dp, onOpen = { onOpen(card) }, onFocus = { onFocus(card) }, focusRequester = if (card.id == target) firstFocus else null)
         }
         item(span = { GridItemSpan(maxLineSpan) }) {
             Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {

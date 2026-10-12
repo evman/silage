@@ -32,6 +32,7 @@ import dev.silage.app.home.HomeScreen
 import dev.silage.app.shell.AppShell
 import dev.silage.app.settings.SettingsScreen
 import dev.silage.app.nav.AppNavigator
+import dev.silage.app.nav.EntryHost
 import dev.silage.app.nav.KeyRoot
 import dev.silage.app.nav.Route
 import dev.silage.app.playback.PlayingScreen
@@ -64,7 +65,7 @@ fun main() {
                     val scale = constraints.maxHeight / 1080f
                     CompositionLocalProvider(LocalDensity provides Density(scale, fontScale = 1f)) {
                         val route by navigator.route.collectAsState()
-                        KeyRoot(route, onBack = navigator::back) { AppRoutes(koin, navigator, route) }
+                        KeyRoot(route, onBack = navigator::back) { EntryHost(navigator) { entry -> AppRoutes(koin, navigator, entry.route) } }
                     }
                 }
             }

@@ -33,6 +33,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.silage.app.ui.Silage
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.saveable.rememberSaveable
+import dev.silage.app.nav.LocalNavEntry
+import dev.silage.app.nav.rememberEntry
+import dev.silage.app.ui.rememberInitialFocus
 import org.koin.core.Koin
 import org.siloserver.silo.network.apiv2.CatalogContinuationV2
 import org.siloserver.silo.repository.CatalogRepository
@@ -41,13 +45,20 @@ import org.siloserver.silo.repository.CatalogRepository
 @Composable
 fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit) {
     val catalog = remember { koin.get<CatalogRepository>() }
-    val scope = rememberCoroutineScope()
-    val query = remember { SearchQuery(scope) { catalog.browse(query = it, limit = 60) } }
+    // Results and text live with this visit's back-stack entry: Back from a result returns to them.
+    val entryScope = LocalNavEntry.current.scope
+    val query = rememberEntry("search") { SearchQuery(entryScope) { catalog.browse(query = it, limit = 60) } }
     val results by query.results.collectAsState()
-    var text by remember { mutableStateOf("") }
+    var text by rememberSaveable { mutableStateOf("") }
+    var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
     var focused by remember { mutableStateOf<CardModel?>(null) }
     val field = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { field.requestFocus() } }
+    val restore = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        // Coming back from a result: focus it; otherwise start typing.
+        if (lastFocused != null && results is SearchResults.Done) runCatching { restore.requestFocus() }.onFailure { runCatching { field.requestFocus() } }
+        else runCatching { field.requestFocus() }
+    }
 
     val state = when (val r = results) {
         SearchResults.Idle -> PagerState(endReached = false)
@@ -59,7 +70,8 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit) {
         PageBackdrop(focused)
         PosterGrid(
             state = if (results == SearchResults.Idle) PagerState(endReached = true) else state,
-            onLoadMore = {}, onRetry = { query.onInput(text) }, onOpen = onOpen, onFocus = { focused = it },
+            onLoadMore = {}, onRetry = { query.onInput(text) }, onOpen = onOpen, onFocus = { focused = it; lastFocused = it.id },
+            firstFocus = restore, restoreId = lastFocused,
             emptyText = if (results == SearchResults.Idle) "Search your movies and shows" else "No results for “$text”",
             header = {
                 item(span = { GridItemSpan(maxLineSpan) }) {
@@ -111,15 +123,15 @@ fun WatchlistScreen(koin: Koin, onOpen: (CardModel) -> Unit) {
     val catalog = remember { koin.get<CatalogRepository>() }
     val scope = rememberCoroutineScope()
     var focused by remember { mutableStateOf<CardModel?>(null) }
-    val pager = remember { LibraryPager<CatalogContinuationV2> { c -> catalog.browse(source = "watchlist", continuation = c, limit = 60).toPage() } }
+    var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
+    val pager = rememberEntry("watchlist") { LibraryPager<CatalogContinuationV2> { c -> catalog.browse(source = "watchlist", continuation = c, limit = 60).toPage() } }
     val state by pager.state.collectAsState()
-    val first = remember { FocusRequester() }
-    LaunchedEffect(pager) { pager.loadMore() }
-    LaunchedEffect(state.items.isNotEmpty()) { if (state.items.isNotEmpty()) runCatching { first.requestFocus() } }
+    LaunchedEffect(pager) { if (pager.state.value.items.isEmpty()) pager.loadMore() }
+    val first = rememberInitialFocus(state.items.isNotEmpty())
     Box(Modifier.fillMaxSize()) {
         PageBackdrop(focused)
-        PosterGrid(state, { scope.launch { pager.loadMore() } }, { scope.launch { pager.retry() } }, onOpen, { focused = it },
-            emptyText = "Your watchlist is empty", firstFocus = first, header = {
+        PosterGrid(state, { scope.launch { pager.loadMore() } }, { scope.launch { pager.retry() } }, onOpen, { focused = it; lastFocused = it.id },
+            emptyText = "Your watchlist is empty", firstFocus = first, restoreId = lastFocused, header = {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text("Watchlist", color = Silage.Text, fontSize = 48.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 56.dp, bottom = 12.dp))
                 }

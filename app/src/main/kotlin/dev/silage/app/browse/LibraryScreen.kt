@@ -12,6 +12,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.silage.app.ui.Silage
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.saveable.rememberSaveable
+import dev.silage.app.nav.rememberEntry
+import dev.silage.app.ui.rememberInitialFocus
 import org.koin.core.Koin
 import org.siloserver.silo.model.catalog.CatalogResponse
 import org.siloserver.silo.network.ApiResult
@@ -33,14 +36,16 @@ suspend fun ApiResult<CatalogResponse>.toPage(): ApiResult<Page<CatalogContinuat
 /** A library: Browse (poster grid with sort) or Collections. */
 @Composable
 fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) -> Unit, onOpenCollection: (String, String) -> Unit) {
-    var tab by remember(libraryId) { mutableStateOf(0) }
-    var sort by remember(libraryId) { mutableStateOf(LibrarySort.Added) }
+    // Saved with this visit's back-stack entry, so Back from a detail page returns here intact.
+    var tab by rememberSaveable { mutableStateOf(0) }
+    var sort by rememberSaveable { mutableStateOf(LibrarySort.Added) }
+    var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
     var focused by remember(libraryId) { mutableStateOf<CardModel?>(null) }
     val scope = rememberCoroutineScope()
     val catalog = remember { koin.get<CatalogRepository>() }
     val sections = remember { koin.get<SectionRepository>() }
 
-    val pager = remember(libraryId, tab, sort) {
+    val pager = rememberEntry("library:$libraryId:$tab:$sort") {
         if (tab == 0) {
             LibraryPager<CatalogContinuationV2> { c -> catalog.browse(libraryId = libraryId, sort = sort.key, order = sort.order, continuation = c, limit = 60).toPage() }
         } else {
@@ -55,20 +60,22 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
         }
     }
     val state by pager.state.collectAsState()
-    val first = remember(libraryId) { FocusRequester() }
-    LaunchedEffect(pager) { pager.loadMore() }
-    LaunchedEffect(state.items.isNotEmpty(), libraryId) { if (state.items.isNotEmpty()) runCatching { first.requestFocus() } }
+    LaunchedEffect(pager) { if (pager.state.value.items.isEmpty()) pager.loadMore() }
+    // Initial focus once per visit: changing tab or sort keeps focus on the pill.
+    val first = rememberInitialFocus(state.items.isNotEmpty())
 
     Box(Modifier.fillMaxSize()) {
         PageBackdrop(focused)
-        PosterGrid(
+        // Each tab/sort keeps its own scroll position.
+        key(tab, sort) { PosterGrid(
             state,
             onLoadMore = { scope.launch { pager.loadMore() } },
             onRetry = { scope.launch { pager.retry() } },
             onOpen = { if (tab == 0) onOpen(it) else onOpenCollection(it.id, it.title) },
-            onFocus = { focused = it },
+            onFocus = { focused = it; lastFocused = it.id },
             emptyText = if (tab == 0) "Nothing here yet" else "No collections in this library",
             firstFocus = first,
+            restoreId = lastFocused,
             header = {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(Modifier.padding(top = 56.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -84,7 +91,7 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
                     }
                 }
             },
-        )
+        ) }
     }
 }
 
@@ -94,16 +101,17 @@ fun CollectionScreen(koin: Koin, collectionId: String, name: String, onOpen: (Ca
     val sections = remember { koin.get<SectionRepository>() }
     val scope = rememberCoroutineScope()
     var focused by remember { mutableStateOf<CardModel?>(null) }
-    val pager = remember(collectionId) {
+    var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
+    val pager = rememberEntry("collection:$collectionId") {
         LibraryPager<CatalogContinuationV2> { c -> sections.getLibraryCollectionItems(collectionId, continuation = c, limit = 60).toPage() }
     }
     val state by pager.state.collectAsState()
-    val first = remember { FocusRequester() }
-    LaunchedEffect(pager) { pager.loadMore() }
-    LaunchedEffect(state.items.isNotEmpty()) { if (state.items.isNotEmpty()) runCatching { first.requestFocus() } }
+    LaunchedEffect(pager) { if (pager.state.value.items.isEmpty()) pager.loadMore() }
+    val first = rememberInitialFocus(state.items.isNotEmpty())
     Box(Modifier.fillMaxSize()) {
         PageBackdrop(focused)
-        PosterGrid(state, { scope.launch { pager.loadMore() } }, { scope.launch { pager.retry() } }, onOpen, { focused = it }, firstFocus = first, header = {
+        PosterGrid(state, { scope.launch { pager.loadMore() } }, { scope.launch { pager.retry() } }, onOpen, { focused = it; lastFocused = it.id },
+            firstFocus = first, restoreId = lastFocused, header = {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(name, color = Silage.Text, fontSize = 48.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 56.dp, bottom = 12.dp))
             }

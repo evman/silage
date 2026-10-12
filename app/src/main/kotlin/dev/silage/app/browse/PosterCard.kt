@@ -85,6 +85,8 @@ fun CardRow(
     onOpen: (CardModel) -> Unit,
     onFocus: (CardModel) -> Unit,
     firstCardFocus: FocusRequester? = null,
+    /** The card [firstCardFocus] attaches to; the first card when null. */
+    focusCardId: String? = null,
 ) {
     val landscape = cards.firstOrNull()?.landscape == true
     Column(Modifier.fillMaxWidth()) {
@@ -94,7 +96,7 @@ fun CardRow(
                 MediaCard(
                     card, width = if (landscape) 400.dp else 200.dp,
                     onOpen = { onOpen(card) }, onFocus = { onFocus(card) },
-                    focusRequester = if (i == 0) firstCardFocus else null,
+                    focusRequester = if (if (focusCardId != null) card.id == focusCardId else i == 0) firstCardFocus else null,
                 )
             }
         }

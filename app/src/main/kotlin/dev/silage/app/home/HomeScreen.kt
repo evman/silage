@@ -28,16 +28,19 @@ import dev.silage.app.browse.CardRow
 import dev.silage.app.browse.isProgressRow
 import dev.silage.app.browse.toCard
 import dev.silage.app.ui.Artwork
+import dev.silage.app.nav.rememberEntryViewModel
 import dev.silage.app.ui.Silage
+import dev.silage.app.ui.rememberInitialFocus
+import androidx.compose.runtime.saveable.rememberSaveable
 import org.koin.core.Koin
 import org.siloserver.silo.viewmodel.HomeViewModel
 
 /** Home: a marquee for the focused card over the server's rows. */
 @Composable
 fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> Unit) {
-    val vm = remember { koin.get<HomeViewModel>() }
+    // Owned by this visit's back-stack entry (cleared when it's popped); it loads on creation.
+    val vm = rememberEntryViewModel { koin.get<HomeViewModel>() }
     val state by vm.uiState.collectAsState()
-    LaunchedEffect(Unit) { vm.loadSections() }
 
     val rows = remember(state.sections) {
         state.sections.filter { it.items.isNotEmpty() }.map { section ->
@@ -46,9 +49,14 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
         }
     }
     var focused by remember { mutableStateOf<CardModel?>(null) }
-    val marquee = focused ?: rows.firstOrNull()?.third?.firstOrNull()
-    val firstCard = remember { FocusRequester() }
-    LaunchedEffect(rows.isNotEmpty()) { if (rows.isNotEmpty()) runCatching { firstCard.requestFocus() } }
+    // "rowId/cardId" of the last focused card, kept across a visit to a detail page.
+    var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
+    val restoreRow = lastFocused?.substringBefore('/')?.takeIf { r -> rows.any { it.first.id == r } }
+    val restoreCard = if (restoreRow != null) lastFocused?.substringAfter('/') else null
+    val marquee = focused
+        ?: rows.firstOrNull { it.first.id == restoreRow }?.third?.firstOrNull { it.id == restoreCard }
+        ?: rows.firstOrNull()?.third?.firstOrNull()
+    val firstCard = rememberInitialFocus(rows.isNotEmpty())
 
     Box(Modifier.fillMaxSize().background(Silage.Black)) {
         Marquee(marquee)
@@ -65,8 +73,9 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
                     CardRow(
                         section.title, cards,
                         onOpen = { if (progress) onPlay(it) else onOpen(it) },
-                        onFocus = { focused = it },
-                        firstCardFocus = if (section.id == rows.first().first.id) firstCard else null,
+                        onFocus = { focused = it; lastFocused = "${section.id}/${it.id}" },
+                        firstCardFocus = if (section.id == (restoreRow ?: rows.first().first.id)) firstCard else null,
+                        focusCardId = if (section.id == restoreRow) restoreCard else null,
                     )
                 }
             }
