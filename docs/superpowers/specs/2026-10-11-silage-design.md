@@ -136,15 +136,28 @@ fill, black label) with a slight scale-up. Radii 8 / 12 / 18 / pill.
 **First run:** Connect (discovered servers + manual entry) → Sign in (pairing QR
 and code, or password) → Who's watching (profiles, PIN pad).
 
-**Root screens** share a top bar: wordmark · Home · Movies · Series · Search ·
-profile avatar. Library tabs appear only if the profile has that library type.
+**Root screens** share a **left sidebar** (Plex HTPC style, per the user's
+request), over the page content:
+
+- Collapsed it is an icon rail (96 px); when focus or the pointer enters it, it
+  expands to 320 px with labels, drawn over the content with a dark gradient.
+- Entries, top to bottom: profile avatar (switch profile) · Search · Home ·
+  one entry per library the profile can see, in the server's order, each with
+  a type icon (movies, shows, other) · Watchlist · and, pinned to the bottom,
+  Settings.
+- Which libraries appear, and their order, is chosen in Settings → Interface →
+  Sidebar (show/hide, move up/down), stored on the device.
+- ← from the leftmost card enters the sidebar; → or Enter leaves it.
 
 - **Home:** focus marquee (backdrop, logo/title, metadata of the focused card)
   over rows from the server: Continue Watching, Next Up, recommendations,
-  Recently Added, and the rest of the server-defined Home sections.
-- **Movies / Series:** pill row Browse · Collections · Genres · A–Z · Recently
-  Added. Multiple libraries of one type → cascading selector on tab focus-dwell
-  (250 ms), per Skyline §5.3.
+  Recently Added, and the rest of the server-defined Home sections. Rows show
+  poster artwork (landscape stills for Continue Watching), loaded from the
+  server and cached on disk; a blurred thumbhash placeholder shows until the
+  image arrives.
+- **Library page:** a poster grid for that library with a pill row
+  Browse · Collections · Recently Added, and a sort menu (title, date added,
+  release date, rating). The focused item's backdrop fills the page behind.
 - **Search:** on-screen keyboard (remote/gamepad) plus physical typing;
   results update as you type.
 - **Profile menu:** switch profile, Watchlist, Favorites, History, Settings,
@@ -191,16 +204,25 @@ text and image subtitles (SRT, ASS/SSA, PGS, VobSub) rendered by mpv.
 
 ### 6.3 Video defaults
 
-`vo=gpu-next`, `hwdec=auto-safe` (NVDEC / VA-API / Vulkan), `scale=ewa_lanczossharp`,
-`deband=yes`, `target-colorspace-hint=yes` (HDR passthrough when the
-compositor supports it), tone-mapping to SDR otherwise. mpv runs as a native
-Wayland client; on X11 it uses its own X window.
+`vo=gpu-next`, `hwdec=vaapi,auto-safe` (VA-API first: probing CUDA with no
+NVIDIA device present stalls ~20 s), `target-colorspace-hint=yes`, a 1 GiB /
+300 s read-ahead buffer. mpv draws inside the Silage window (X11 `wid` on a
+canvas). When the monitor under the window has HDR enabled (read from KDE's
+`kwinoutputconfig.json`; `SILAGE_HDR=on|off` overrides), mpv instead opens its
+own native-Wayland fullscreen window on that monitor for true HDR passthrough,
+falling back to X11 if Wayland is unavailable. Capabilities are declared
+(`video_evidence=declared`) with HDR handled by the player, so the server
+direct-plays instead of transcoding.
 
 ### 6.4 Overlay
 
-Drawn by Compose in Skyline style and composited into the mpv window via mpv's
-`overlay-add` (raw BGRA memory, scaled with `dw`/`dh`). It is redrawn only
-while visible or animating.
+Drawn by Compose (Silo web player style) and composited over the video via
+mpv's `overlay-add`, drawn at most 1080 lines and scaled up by mpv: mpv copies
+each overlay on the thread that feeds audio, and full-4K redraws caused audio
+underruns. It is redrawn only on change. Mouse input reaches it through the
+Silage canvas (mpv passes the pointer through) or mpv bindings in mpv's own
+window; keys are caught window-wide. Remote-style focus navigation with a
+white focus ring.
 
 Contents: title and episode line; progress bar with trickplay thumbnails while
 seeking; elapsed/remaining time; play/pause; skip back/forward (configurable);
@@ -247,7 +269,7 @@ shows whether it is synced or device-only.
 | **Audio** | Preferred audio language; output (PipeWire default / specific device); channel layout (auto / stereo / 5.1 / 7.1); passthrough toggles (AC-3, E-AC-3, DTS, DTS-HD, TrueHD/Atmos); volume normalization / night mode |
 | **Subtitles** | Preferred language; mode (off / forced only / always); show forced subtitles; appearance preset or custom (font family, size, text color, outline color, background style/color/opacity, position); reset |
 | **Streaming** | Buffer ahead (seconds); seek cache size |
-| **Interface** | Customize top menu; Home sections (show/hide/reorder); card captions; poster size; show advisory age rating; UI scale (90–120%); start in fullscreen; profile at launch (ask / remember last) |
+| **Interface** | Sidebar libraries (show/hide, order); Home sections (show/hide/reorder); card captions; poster size; show advisory age rating; UI scale (90–120%); start in fullscreen; profile at launch (ask / remember last) |
 | **Spoilers** | Blur unwatched episode thumbnails; hide unwatched episode descriptions |
 | **Controls** | Gamepad layout (Xbox / PlayStation / Nintendo button labels); key bindings view |
 | **Account & servers** | Manage servers; switch server; profile; sign out |
