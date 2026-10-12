@@ -118,10 +118,10 @@ silage/
 
 | What | Where |
 |---|---|
-| Settings, servers | `$XDG_CONFIG_HOME/silage/` |
+| Settings | `$XDG_CONFIG_HOME/silage/` |
 | Image cache | `$XDG_CACHE_HOME/silage/images/` (size-capped, LRU) |
 | Logs | `$XDG_STATE_HOME/silage/logs/` (rotated) |
-| Tokens | System keyring (fallback: `$XDG_DATA_HOME/silage/`) |
+| Servers and tokens (one blob, as on Android) | System keyring, service `silage`, account `session` (fallback: `$XDG_DATA_HOME/silage/session.json`, mode 0600) |
 
 ## 5. Screens and navigation
 

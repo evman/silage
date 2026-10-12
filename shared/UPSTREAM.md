@@ -16,5 +16,8 @@
 | desktopMain/overlays/OverlayLanguageName.desktop.kt | verbatim copy of androidMain (pure JVM) |
 | desktopMain/player/SubtitleTrackDisplayLabel.kt | verbatim copy of androidMain (pure JVM) |
 | desktopTest/**/…Fixture….desktop.kt | test fixture loaders (verbatim copies of androidUnitTest) |
+| desktopMain/platform/SharedPreferences.kt, Base64.kt, Log.kt | shims so upstream persistence classes compile with an import swap |
+| desktopMain/platform/PersistentPreferences.kt, SecureBlobStore.kt | JSON blob in Secret Service keyring; 0600 file fallback |
+| desktopMain/network/vendored/{EncryptedTokenManagerImpl,AndroidServerRegistry}.kt | androidMain copies; script swaps `android.content.SharedPreferences` and `android.util.Base64` imports and rewrites `android.util.Log.` calls |
 
-Upstream test baseline on desktop: 1869 tests, 0 failures.
+Upstream test baseline on desktop: 1869 tests, 0 failures (1881 including Silage's desktop tests).

@@ -24,8 +24,9 @@ cp "$UPS/androidMain/$PKG/player/SubtitleTrackDisplayLabel.kt"            "$D/pl
 for f in EncryptedTokenManagerImpl.kt AndroidServerRegistry.kt; do
   sed -e 's/^import android\.content\.SharedPreferences$/import org.siloserver.silo.platform.SharedPreferences/' \
       -e 's/^import android\.util\.Base64$/import org.siloserver.silo.platform.Base64/' \
+      -e 's/\bandroid\.util\.Log\./org.siloserver.silo.platform.Log./g' \
       "$UPS/androidMain/$PKG/network/$f" > "$D/network/vendored/$f"
-  if grep -qE '^import android' "$D/network/vendored/$f"; then
+  if grep -vE '^\s*(\*|//)' "$D/network/vendored/$f" | grep -qE '^import android|[^.a-z]android\.(util|content|os)\.'; then
     echo "ERROR: $f still has Android imports" >&2; exit 1
   fi
 done
