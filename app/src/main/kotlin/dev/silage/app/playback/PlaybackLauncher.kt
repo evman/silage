@@ -84,18 +84,20 @@ class PlaybackLauncher(
     private val context: ClientPlaybackContext = DesktopCapabilities.context,
     private val newAttemptId: () -> String = { UUID.randomUUID().toString() },
 ) {
-    suspend fun launch(contentId: String, fromStart: Boolean = false): LaunchResult {
+    /** [fileId]: the copy the user chose on the detail page; the first copy when absent or gone. */
+    suspend fun launch(contentId: String, fromStart: Boolean = false, fileId: Int? = null): LaunchResult {
         val item = when (val r = detail(contentId)) {
             is ApiResult.Success -> r.data
             is ApiResult.Error -> return LaunchResult.Failed("Couldn't load this item: ${r.message}")
             is ApiResult.NetworkError -> return LaunchResult.Failed("Can't reach the server. Try again.")
         }
-        val fileId = item.versions.firstOrNull()?.fileId ?: return LaunchResult.Failed("This item has no playable file.")
+        val chosen = item.versions.firstOrNull { it.fileId == fileId } ?: item.versions.firstOrNull()
+        val playFileId = chosen?.fileId ?: return LaunchResult.Failed("This item has no playable file.")
         val profile = profileId() ?: return LaunchResult.Failed("No profile selected.")
 
         val request = PlaybackStartRequestV3(
             clientFeatures = playbackClientFeaturesV3(context),
-            fileId = fileId,
+            fileId = playFileId,
             profileId = profile,
             playbackAttemptId = newAttemptId(),
             subtitleFidelityPreference = SubtitleFidelityPreference.PRESERVE,

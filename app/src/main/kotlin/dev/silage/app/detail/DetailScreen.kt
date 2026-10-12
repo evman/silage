@@ -15,6 +15,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -49,9 +56,9 @@ import org.siloserver.silo.model.catalog.initialSeasonDisplayPlan
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.repository.CatalogRepository
 
-/** Movie, episode or series detail. [onPlay] gets a content id and whether to start over. */
+/** Movie, episode or series detail. [onPlay] gets a content id, whether to start over, and the chosen copy. */
 @Composable
-fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean) -> Unit) {
+fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) -> Unit) {
     val catalog = remember { koin.get<CatalogRepository>() }
     var item by remember(contentId) { mutableStateOf<ItemDetail?>(null) }
     var error by remember(contentId) { mutableStateOf<String?>(null) }
@@ -85,21 +92,32 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean) -> Uni
     when {
         error != null && d == null -> ErrorState(error!!) { attempt++ }
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
-        else -> DetailContent(d.toDetailModel(), seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = { id, start -> onPlay(id, start) }, contentId = contentId)
+        else -> DetailContent(d.toDetailModel(), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId)
     }
 }
 
 @Composable
 private fun DetailContent(
     m: DetailModel,
+    item: ItemDetail,
     seasons: List<Season>,
     season: Int?,
     episodes: List<EpisodeListItem>,
     onSeason: (Int) -> Unit,
-    onPlay: (String, Boolean) -> Unit,
+    onPlay: (String, Boolean, Int?) -> Unit,
     contentId: String,
 ) {
+    // The copy to play (in practice, which library): last played, else best.
+    // For a series, the kind picked (e.g. "4K · HDR") carries to other episodes.
+    var preferredShort by rememberSaveable(contentId) { mutableStateOf<String?>(null) }
+    var picking by remember { mutableStateOf(System.getenv("SILAGE_DEV_OPEN_VERSIONS") == "1") }
     val next = if (m.isSeries) nextEpisode(episodes) else null
+    val options = remember(item, next) {
+        (if (m.isSeries) next?.files?.map { it.toOption() } else item.versions.map { it.toOption() }).orEmpty().sortedBest()
+    }
+    val lastFile = if (m.isSeries) next?.userData?.lastFileId else item.userData?.lastFileId
+    val selected = chooseVersion(options, preferredShort, lastFile)
+    fun episodeFile(e: EpisodeListItem): Int? = chooseVersion(e.files.map { it.toOption() }, preferredShort, e.userData?.lastFileId)?.fileId
     // A series' Play button appears once its episodes load; focus it then, once per visit
     // (picking another season keeps focus on the season pills).
     val playFocus = rememberInitialFocus(!m.isSeries || next != null)
@@ -125,12 +143,13 @@ private fun DetailContent(
                         if (m.isSeries) {
                             if (next != null) {
                                 val resume = next.userData.resumePosition() != null
-                                ActionButton(Icons.Filled.PlayArrow, "${if (resume) "Resume" else "Play"} S${next.seasonNumber} E${next.episodeNumber}", Modifier.focusRequester(playFocus)) { onPlay(next.contentId, false) }
+                                ActionButton(Icons.Filled.PlayArrow, "${if (resume) "Resume" else "Play"} S${next.seasonNumber} E${next.episodeNumber}", Modifier.focusRequester(playFocus)) { onPlay(next.contentId, false, selected?.fileId) }
                             }
                         } else {
-                            ActionButton(Icons.Filled.PlayArrow, m.playLabel, Modifier.focusRequester(playFocus)) { onPlay(contentId, false) }
-                            if (m.canPlayFromStart) ActionButton(Icons.Filled.Replay, "Play from beginning") { onPlay(contentId, true) }
+                            ActionButton(Icons.Filled.PlayArrow, m.playLabel, Modifier.focusRequester(playFocus)) { onPlay(contentId, false, selected?.fileId) }
+                            if (m.canPlayFromStart) ActionButton(Icons.Filled.Replay, "Play from beginning") { onPlay(contentId, true, selected?.fileId) }
                         }
+                        if (options.size > 1 && selected != null) ActionButton(Icons.Outlined.Layers, selected.short) { picking = true }
                     }
                 }
             }
@@ -142,7 +161,7 @@ private fun DetailContent(
                         }
                     }
                 }
-                items(episodes, key = { it.contentId }) { e -> EpisodeRowView(e.toRow()) { onPlay(e.contentId, false) } }
+                items(episodes, key = { it.contentId }) { e -> EpisodeRowView(e.toRow()) { onPlay(e.contentId, false, episodeFile(e)) } }
             }
             if (m.cast.isNotEmpty()) {
                 item {
@@ -152,6 +171,9 @@ private fun DetailContent(
                     }
                 }
             }
+        }
+        if (picking && selected != null) {
+            VersionPicker(options, selected.fileId, onPick = { preferredShort = it.short; picking = false }, onDismiss = { picking = false })
         }
     }
 }
@@ -212,5 +234,43 @@ private fun CastView(c: CastCard) {
         Spacer(Modifier.height(10.dp))
         Text(c.name, color = Silage.Text, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         c.role?.let { Text(it, color = Silage.Text3, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    }
+}
+
+/** The list of copies to choose from, over a dim scrim; Esc or Back closes it. */
+@Composable
+private fun VersionPicker(options: List<VersionOption>, selectedId: Int, onPick: (VersionOption) -> Unit, onDismiss: () -> Unit) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).onPreviewKeyEvent { e ->
+            if (e.type == KeyEventType.KeyDown && (e.key == Key.Escape || e.key == Key.Backspace)) { onDismiss(); true } else false
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.width(820.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xF2171717))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)).padding(vertical = 14.dp),
+        ) {
+            Text("VERSION", color = Silage.Text3, fontSize = 15.sp, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp))
+            options.forEach { o ->
+                val interaction = remember { MutableInteractionSource() }
+                val active = interaction.isActive()
+                val isSelected = o.fileId == selectedId
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                        .then(if (isSelected) Modifier.focusRequester(first) else Modifier)
+                        .background(if (active) Color.White else if (isSelected) Color.White.copy(alpha = 0.08f) else Color.Transparent)
+                        .hoverable(interaction).clickable(interaction, indication = null) { onPick(o) }
+                        .padding(horizontal = 28.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(if (isSelected) Silage.Amber else Color.Transparent))
+                    Spacer(Modifier.width(20.dp))
+                    Text(o.detail, color = if (active) Color.Black else if (isSelected) Color.White else Silage.Text2, fontSize = 20.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
     }
 }

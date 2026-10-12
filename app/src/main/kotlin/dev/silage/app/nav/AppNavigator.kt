@@ -15,7 +15,7 @@ sealed interface Route {
     data class Library(val id: Int, val name: String) : Route
     data class Collection(val id: String, val name: String) : Route
     data class Detail(val contentId: String) : Route
-    data class Playing(val contentId: String, val fromStart: Boolean = false) : Route
+    data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null) : Route
 }
 
 private val authRoutes = setOf(Route.Connect, Route.SignIn, Route.Profiles)

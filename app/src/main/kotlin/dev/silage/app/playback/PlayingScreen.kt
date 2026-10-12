@@ -75,7 +75,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready): O
 
 /** Starts a session, plays it inside the Silage window, returns when done. */
 @Composable
-fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, onDone: () -> Unit) {
+fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fileId: Int? = null, onDone: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     val surface = remember { CompletableDeferred<Surface>() }
     if (error == null) {
@@ -97,7 +97,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, onD
         // time, mpv falls back to its own fullscreen window.
         val shown = withTimeoutOrNull(3_000) { surface.await() }
         val session = PlaybackSession(
-            launch = { id -> launcher.launch(id, fromStart) },
+            launch = { id -> launcher.launch(id, fromStart, fileId) },
             openPlayer = { ready -> openMpv(koin, shown, ready) },
             progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
             stopSession = { s -> playback.stopPlayback(s) },

@@ -112,6 +112,18 @@ class PlaybackLauncherTest {
         assertEquals(null, (l.launch("m", fromStart = true) as LaunchResult.Ready).startSeconds)
     }
 
+    @Test fun playsTheChosenCopy() = runTest {
+        val sent = mutableListOf<PlaybackStartRequestV3>()
+        launcher(versions = listOf(FileVersion(fileId = 1), FileVersion(fileId = 77)), sent = sent).launch("m", fileId = 77)
+        assertEquals(77, sent.single().fileId)
+    }
+
+    @Test fun aChosenCopyThatNoLongerExistsFallsBackToTheFirst() = runTest {
+        val sent = mutableListOf<PlaybackStartRequestV3>()
+        launcher(versions = listOf(FileVersion(fileId = 1), FileVersion(fileId = 77)), sent = sent).launch("m", fileId = 5)
+        assertEquals(1, sent.single().fileId)
+    }
+
     @Test fun noVersionsFails() = runTest {
         assertEquals(LaunchResult.Failed("This item has no playable file."), launcher(versions = emptyList()).launch("series-1"))
     }
