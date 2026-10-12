@@ -35,7 +35,22 @@ overrides:
     # Ubuntu 24.04+ / Debian 13; earlier releases ship libmpv1 (mpv < 0.37).
     depends:
       - libmpv2 (>= 0.37)
+      # Linked by the bundled Java runtime and Skia (present on any desktop).
+      - libx11-6
+      - libxext6
+      - libxrender1
+      - libxtst6
+      - libxi6
+      - libfontconfig1
+      - libgl1
   rpm:
     # Fedora 40+ (mpv-libs from Fedora or RPM Fusion).
     depends:
       - mpv-libs >= 0.37
+      - libX11
+      - libXext
+      - libXrender
+      - libXtst
+      - libXi
+      - fontconfig
+      - libglvnd-glx

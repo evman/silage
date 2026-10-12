@@ -1,0 +1,27 @@
+# Maintainer: evman <evman311 at gmail dot com>
+pkgname=silage-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="An unofficial Silo client for Linux: a fullscreen home-theater app for Silo media servers"
+arch=('x86_64')
+url="https://github.com/evman/silage"
+license=('AGPL-3.0-or-later')
+# mpv is loaded at runtime (dlopen); the rest are linked by the bundled Java runtime and Skia.
+depends=('mpv' 'hicolor-icon-theme' 'libx11' 'libxext' 'libxrender' 'libxtst' 'libxi' 'fontconfig' 'libglvnd' 'alsa-lib')
+provides=('silage')
+conflicts=('silage')
+# The bundled Java runtime ships prebuilt native libraries.
+options=('!strip' '!debug')
+source=("$url/releases/download/v$pkgver/silage-$pkgver-linux-x86_64.tar.gz")
+sha256sums=('d834d452a1af99554bb4180877a9a6eae90fea594085ac787ca2ab9a744f9859')
+
+package() {
+  cd "silage-$pkgver"
+  install -d "$pkgdir/opt" "$pkgdir/usr/bin" "$pkgdir/usr/share"
+  cp -a silage "$pkgdir/opt/silage"
+  ln -s /opt/silage/bin/silage "$pkgdir/usr/bin/silage"
+  install -Dm644 dev.silage.Silage.desktop "$pkgdir/usr/share/applications/dev.silage.Silage.desktop"
+  install -Dm644 dev.silage.Silage.metainfo.xml "$pkgdir/usr/share/metainfo/dev.silage.Silage.metainfo.xml"
+  cp -a icons "$pkgdir/usr/share/icons"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

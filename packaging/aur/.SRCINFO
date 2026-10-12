@@ -1,0 +1,25 @@
+pkgbase = silage-bin
+	pkgdesc = An unofficial Silo client for Linux: a fullscreen home-theater app for Silo media servers
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/evman/silage
+	arch = x86_64
+	license = AGPL-3.0-or-later
+	depends = mpv
+	depends = hicolor-icon-theme
+	depends = libx11
+	depends = libxext
+	depends = libxrender
+	depends = libxtst
+	depends = libxi
+	depends = fontconfig
+	depends = libglvnd
+	depends = alsa-lib
+	provides = silage
+	conflicts = silage
+	options = !strip
+	options = !debug
+	source = https://github.com/evman/silage/releases/download/v0.1.0/silage-0.1.0-linux-x86_64.tar.gz
+	sha256sums = d834d452a1af99554bb4180877a9a6eae90fea594085ac787ca2ab9a744f9859
+
+pkgname = silage-bin

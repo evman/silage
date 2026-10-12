@@ -5,7 +5,11 @@
 curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
 ```
 
-**Arch:** `paru -S silage-bin` or `yay -S silage-bin`
+**Arch:**
+```sh
+curl -fLO https://github.com/evman/silage/releases/latest/download/silage-bin-x86_64.pkg.tar.zst && sudo pacman -U silage-bin-x86_64.pkg.tar.zst
+```
+(`paru -S silage-bin` / `yay -S silage-bin` once it's on the AUR.)
 
 **Ubuntu 24.04+ / Debian 13:**
 ```sh

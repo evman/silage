@@ -64,6 +64,40 @@ jobs:
           silage --version
           silage --check
 
+  arch:
+    needs: build
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - name: Build the Arch package from the PKGBUILD
+        run: |
+          pacman -Syu --noconfirm --needed base-devel
+          v="${GITHUB_REF_NAME#v}"
+          useradd -m builder
+          mkdir /build && cp packaging/aur/PKGBUILD "dist/silage-$v-linux-x86_64.tar.gz" /build/
+          cd /build
+          sum=$(sha256sum "silage-$v-linux-x86_64.tar.gz" | cut -d' ' -f1)
+          sed -i "s/^pkgver=.*/pkgver=$v/; s/^sha256sums=.*/sha256sums=('$sum')/" PKGBUILD
+          # Build from the tarball in hand (the release URL doesn't exist yet).
+          sed -i 's|^source=.*|source=("silage-$pkgver-linux-x86_64.tar.gz")|' PKGBUILD
+          chown -R builder /build
+          su builder -c "makepkg --nodeps --noconfirm"
+          mkdir -p "$GITHUB_WORKSPACE/arch" && cp silage-bin-*.pkg.tar.zst "$GITHUB_WORKSPACE/arch/"
+      - name: Install it with pacman and run it
+        run: |
+          pacman -U --noconfirm arch/silage-bin-*.pkg.tar.zst
+          silage --version
+          silage --check
+      - uses: actions/upload-artifact@v7
+        with:
+          name: arch
+          path: arch/
+
   validate:
     runs-on: ubuntu-24.04
     steps:
@@ -73,13 +107,17 @@ jobs:
       - run: appstreamcli validate --no-net packaging/dev.silage.Silage.metainfo.xml
 
   release:
-    needs: [build, test-deb, test-rpm, validate]
+    needs: [build, test-deb, test-rpm, arch, validate]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: dist
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: arch
           path: dist
       - name: Publish the GitHub release
         env:
@@ -91,6 +129,7 @@ jobs:
           cp "dist/silage_${v}_amd64.deb" dist/silage_amd64.deb
           cp "dist/silage-${v}-1.x86_64.rpm" dist/silage.x86_64.rpm
           cp "dist/silage-${v}-linux-x86_64.tar.gz" dist/silage-linux-x86_64.tar.gz
-          (cd dist && sha256sum silage_amd64.deb silage.x86_64.rpm silage-linux-x86_64.tar.gz >> SHA256SUMS)
+          cp dist/silage-bin-"${v}"-*-x86_64.pkg.tar.zst dist/silage-bin-x86_64.pkg.tar.zst
+          (cd dist && sha256sum silage-bin-*.pkg.tar.zst silage_amd64.deb silage.x86_64.rpm silage-linux-x86_64.tar.gz >> SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" --title "Silage $v" --notes-file /tmp/notes.md \
-            dist/*.tar.gz dist/*.deb dist/*.rpm dist/SHA256SUMS
+            dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/SHA256SUMS

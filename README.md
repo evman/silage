@@ -23,19 +23,18 @@
 
 ## Install
 
-**One command, any distro.** Detects your distro and installs the latest release (the .deb, the .rpm, or the AUR package):
+**One command, any distro.** Detects your distro and installs the latest release (the .deb, the .rpm, or the Arch package):
 ```sh
 curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
 ```
 
 Or pick yours:
 
-**Arch Linux** (AUR):
+**Arch Linux**:
 ```sh
-paru -S silage-bin
-# or
-yay -S silage-bin
+curl -fLO https://github.com/evman/silage/releases/latest/download/silage-bin-x86_64.pkg.tar.zst && sudo pacman -U silage-bin-x86_64.pkg.tar.zst
 ```
+Coming to the AUR as `silage-bin` (new AUR accounts are temporarily paused); then `paru -S silage-bin` or `yay -S silage-bin` will work too.
 
 **Ubuntu 24.04+ / Debian 13**:
 ```sh
