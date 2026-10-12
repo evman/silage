@@ -44,8 +44,9 @@ private fun outputUnder(canvas: Canvas): Output? = runCatching {
     KwinOutputs.outputAt(KwinOutputs.parse(config.readText(), origins), p.x + canvas.width / 2, p.y + canvas.height / 2)
 }.getOrNull()
 
-private fun openMpv(surface: Surface?, ready: LaunchResult.Ready): OpenedPlayer {
-    val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), System.getenv("SILAGE_HDR"))
+private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready): OpenedPlayer {
+    val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
+    val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
     java.nio.file.Files.createDirectories(PlaybackLog.mpvLogFile.parent)
     val mpv = MpvPlayer(output.mpvOptions() + ("log-file" to PlaybackLog.mpvLogFile.toString()))
     val hud = try { PlayerHud(mpv, ready.meta) } catch (t: Throwable) { mpv.close(); throw t }
@@ -95,7 +96,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, onD
         val shown = withTimeoutOrNull(3_000) { surface.await() }
         val session = PlaybackSession(
             launch = { id -> launcher.launch(id, fromStart) },
-            openPlayer = { ready -> openMpv(shown, ready) },
+            openPlayer = { ready -> openMpv(koin, shown, ready) },
             progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
             stopSession = { s -> playback.stopPlayback(s) },
         )

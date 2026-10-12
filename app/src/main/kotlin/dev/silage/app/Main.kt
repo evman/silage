@@ -37,7 +37,7 @@ import dev.silage.app.browse.WatchlistScreen
 import dev.silage.app.detail.DetailScreen
 import dev.silage.app.home.HomeScreen
 import dev.silage.app.shell.AppShell
-import dev.silage.app.shell.PendingPage
+import dev.silage.app.settings.SettingsScreen
 import dev.silage.app.nav.AppNavigator
 import dev.silage.app.nav.Route
 import dev.silage.app.playback.PlayingScreen
@@ -104,6 +104,7 @@ private suspend fun startRoute(koin: Koin): Route {
             (hit as? ApiResult.Success)?.data?.items?.firstOrNull()?.let { return Route.Detail(it.contentId) }
         }
         if (dev.startsWith("detail:")) return Route.Detail(dev.removePrefix("detail:"))
+        if (dev == "settings") return Route.Settings
         if (dev == "search") return Route.Search
         if (dev == "watchlist") return Route.Watchlist
         if (dev == "library") {
@@ -172,7 +173,8 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         is Route.Detail -> DetailScreen(koin, route.contentId, onPlay = { id, fromStart -> nav.go(Route.Playing(id, fromStart)) })
         Route.Search -> AppShell(nav, koin, route) { SearchScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         Route.Watchlist -> AppShell(nav, koin, route) { WatchlistScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
-        // Pages still to come in Plan 2 show their name inside the shell.
-        else -> AppShell(nav, koin, route) { PendingPage(route) }
+        Route.Settings -> AppShell(nav, koin, route) {
+            SettingsScreen(koin, onSwitchProfile = { nav.root(Route.Profiles) }, onSwitchServer = { nav.root(Route.Connect) }, onSignedOut = { nav.root(Route.SignIn) })
+        }
     }
 }
