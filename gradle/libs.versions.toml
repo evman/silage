@@ -8,6 +8,7 @@ koin = "4.1.0"
 lifecycle-kmp = "2.9.6"
 jna = "5.15.0"
 java-keyring = "1.0.4"
+coil = "3.1.0"
 
 [libraries]
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
@@ -26,6 +27,8 @@ koin-test = { module = "io.insert-koin:koin-test", version.ref = "koin" }
 lifecycle-viewmodel-kmp = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycle-kmp" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 java-keyring = { module = "com.github.javakeyring:java-keyring", version.ref = "java-keyring" }
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
