@@ -164,7 +164,9 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
         inbox += { pointerNow(PointerEventType.Press, x, y); pointerNow(PointerEventType.Release, x, y) }
     }
 
-    private var scene: ImageComposeScene? = null
+    private var host: HudSceneHost? = null
+    private val scene: ImageComposeScene? get() = host?.scene
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
     private var bitmap: Bitmap? = null
     private var native: Memory? = null
     private var overlayShown = false
@@ -258,10 +260,9 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
     private fun ensureScene(w: Int, h: Int) {
         osdW = w; osdH = h
         val (sw, sh) = hudSceneSize(w, h)
-        val sc = scene
-        if (sc != null && bitmap!!.width == sw && bitmap!!.height == sh) return
-        sc?.close()
-        scene = ImageComposeScene(sw, sh, Density(sh / 1080f)) { HudContent(ui.value, actions) }
+        if (host != null && bitmap!!.width == sw && bitmap!!.height == sh) return
+        host?.close()
+        host = HudSceneHost(sw, sh, Density(sh / 1080f)) { HudContent(ui.value, actions) }
         bitmap = Bitmap().apply { allocPixels(ImageInfo(sw, sh, ColorType.BGRA_8888, ColorAlphaType.PREMUL)) }
         native = Memory(sw.toLong() * sh * 4)
     }
@@ -275,11 +276,13 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
         overlayShown = true
     }
 
+    /** Idempotent: the player is closed more than once on the way out. */
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         running = false
         scope.cancel()
         thread.join(1_000)
         runCatching { mpv.command("overlay-remove", "0") }
-        scene?.close()
+        host?.close()
     }
 }

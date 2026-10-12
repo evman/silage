@@ -49,7 +49,8 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready): O
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
     java.nio.file.Files.createDirectories(PlaybackLog.mpvLogFile.parent)
-    val mpv = MpvPlayer(output.mpvOptions() + ("log-file" to PlaybackLog.mpvLogFile.toString()))
+    val dev = if (System.getenv("SILAGE_DEV_MUTE") == "1") mapOf("volume" to "0") else emptyMap()
+    val mpv = MpvPlayer(output.mpvOptions() + ("log-file" to PlaybackLog.mpvLogFile.toString()) + dev)
     val hud = try { PlayerHud(mpv, ready.meta) } catch (t: Throwable) { mpv.close(); throw t }
     // Subscribed before the controller loads the file, so FileLoaded can't be missed.
     val subtitles = CoroutineScope(Dispatchers.Default).launch(start = CoroutineStart.UNDISPATCHED) {

@@ -56,7 +56,27 @@ import org.siloserver.silo.repository.ProfileRepository
 fun main() {
     val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
     val navigator = AppNavigator(runBlocking { startRoute(koin) })
+    val crashLog = CrashLog()
+    // Developer hook for reproducing exits: post a real Esc key press after N seconds.
+    System.getenv("SILAGE_DEV_BACK_AFTER")?.toLongOrNull()?.let { secs ->
+        Thread {
+            Thread.sleep(secs * 1000)
+            javax.swing.SwingUtilities.invokeLater {
+                val target = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+                    ?: java.awt.Window.getWindows().firstOrNull { it.isShowing } ?: return@invokeLater
+                java.awt.Toolkit.getDefaultToolkit().systemEventQueue.postEvent(
+                    java.awt.event.KeyEvent(target, java.awt.event.KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, java.awt.event.KeyEvent.VK_ESCAPE, java.awt.event.KeyEvent.CHAR_UNDEFINED))
+            }
+        }.apply { isDaemon = true }.start()
+    }
     application {
+      // Unexpected UI exceptions are logged with their stack trace instead of a raw error dialog (spec §7).
+      @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+      CompositionLocalProvider(
+          androidx.compose.ui.window.LocalWindowExceptionHandlerFactory provides androidx.compose.ui.window.WindowExceptionHandlerFactory {
+              androidx.compose.ui.window.WindowExceptionHandler { t -> crashLog.record("window", t) }
+          },
+      ) {
         val windowState = rememberWindowState(placement = WindowPlacement.Fullscreen)
         Window(onCloseRequest = ::exitApplication, state = windowState, title = BuildInfo.NAME) {
             MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black, primary = Color.White, onPrimary = Color.Black)) {
@@ -75,6 +95,7 @@ fun main() {
             }
         }
     }
+      }
 }
 
 private suspend fun startRoute(koin: Koin): Route {
@@ -84,6 +105,10 @@ private suspend fun startRoute(koin: Koin): Route {
     // Developer switch for screenshots/tests: skip the profile picker when one is already active.
     val dev = System.getenv("SILAGE_DEV_START")
     if (dev != null && koin.get<ProfileRepository>().getActiveProfileId() != null) {
+        if (dev.startsWith("play:q:")) {
+            val hit = koin.get<org.siloserver.silo.repository.CatalogRepository>().browse(query = dev.removePrefix("play:q:"), limit = 1)
+            (hit as? ApiResult.Success)?.data?.items?.firstOrNull()?.let { return Route.Playing(it.contentId) }
+        }
         if (dev.startsWith("detail:q:")) {
             val hit = koin.get<org.siloserver.silo.repository.CatalogRepository>().browse(query = dev.removePrefix("detail:q:"), limit = 1)
             (hit as? ApiResult.Success)?.data?.items?.firstOrNull()?.let { return Route.Detail(it.contentId) }

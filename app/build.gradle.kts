@@ -61,5 +61,7 @@ tasks.register<JavaExec>("runEmbedSpike") {
 afterEvaluate {
     tasks.named<JavaExec>("run") {
         (project.findProperty("devStart") as String?)?.let { environment("SILAGE_DEV_START", it) }
+        (project.findProperty("devBackAfter") as String?)?.let { environment("SILAGE_DEV_BACK_AFTER", it) }
+        (project.findProperty("devMute") as String?)?.let { environment("SILAGE_DEV_MUTE", it) }
     }
 }
