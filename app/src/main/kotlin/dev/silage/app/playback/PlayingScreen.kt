@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import dev.silage.player.MpvPlayer
 import dev.silage.player.PlayerEvent
@@ -107,9 +108,11 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, onD
         }
     }
     error?.let { msg ->
+        val back = remember { androidx.compose.ui.focus.FocusRequester() }
+        LaunchedEffect(Unit) { runCatching { back.requestFocus() } }
         Column(Modifier.padding(96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(msg, style = MaterialTheme.typography.titleLarge)
-            Button(onClick = onDone) { Text("Back") }
+            Button(onClick = onDone, modifier = Modifier.focusRequester(back)) { Text("Back") }
         }
     }
 }

@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -110,10 +111,12 @@ private fun Skeleton() {
 
 @Composable
 fun ErrorState(message: String, onRetry: () -> Unit) {
+    val retry = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { retry.requestFocus() } }
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text(message, color = Silage.Text, fontSize = 24.sp)
         Spacer(Modifier.height(24.dp))
-        Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) {
+        Button(onClick = onRetry, modifier = Modifier.focusRequester(retry), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) {
             Text("Retry", fontSize = 18.sp)
         }
     }

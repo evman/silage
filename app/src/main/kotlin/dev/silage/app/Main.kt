@@ -5,14 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.Density
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -39,6 +32,7 @@ import dev.silage.app.home.HomeScreen
 import dev.silage.app.shell.AppShell
 import dev.silage.app.settings.SettingsScreen
 import dev.silage.app.nav.AppNavigator
+import dev.silage.app.nav.KeyRoot
 import dev.silage.app.nav.Route
 import dev.silage.app.playback.PlayingScreen
 import dev.silage.app.profiles.ProfileRow
@@ -69,22 +63,8 @@ fun main() {
                 BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
                     val scale = constraints.maxHeight / 1080f
                     CompositionLocalProvider(LocalDensity provides Density(scale, fontScale = 1f)) {
-                        val focus = LocalFocusManager.current
                         val route by navigator.route.collectAsState()
-                        Box(
-                            Modifier.fillMaxSize().onKeyEvent { e ->
-                                // Bubbled up unhandled: arrows move focus spatially, Esc/Backspace go back.
-                                if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
-                                when (e.key) {
-                                    Key.DirectionLeft -> focus.moveFocus(FocusDirection.Left)
-                                    Key.DirectionRight -> focus.moveFocus(FocusDirection.Right)
-                                    Key.DirectionUp -> focus.moveFocus(FocusDirection.Up)
-                                    Key.DirectionDown -> focus.moveFocus(FocusDirection.Down)
-                                    Key.Escape, Key.Backspace -> navigator.back()
-                                    else -> false
-                                }
-                            },
-                        ) { AppRoutes(koin, navigator, route) }
+                        KeyRoot(route, onBack = navigator::back) { AppRoutes(koin, navigator, route) }
                     }
                 }
             }
