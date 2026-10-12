@@ -42,9 +42,10 @@ class PlaybackController(
     private val stop: suspend (sessionId: String) -> Unit,
     private val intervalMs: Long = 10_000,
 ) {
-    suspend fun run(ready: LaunchResult.Ready) {
+    /** Returns the event that ended playback: [PlayerEvent.Ended] or [PlayerEvent.Shutdown]. */
+    suspend fun run(ready: LaunchResult.Ready): PlayerEvent {
         try {
-            coroutineScope {
+            return coroutineScope {
                 // Subscribe before load: a stream that fails instantly emits
                 // Ended during load(), and a later subscriber would miss it.
                 val finished = async(start = CoroutineStart.UNDISPATCHED) {
@@ -63,8 +64,9 @@ class PlaybackController(
                         progress(ready.sessionId, s.positionSeconds, s.paused)
                     }
                 }
-                finished.await()
+                val end = finished.await()
                 ticker.cancel(); pauses.cancel()
+                end
             }
         } finally {
             withContext(NonCancellable) {

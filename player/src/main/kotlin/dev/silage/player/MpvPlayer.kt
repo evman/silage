@@ -39,7 +39,11 @@ class MpvPlayer(
             "terminal" to "no",
         )
         (defaults + options).forEach { (k, v) -> lib.mpv_set_option_string(ctx, k, v) }
-        check(lib.mpv_initialize(ctx) >= 0) { "mpv_initialize failed" }
+        val initialized = lib.mpv_initialize(ctx)
+        if (initialized < 0) {
+            lib.mpv_terminate_destroy(ctx)
+            error("mpv_initialize failed: ${lib.mpv_error_string(initialized)}")
+        }
         lib.mpv_observe_property(ctx, 1, "time-pos", LibMpv.FORMAT_DOUBLE)
         lib.mpv_observe_property(ctx, 2, "duration", LibMpv.FORMAT_DOUBLE)
         lib.mpv_observe_property(ctx, 3, "pause", LibMpv.FORMAT_FLAG)
