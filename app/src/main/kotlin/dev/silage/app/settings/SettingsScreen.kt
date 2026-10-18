@@ -34,7 +34,12 @@ import dev.silage.app.shell.SidebarEntries
 import dev.silage.app.shell.icon
 import dev.silage.app.ui.Silage
 import dev.silage.app.ui.UiPrefs
+import dev.silage.app.playback.SubtitleColor
+import dev.silage.app.playback.SubtitleStyle
 import dev.silage.app.playback.UpNextCountdownSeconds
+import org.siloserver.silo.model.settings.SubtitleBackgroundStylePreset
+import org.siloserver.silo.model.settings.SubtitlePositionPreset
+import org.siloserver.silo.model.settings.pointSize
 import dev.silage.app.ui.isActive
 import kotlinx.coroutines.launch
 import org.koin.core.Koin
@@ -44,7 +49,7 @@ import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.repository.AuthRepository
 import org.siloserver.silo.repository.PersonalDataRepository
 
-private enum class Section(val label: String) { Interface("Interface"), Video("Video"), Account("Account"), About("About") }
+private enum class Section(val label: String) { Interface("Interface"), Video("Video"), Subtitles("Subtitles"), Account("Account"), About("About") }
 
 /** Settings: sections on the left, the chosen section's rows on the right. */
 @Composable
@@ -63,6 +68,7 @@ fun SettingsScreen(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServer: () -
             when (section) {
                 Section.Interface -> InterfaceSection(koin)
                 Section.Video -> VideoSection(koin)
+                Section.Subtitles -> SubtitlesSection(koin)
                 Section.Account -> AccountSection(koin, onSwitchProfile, onSwitchServer, onSignedOut)
                 Section.About -> AboutSection(koin)
             }
@@ -167,6 +173,69 @@ private fun VideoSection(koin: Koin) {
             Pill("Skip automatically", selected = skipIntro) { prefs.autoSkipIntro = true }
             Pill("Show a Skip button", selected = !skipIntro) { prefs.autoSkipIntro = false }
         }
+    }
+}
+
+@Composable
+private fun SubtitlesSection(koin: Koin) {
+    val prefs = remember { koin.get<UiPrefs>() }
+    val version by prefs.changes.collectAsState()
+    val style = remember(version) { prefs.subtitleStyle }
+    Column(Modifier.verticalScroll(rememberScrollState())) {
+        Heading("Subtitles", "How subtitles look on this PC. Changes apply from the next video you play.")
+        SubtitlePreview(style)
+        Spacer(Modifier.height(32.dp))
+        Heading("Size")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            SubtitleStyle.sizeLabels.forEach { (size, label) -> Pill(label, selected = style.size == size) { prefs.subtitleStyle = style.copy(size = size) } }
+        }
+        Spacer(Modifier.height(32.dp))
+        Heading("Background")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            SubtitleStyle.backgroundLabels.forEach { (bg, label) -> Pill(label, selected = style.background == bg) { prefs.subtitleStyle = style.copy(background = bg) } }
+        }
+        Spacer(Modifier.height(32.dp))
+        Heading("Text color")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            SubtitleColor.entries.forEach { c -> Pill(c.label, selected = style.color == c) { prefs.subtitleStyle = style.copy(color = c) } }
+        }
+        Spacer(Modifier.height(32.dp))
+        Heading("Position")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            SubtitleStyle.positionLabels.forEach { (pos, label) -> Pill(label, selected = style.position == pos) { prefs.subtitleStyle = style.copy(position = pos) } }
+        }
+        Spacer(Modifier.height(32.dp))
+        Pill("Reset to default") { prefs.subtitleStyle = SubtitleStyle() }
+        Spacer(Modifier.height(48.dp))
+    }
+}
+
+/** A 16:9 frame with a sample line drawn roughly as mpv will draw it. */
+@Composable
+private fun SubtitlePreview(style: SubtitleStyle) {
+    val textColor = if (style.color == SubtitleColor.Yellow) Color(0xFFFFE14D) else Color.White
+    val fontSize = (style.size.pointSize * 0.42).sp
+    val shadow = when (style.background) {
+        SubtitleBackgroundStylePreset.Shadow -> androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.85f), androidx.compose.ui.geometry.Offset(3f, 3f), 4f)
+        SubtitleBackgroundStylePreset.Outline -> androidx.compose.ui.graphics.Shadow(Color.Black, androidx.compose.ui.geometry.Offset.Zero, 6f)
+        else -> null
+    }
+    val align = when (style.position) {
+        SubtitlePositionPreset.Top -> Alignment.TopCenter
+        else -> Alignment.BottomCenter
+    }
+    val bottomPad = if (style.position == SubtitlePositionPreset.LowerThird) 64.dp else 18.dp
+    Box(
+        Modifier.widthIn(max = 640.dp).fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp))
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF3A4B5C), Color(0xFF1B2229), Color(0xFF0B0E11)))),
+    ) {
+        Text(
+            "The quick brown fox jumps over the lazy dog.",
+            color = textColor, fontSize = fontSize, fontWeight = FontWeight.Medium,
+            style = androidx.compose.ui.text.TextStyle(shadow = shadow),
+            modifier = Modifier.align(align).padding(top = 18.dp, bottom = bottomPad, start = 24.dp, end = 24.dp)
+                .then(if (style.background == SubtitleBackgroundStylePreset.Box) Modifier.background(Color.Black.copy(alpha = 0.75f)).padding(horizontal = 8.dp, vertical = 2.dp) else Modifier),
+        )
     }
 }
 

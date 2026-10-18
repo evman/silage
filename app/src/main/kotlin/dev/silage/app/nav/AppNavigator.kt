@@ -13,11 +13,14 @@ sealed interface Route {
     data object Watchlist : Route
     data object ForYou : Route
     data object Calendar : Route
+    data object Notifications : Route
+    data object Requests : Route
     data object Settings : Route
     data class Library(val id: Int, val name: String) : Route
     data class Collection(val id: String, val name: String) : Route
     data class Person(val id: Long, val name: String) : Route
     data class Detail(val contentId: String) : Route
+    data class RequestDetail(val mediaType: String, val tmdbId: Int) : Route
     data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null, val shuffleId: String? = null) : Route
 }
 

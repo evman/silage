@@ -22,6 +22,11 @@ private data class UiPrefsFile(
     val autoSkipIntro: Boolean = false,
     /** The calendar's Following / Trending / All choice. */
     val calendarFilter: String? = null,
+    /** Subtitle look, by Silo preset wire names (see SubtitleStyle). */
+    val subtitleSize: String? = null,
+    val subtitleBackground: String? = null,
+    val subtitlePosition: String? = null,
+    val subtitleColor: String? = null,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -68,4 +73,11 @@ class UiPrefs(private val path: Path) {
     var calendarFilter: String?
         get() = read().calendarFilter
         set(value) = write { it.copy(calendarFilter = value) }
+
+    var subtitleStyle: dev.silage.app.playback.SubtitleStyle
+        get() = read().let { dev.silage.app.playback.SubtitleStyle.of(it.subtitleSize, it.subtitleBackground, it.subtitlePosition, it.subtitleColor) }
+        set(value) = write {
+            it.copy(subtitleSize = value.size.wire, subtitleBackground = value.background.wire,
+                subtitlePosition = value.position.wire, subtitleColor = value.color.wire)
+        }
 }

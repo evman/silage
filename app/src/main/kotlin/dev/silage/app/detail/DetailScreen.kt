@@ -228,7 +228,7 @@ private fun DetailContent(
 }
 
 @Composable
-private fun ActionButton(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun ActionButton(icon: ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val active = interaction.isActive()
     Row(

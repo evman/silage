@@ -135,6 +135,8 @@ fun main(args: Array<String>) {
         )
         Window(onCloseRequest = { if (isWindows) windowMemory.save(); exitApplication() }, state = windowState, title = BuildInfo.NAME, icon = LogoIcon) {
             val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
+            val liveFeatures = remember { koin.get<dev.silage.app.shell.LiveFeatures>() }
+            LaunchedEffect(window) { liveFeatures.appInForeground = { window.isActive } }
             if (isWindows) {
                 LaunchedEffect(window) {
                     // The native window handle exists once the window is shown.
@@ -170,6 +172,14 @@ fun main(args: Array<String>) {
                         var splashDone by remember { mutableStateOf(false) }
                         LaunchedEffect(Unit) { navigator = AppNavigator(withContext(Dispatchers.IO) { startRoute(koin) }) }
                         navigator?.let { nav ->
+                            // A clicked notification toast: bring the window forward on the inbox.
+                            LaunchedEffect(nav) {
+                                liveFeatures.openInbox.collect {
+                                    if (windowState.isMinimized) windowState.isMinimized = false
+                                    window.toFront(); window.requestFocus()
+                                    if (nav.route.value !is Route.Playing) nav.go(Route.Notifications)
+                                }
+                            }
                             val route by nav.route.collectAsState()
                             KeyRoot(route, onBack = nav::back) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
                         }
@@ -294,7 +304,18 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         is Route.Person -> AppShell(nav, koin, route) {
             dev.silage.app.browse.PersonScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) })
         }
-        Route.Search -> AppShell(nav, koin, route) { SearchScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
+        Route.Search -> AppShell(nav, koin, route) {
+            SearchScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onOpenRequest = { type, id -> nav.go(Route.RequestDetail(type, id)) })
+        }
+        Route.Requests -> AppShell(nav, koin, route) {
+            dev.silage.app.requests.RequestsScreen(koin, onOpenLibrary = { nav.go(Route.Detail(it)) },
+                onOpenRequest = { type, id -> nav.go(Route.RequestDetail(type, id)) }, onSearch = { nav.go(Route.Search) })
+        }
+        is Route.RequestDetail -> dev.silage.app.requests.RequestDetailScreen(koin, route.mediaType, route.tmdbId,
+            onOpenLibrary = { nav.go(Route.Detail(it)) }, onOpenRequest = { type, id -> nav.go(Route.RequestDetail(type, id)) })
+        Route.Notifications -> AppShell(nav, koin, route) {
+            dev.silage.app.notifications.NotificationsScreen(koin, onOpen = { nav.go(Route.Detail(it)) })
+        }
         Route.Watchlist -> AppShell(nav, koin, route) { WatchlistScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         Route.Settings -> AppShell(nav, koin, route) {
             SettingsScreen(koin, onSwitchProfile = { nav.root(Route.Profiles) }, onSwitchServer = { nav.root(Route.Connect) }, onSignedOut = { nav.root(Route.SignIn) })

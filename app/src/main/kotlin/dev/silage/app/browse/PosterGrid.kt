@@ -74,6 +74,8 @@ fun PosterGrid(
     firstFocus: FocusRequester? = null,
     restoreId: String? = null,
     header: LazyGridScope.() -> Unit = {},
+    /** Extra items after the grid and its status row (e.g. titles to request). */
+    footer: LazyGridScope.() -> Unit = {},
 ) {
     val grid = rememberLazyGridState()
     val items = state.items
@@ -107,5 +109,6 @@ fun PosterGrid(
                 }
             }
         }
+        footer()
     }
 }

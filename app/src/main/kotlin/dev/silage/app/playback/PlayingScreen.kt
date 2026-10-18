@@ -53,7 +53,8 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
-    val mpv = MpvPlayer(playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1"))
+    val mpv = MpvPlayer(playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1") +
+        koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle.mpvOptions())
     val sourceSwitch = !ready.direct && ready.sourceAudio.isNotEmpty()
     val hud = try { PlayerHud(mpv, ready.meta,
         fullscreenWindow = if (output is VideoOutput.Embedded) fullscreen else null,

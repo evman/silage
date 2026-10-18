@@ -59,6 +59,14 @@ PC or Windows account starts signed out.
 - Watchlist, favorites and watched / unwatched (titles and episodes).
 - Cast pages, For You recommendations, the Calendar and Shuffle (when the
   server offers them).
+- Requests (when the server has them turned on for your profile): Search
+  shows titles that aren't in the library yet under *Not in your library*;
+  a title's page has a Request button and shows how the request is going,
+  and the Requests page in the sidebar lists your requests and suggestions.
+- Notifications: the bell in the sidebar shows how many are unread and opens
+  the inbox (new episodes, fulfilled requests). While Silage is in the
+  background, new ones also pop up as Windows notifications; clicking one
+  brings Silage forward on the inbox.
 - Dark title bar, and the window reopens where it was left.
 
 ## Controls
@@ -82,6 +90,10 @@ pointer is over them.
   10-second countdown, or ask) and *Intros* (skip automatically, or show a
   Skip button). These are stored on this PC in `ui.json`, not on your Silo
   profile.
+- **Settings → Subtitles:** size, background (shadow, outline, dark box or
+  none), text color and position, with a preview. They apply from the next
+  video played and are stored in `ui.json`. Styled (ASS) subtitles keep their
+  own look apart from the size.
 - **Settings → Interface:** which libraries appear in the sidebar, and their order.
 
 ## Known limitations
@@ -92,7 +104,7 @@ pointer is over them.
   height, so small windows have small text.
 - Mostly tested on a single monitor; multi-monitor and mixed-DPI setups have
   had less testing.
-- Subtitle search/AI subtitles, requests, notifications, Watch Together, TV
+- Finding, downloading or AI-generating subtitles, Watch Together, TV
   sign-in and offline downloads are not available yet.
 
 ## Building from source

@@ -28,15 +28,22 @@ fun AppShell(nav: AppNavigator, koin: Koin, current: Route, content: @Composable
         koin.get<ProfileRepository>().getActiveProfile()?.let { profile = SidebarProfile(it.name, it.avatarUrl, it.avatar) }
     }
     val libraries = remember(serverLibraries, prefsVersion) { SidebarEntries.libraries(serverLibraries, prefs.sidebar) }
+    LaunchedEffect(Unit) { koin.get<LiveFeatures>().start() }
+    val inbox = remember { koin.get<org.siloserver.silo.repository.NotificationsRepository>() }
+    val unread by inbox.unreadCount.collectAsState()
+    // Older servers, or ones with the inbox switched off, get no bell.
+    val capability by inbox.capability.collectAsState()
+    val requestsEnabled by remember { koin.get<org.siloserver.silo.model.feature.RequestsFeatureStore>() }.isEnabled.collectAsState()
 
-    AppShellContent(nav, current, profile, libraries, content)
+    AppShellContent(nav, current, profile, libraries, unread, requestsEnabled, notificationsAvailable = capability?.inApp?.enabled != false, content = content)
 }
 
 /** Stateless shell seam: navigation chrome can be exercised without a server. */
 @Composable
-internal fun AppShellContent(nav: AppNavigator, current: Route, profile: SidebarProfile?, libraries: List<SidebarLibrary>, content: @Composable () -> Unit) {
+internal fun AppShellContent(nav: AppNavigator, current: Route, profile: SidebarProfile?, libraries: List<SidebarLibrary>,
+    unread: Int = 0, requestsEnabled: Boolean = false, notificationsAvailable: Boolean = true, content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize().background(Silage.Black)) {
         Box(Modifier.fillMaxSize().padding(start = SidebarRail)) { content() }
-        Sidebar(current, profile, libraries, onGo = nav::go, onProfile = { nav.root(Route.Profiles) })
+        Sidebar(current, profile, libraries, onGo = nav::go, onProfile = { nav.root(Route.Profiles) }, unread = unread, requestsEnabled = requestsEnabled, notificationsAvailable = notificationsAvailable)
     }
 }

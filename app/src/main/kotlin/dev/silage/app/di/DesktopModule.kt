@@ -47,4 +47,5 @@ val desktopModule = module {
     single<MembershipPort> { UnavailableMembershipPort }
     factory { HomeViewModel(get(), get()) }
     single { dev.silage.app.ui.UiPrefs(XdgPaths.config.resolve("ui.json")) }
+    single { dev.silage.app.shell.LiveFeatures(get(), get(), get()) { where, t -> dev.silage.app.CrashLog().record(where, t) } }
 }

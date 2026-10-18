@@ -40,15 +40,36 @@ import dev.silage.app.ui.rememberInitialFocus
 import org.koin.core.Koin
 import org.siloserver.silo.network.apiv2.CatalogContinuationV2
 import org.siloserver.silo.repository.CatalogRepository
+import androidx.compose.foundation.lazy.grid.items
+import dev.silage.app.requests.RequestSearch
+import dev.silage.app.requests.openRequestCard
+import dev.silage.app.requests.requestCardId
+import dev.silage.app.requests.toRequestCard
+import org.siloserver.silo.model.feature.RequestsFeatureStore
+import org.siloserver.silo.network.ApiResult
+import org.siloserver.silo.repository.RequestsRepository
 
 /** Search as you type over the whole server. */
 @Composable
-fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit) {
+fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit, onOpenRequest: (mediaType: String, tmdbId: Int) -> Unit = { _, _ -> }) {
     val catalog = remember { koin.get<CatalogRepository>() }
+    // Titles the server can fetch, under the library results, when Requests is on.
+    val requestsEnabled by remember { koin.get<RequestsFeatureStore>() }.isEnabled.collectAsState()
+    val requestRepo = remember { koin.get<RequestsRepository>() }
     // Results and text live with this visit's back-stack entry: Back from a result returns to them.
     val entryScope = LocalNavEntry.current.scope
     val query = rememberEntry("search") { SearchQuery(entryScope) { catalog.browse(query = it, limit = 60) } }
     val results by query.results.collectAsState()
+    val requestSearch = rememberEntry("search:requests") {
+        RequestSearch(entryScope, { q ->
+            when (val r = requestRepo.search(query = q)) {
+                is ApiResult.Success -> ApiResult.Success(r.data.results)
+                is ApiResult.Error -> r
+                is ApiResult.NetworkError -> r
+            }
+        }, requestRepo.lastUpdate)
+    }
+    val requestResults by requestSearch.results.collectAsState()
     var text by rememberSaveable { mutableStateOf("") }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
     var focused by remember { mutableStateOf<CardModel?>(null) }
@@ -72,10 +93,25 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit) {
             state = if (results == SearchResults.Idle) PagerState(endReached = true) else state,
             onLoadMore = {}, onRetry = { query.onInput(text) }, onOpen = onOpen, onFocus = { focused = it; lastFocused = it.id },
             firstFocus = restore, restoreId = lastFocused,
-            emptyText = if (results == SearchResults.Idle) "Search your movies and shows" else "No results for “$text”",
+            emptyText = if (results == SearchResults.Idle) "Search your movies and shows" else "No results for “$text” in your library",
             header = {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    SearchField(text, { text = it; query.onInput(it) }, field)
+                    SearchField(text, { text = it; query.onInput(it); if (requestsEnabled) requestSearch.onInput(it) }, field)
+                }
+            },
+            footer = {
+                if (requestsEnabled && text.isNotBlank() && requestResults.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Column(Modifier.padding(top = 16.dp)) {
+                            Text("Not in your library", color = Silage.Text, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+                            Text("Request a title and the server will add it.", color = Silage.Text2, fontSize = 18.sp, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                    items(requestResults, key = { requestCardId(it.mediaType, it.tmdbId) }) { r ->
+                        val card = remember(r) { r.toRequestCard() }
+                        MediaCard(card, 200.dp, onOpen = { lastFocused = card.id; openRequestCard(card, { onOpen(card.copy(openTarget = it)) }, onOpenRequest) },
+                            onFocus = { focused = card })
+                    }
                 }
             },
         )
