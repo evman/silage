@@ -21,6 +21,7 @@ private class RefusingLibMpv : LibMpv {
     override fun mpv_observe_property(ctx: Pointer, replyUserdata: Long, name: String, format: Int): Int = 0
     override fun mpv_wait_event(ctx: Pointer, timeout: Double): MpvEvent = MpvEvent()
     override fun mpv_wakeup(ctx: Pointer) = Unit
+    override fun mpv_request_log_messages(ctx: Pointer, minLevel: String): Int = 0
 }
 
 class MpvPlayerInitTest {

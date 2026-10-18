@@ -18,6 +18,12 @@ class MpvPlayerTest {
 
     @AfterTest fun tearDown() = player.close()
 
+    /**
+     * The test clip, or null when ffmpeg isn't installed to make it (a plain
+     * Windows PC): those tests then return early, like the opt-in smoke tests.
+     */
+    private fun clip(): String? = if (TestClips.available) TestClips.fiveSeconds.toString() else null
+
     /** Subscribes before [action] so fast events (a 5 s local clip) can't be missed. */
     private suspend inline fun <reified E : PlayerEvent> awaitEvent(crossinline action: () -> Unit): E = kotlinx.coroutines.coroutineScope {
         val event = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
@@ -28,26 +34,30 @@ class MpvPlayerTest {
     }
 
     @Test fun loadsAndReportsDuration() = runBlocking<Unit> {
-        awaitEvent<PlayerEvent.FileLoaded> { player.load(TestClips.fiveSeconds.toString()) }
+        val file = clip() ?: return@runBlocking
+        awaitEvent<PlayerEvent.FileLoaded> { player.load(file) }
         withTimeout(5_000) { player.state.first { it.durationSeconds > 4.5 } }
         assertTrue(player.state.value.loaded)
     }
 
     @Test fun seeksAbsolute() = runBlocking<Unit> {
-        awaitEvent<PlayerEvent.FileLoaded> { player.load(TestClips.fiveSeconds.toString()) }
+        val file = clip() ?: return@runBlocking
+        awaitEvent<PlayerEvent.FileLoaded> { player.load(file) }
         player.setPaused(true)
         player.seekAbsolute(3.0)
         withTimeout(5_000) { player.state.first { it.positionSeconds in 2.9..3.5 } }
     }
 
     @Test fun startPositionIsHonored() = runBlocking<Unit> {
+        val file = clip() ?: return@runBlocking
         player.setPaused(true)
-        player.load(TestClips.fiveSeconds.toString(), startSeconds = 2.0)
+        player.load(file, startSeconds = 2.0)
         withTimeout(5_000) { player.state.first { it.loaded && it.positionSeconds in 1.9..2.5 } }
     }
 
     @Test fun playsToEndOfFile() = runBlocking<Unit> {
-        val ended = awaitEvent<PlayerEvent.Ended> { player.load(TestClips.fiveSeconds.toString()) }
+        val file = clip() ?: return@runBlocking
+        val ended = awaitEvent<PlayerEvent.Ended> { player.load(file) }
         assertEquals(EndReason.EOF, ended.reason)
     }
 
@@ -58,7 +68,8 @@ class MpvPlayerTest {
     }
 
     @Test fun headersWithCommasSurvive() {
-        player.load(TestClips.fiveSeconds.toString(), headers = mapOf("Authorization" to "Bearer a,b:c"))
+        val file = clip() ?: return
+        player.load(file, headers = mapOf("Authorization" to "Bearer a,b:c"))
         val fields = player.getProperty("http-header-fields")
         assertNotNull(fields)
         assertTrue(fields.contains("Bearer a,b:c"), "got: $fields")

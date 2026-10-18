@@ -44,6 +44,8 @@ class MpvPlayer(
             lib.mpv_terminate_destroy(ctx)
             error("mpv_initialize failed: ${lib.mpv_error_string(initialized)}")
         }
+        // Warnings and errors only, kept in memory to explain a failed load.
+        lib.mpv_request_log_messages(ctx, "warn")
         lib.mpv_observe_property(ctx, 1, "time-pos", LibMpv.FORMAT_DOUBLE)
         lib.mpv_observe_property(ctx, 2, "duration", LibMpv.FORMAT_DOUBLE)
         lib.mpv_observe_property(ctx, 3, "pause", LibMpv.FORMAT_FLAG)
@@ -87,6 +89,8 @@ class MpvPlayer(
             displayWidth.toString(), displayHeight.toString(),
         )
 
+    private val recentLog = ArrayDeque<String>()
+
     private fun eventLoop() {
         while (!closed) {
             val ev = lib.mpv_wait_event(ctx, -1.0)
@@ -98,11 +102,19 @@ class MpvPlayer(
                     _events.tryEmit(PlayerEvent.FileLoaded)
                 }
                 LibMpv.EVENT_PLAYBACK_RESTART -> _events.tryEmit(PlayerEvent.PlaybackRestart)
+                LibMpv.EVENT_LOG_MESSAGE -> ev.data?.let { p ->
+                    val m = MpvEventLogMessage(p)
+                    recentLog.addLast("[${m.prefix}] ${m.level}: ${m.text?.trimEnd()}")
+                    while (recentLog.size > 40) recentLog.removeFirst()
+                }
                 LibMpv.EVENT_END_FILE -> ev.data?.let { p ->
                     val end = MpvEventEndFile(p)
                     val reason = EndReason.of(end.reason)
                     _state.update { it.copy(loaded = false) }
-                    _events.tryEmit(PlayerEvent.Ended(reason, if (reason == EndReason.ERROR) lib.mpv_error_string(end.error) else null))
+                    _events.tryEmit(
+                        if (reason == EndReason.ERROR) PlayerEvent.Ended(reason, lib.mpv_error_string(end.error), recentLog.toList())
+                        else PlayerEvent.Ended(reason, null),
+                    )
                 }
                 LibMpv.EVENT_CLIENT_MESSAGE -> ev.data?.let { p ->
                     _events.tryEmit(PlayerEvent.ClientMessage(MpvEventClientMessage(p).strings()))

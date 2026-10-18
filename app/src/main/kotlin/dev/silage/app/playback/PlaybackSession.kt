@@ -55,7 +55,10 @@ class PlaybackSession(
                 stop = { sessionId -> player.close(); stopSession(sessionId) },
             ).run(ready)
             return when {
-                end is PlayerEvent.Ended && end.reason == EndReason.ERROR -> PlayOutcome.Failed("Playback failed: ${end.error ?: "unknown error"}")
+                end is PlayerEvent.Ended && end.reason == EndReason.ERROR -> {
+                    PlaybackLog.recordFailure(end.error, end.log)
+                    PlayOutcome.Failed("Playback failed: ${end.error ?: "unknown error"}")
+                }
                 end is PlayerEvent.Ended && end.reason == EndReason.EOF -> PlayOutcome.Completed
                 else -> PlayOutcome.Finished
             }

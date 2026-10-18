@@ -37,7 +37,10 @@ object DesktopCapabilities {
         audioEvidence = "declared",
         // HDR is passed through on an HDR monitor or tone-mapped by mpv, so the
         // server must not tone-map (which would mean a transcode).
-        hdrDetails = HdrCapabilities(hdr10 = true, hdr10Plus = true, hlg = true, dolbyVisionProfiles = listOf(5, 8)),
+        // Profile 7 (UHD Blu-ray remuxes) included: FFmpeg decodes its HDR10
+        // base layer and libplacebo applies the RPU, so the file plays as is.
+        // Left out, the server strips Dolby Vision and remuxes over HLS.
+        hdrDetails = HdrCapabilities(hdr10 = true, hdr10Plus = true, hlg = true, dolbyVisionProfiles = listOf(5, 7, 8)),
     )
 
     /** mpv renders text, styled ASS (libass, with attached fonts) and bitmap subtitles itself. */

@@ -5,6 +5,15 @@ import java.nio.file.Path
 
 /** Generates small media files with ffmpeg once per JVM. */
 object TestClips {
+    /** Whether ffmpeg is on PATH; the tests that need a clip are skipped without it. */
+    val available: Boolean by lazy {
+        runCatching {
+            val p = ProcessBuilder("ffmpeg", "-version").redirectErrorStream(true).start()
+            p.inputStream.readAllBytes()
+            p.waitFor() == 0
+        }.getOrDefault(false)
+    }
+
     private val dir: Path by lazy { Files.createTempDirectory("silage-clips") }
 
     /** 5 s, 320x240, 24 fps H.264 + AAC sine, one SRT subtitle track. */

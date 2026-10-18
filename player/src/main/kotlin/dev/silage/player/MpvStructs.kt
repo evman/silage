@@ -26,6 +26,15 @@ class MpvEventEndFile(p: Pointer) : Structure(p) {
     init { read() }
 }
 
+@Structure.FieldOrder("prefix", "level", "text", "log_level")
+class MpvEventLogMessage(p: Pointer) : Structure(p) {
+    @JvmField var prefix: String? = null
+    @JvmField var level: String? = null
+    @JvmField var text: String? = null
+    @JvmField var log_level: Int = 0
+    init { read() }
+}
+
 @Structure.FieldOrder("num_args", "args")
 class MpvEventClientMessage(p: Pointer) : Structure(p) {
     @JvmField var num_args: Int = 0

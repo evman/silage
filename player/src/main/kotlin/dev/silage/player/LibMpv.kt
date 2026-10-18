@@ -21,6 +21,7 @@ interface LibMpv : Library {
     fun mpv_observe_property(ctx: Pointer, replyUserdata: Long, name: String, format: Int): Int
     fun mpv_wait_event(ctx: Pointer, timeout: Double): MpvEvent
     fun mpv_wakeup(ctx: Pointer)
+    fun mpv_request_log_messages(ctx: Pointer, minLevel: String): Int
 
     companion object {
         const val FORMAT_FLAG = 3
@@ -28,6 +29,7 @@ interface LibMpv : Library {
 
         const val EVENT_NONE = 0
         const val EVENT_SHUTDOWN = 1
+        const val EVENT_LOG_MESSAGE = 2
         const val EVENT_END_FILE = 7
         const val EVENT_FILE_LOADED = 8
         const val EVENT_CLIENT_MESSAGE = 16

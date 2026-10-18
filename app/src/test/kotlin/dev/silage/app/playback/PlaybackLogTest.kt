@@ -16,6 +16,17 @@ class PlaybackLogTest {
         kotlin.test.assertEquals("0", options["volume"])
     }
 
+    @Test fun failureLogDropsSignedQueries() {
+        val lines = PlaybackLog.redactLog(listOf(
+            "[ffmpeg] error: https://nas:8096/api/v2/playback/transcode/abc/master.m3u8?st=SECRET789&e=1: Server returned 404 Not Found",
+            "[cplayer] warn: plain line",
+        ))
+        assertFalse(lines.any { "SECRET789" in it }, lines.toString())
+        assertContains(lines[0], "https://nas:8096/api/v2/playback/transcode/abc/master.m3u8?…")
+        assertContains(lines[0], "404 Not Found")
+        kotlin.test.assertEquals("[cplayer] warn: plain line", lines[1])
+    }
+
     private val decision = SiloJson.decodeFromString(
         PlaybackDecisionResponseV3.serializer(),
         """{"protocol_version":3,"session_id":"s1","playback_plan":{"plan_id":"p1","delivery":"original_http",

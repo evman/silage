@@ -32,7 +32,7 @@ live in `%LOCALAPPDATA%\Silage`:
 |---|---|
 | `Config` | device id, interface settings (`ui.json`) |
 | `Data` | saved sign-in and preferences (encrypted, see below) |
-| `State` | logs (`silage.log`, `mpv.log`, `last-playback.json`) and the playback journal |
+| `State` | logs (`silage.log`, `last-playback.json`, and `playback-error.log` after a failed playback) and the playback journal |
 | `Cache` | downloaded artwork |
 
 Moving or deleting the extracted `Silage` folder doesn't affect them. To reset
@@ -105,6 +105,9 @@ pointer is over them.
   with the HDR setting on *Always*.
 - The interface is laid out for a 1080p screen and scales with the window
   height, so small windows have small text.
+- Dolby Vision plays from its HDR10 base layer with the Dolby Vision
+  metadata applied by mpv (profiles 5, 7 and 8, including UHD Blu-ray
+  remuxes); the profile 7 enhancement layer is ignored.
 - Mostly tested on a single monitor; multi-monitor and mixed-DPI setups have
   had less testing.
 - Finding, downloading or AI-generating subtitles, Watch Together, TV

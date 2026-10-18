@@ -36,6 +36,21 @@ object PlaybackLog {
         }
     })
 
+    val failureFile get() = XdgPaths.state.resolve("playback-error.log")
+
+    /** URLs without their query (signed tokens), then the usual secret redaction. */
+    fun redactLog(lines: List<String>): List<String> = lines.map { line ->
+        dev.silage.app.SecretRedaction.text(line.replace(Regex("""(https?://[^\s?"']+)\?[^\s"']*"""), "$1?…"))
+    }
+
+    /** mpv's last warnings and errors for a playback that failed. */
+    fun recordFailure(error: String?, log: List<String>) {
+        runCatching {
+            Files.createDirectories(failureFile.parent)
+            Files.writeString(failureFile, "// ${Instant.now()} mpv: ${error ?: "unknown error"}\n" + redactLog(log).joinToString("\n") + "\n")
+        }
+    }
+
     fun record(decision: PlaybackDecisionResponseV3) {
         runCatching {
             Files.createDirectories(planFile.parent)

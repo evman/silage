@@ -46,6 +46,6 @@ class DesktopCapabilitiesTest {
     @Test fun hdrIsHandledByThePlayerNotTheServer() {
         val hdr = DesktopCapabilities.codecs.hdrDetails
         assertTrue(hdr != null && hdr.hdr10 && hdr.hlg && hdr.hdr10Plus, "hdr=$hdr")
-        assertTrue(hdr!!.dolbyVisionProfiles.containsAll(listOf(5, 8)), "dv=${hdr.dolbyVisionProfiles}")
+        assertTrue(hdr!!.dolbyVisionProfiles.containsAll(listOf(5, 7, 8)), "dv=${hdr.dolbyVisionProfiles}")
     }
 }

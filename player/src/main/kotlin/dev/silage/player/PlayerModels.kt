@@ -11,7 +11,8 @@ data class PlayerState(
 sealed interface PlayerEvent {
     data object FileLoaded : PlayerEvent
     data object PlaybackRestart : PlayerEvent
-    data class Ended(val reason: EndReason, val error: String?) : PlayerEvent
+    /** [log]: mpv's recent warnings and errors when it ended with an error (may hold URLs: redact before saving). */
+    data class Ended(val reason: EndReason, val error: String?, val log: List<String> = emptyList()) : PlayerEvent
     data class ClientMessage(val args: List<String>) : PlayerEvent
     data object Shutdown : PlayerEvent
 }
