@@ -84,8 +84,14 @@ fun main(args: Array<String>) {
         }
         return
     }
+    // Before anything opens its files: move pre-AppData Windows folders into place.
+    val dataMoves = XdgPaths.migrateLegacyWindowsDirs()
     val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
     val crashLog = CrashLog()
+    for (move in dataMoves) when (move) {
+        is AppDirs.Migration.Moved -> System.err.println("silage: moved ${move.from} to ${move.to}")
+        is AppDirs.Migration.Failed -> crashLog.record("moving ${move.from} to ${move.to} (still using the old folder)", move.error)
+    }
     // Developer hook for reproducing exits: post a real Esc key press after N seconds.
     System.getenv("SILAGE_DEV_BACK_AFTER")?.toLongOrNull()?.let { secs ->
         Thread {
