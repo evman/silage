@@ -35,7 +35,9 @@ suspend fun ApiResult<CatalogResponse>.toPage(): ApiResult<Page<CatalogContinuat
 
 /** A library: Browse (poster grid with sort) or Collections. */
 @Composable
-fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) -> Unit, onOpenCollection: (String, String) -> Unit) {
+fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) -> Unit, onOpenCollection: (String, String) -> Unit,
+    onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> }) {
+    val shuffle = dev.silage.app.playback.rememberShuffleStart(koin, org.siloserver.silo.model.shuffle.ShuffleScopeKind.LIBRARY, libraryId.toString(), onShuffle)
     // Saved with this visit's back-stack entry, so Back from a detail page returns here intact.
     var tab by rememberSaveable { mutableStateOf(0) }
     var sort by rememberSaveable { mutableStateOf(LibrarySort.Added) }
@@ -86,6 +88,7 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
                             if (tab == 0) {
                                 Spacer(Modifier.width(18.dp))
                                 Pill("Sort: ${sort.label}") { sort = LibrarySort.entries[(sort.ordinal + 1) % LibrarySort.entries.size] }
+                                shuffle?.let { start -> Pill("Shuffle", onClick = start) }
                             }
                         }
                     }
@@ -97,7 +100,9 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
 
 /** One collection's items as a poster grid. */
 @Composable
-fun CollectionScreen(koin: Koin, collectionId: String, name: String, onOpen: (CardModel) -> Unit) {
+fun CollectionScreen(koin: Koin, collectionId: String, name: String, onOpen: (CardModel) -> Unit,
+    onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> }) {
+    val shuffle = dev.silage.app.playback.rememberShuffleStart(koin, org.siloserver.silo.model.shuffle.ShuffleScopeKind.LIBRARY_COLLECTION, collectionId, onShuffle)
     val sections = remember { koin.get<SectionRepository>() }
     val scope = rememberCoroutineScope()
     var focused by remember { mutableStateOf<CardModel?>(null) }
@@ -113,7 +118,10 @@ fun CollectionScreen(koin: Koin, collectionId: String, name: String, onOpen: (Ca
         PosterGrid(state, { scope.launch { pager.loadMore() } }, { scope.launch { pager.retry() } }, onOpen, { focused = it; lastFocused = it.id },
             firstFocus = first, restoreId = lastFocused, header = {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(name, color = Silage.Text, fontSize = 48.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 56.dp, bottom = 12.dp))
+                Column(Modifier.padding(top = 56.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Text(name, color = Silage.Text, fontSize = 48.sp, fontWeight = FontWeight.Bold)
+                    shuffle?.let { start -> Pill("Shuffle", onClick = start) }
+                }
             }
         })
     }

@@ -3,6 +3,7 @@ package dev.silage.app.detail
 import androidx.compose.foundation.background
 import androidx.compose.animation.animateContentSize
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -69,7 +70,8 @@ import org.siloserver.silo.repository.CatalogRepository
 
 /** Movie, episode or series detail. [onPlay] gets a content id, whether to start over, and the chosen copy. */
 @Composable
-fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) -> Unit, onPerson: (Long, String) -> Unit = { _, _ -> }) {
+fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) -> Unit, onPerson: (Long, String) -> Unit = { _, _ -> },
+    onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> }) {
     val catalog = remember { koin.get<CatalogRepository>() }
     var item by remember(contentId) { mutableStateOf<ItemDetail?>(null) }
     var error by remember(contentId) { mutableStateOf<String?>(null) }
@@ -106,7 +108,7 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
         error != null && d == null -> ErrorState(error!!) { attempt++ }
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
         else -> DetailContent(koin, d.toDetailModel(), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId,
-            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ })
+            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle)
     }
 }
 
@@ -123,7 +125,10 @@ private fun DetailContent(
     contentId: String,
     onPerson: (Long, String) -> Unit,
     onEpisodesChanged: () -> Unit,
+    onShuffle: (contentId: String, shuffleId: String) -> Unit,
 ) {
+    // Only a series shuffles from its page (movies have nothing to pick between).
+    val shuffle = if (m.isSeries) dev.silage.app.playback.rememberShuffleStart(koin, org.siloserver.silo.model.shuffle.ShuffleScopeKind.SERIES, contentId, onShuffle) else null
     val actions = remember { ItemActions(koin.get(), koin.get(), koin.get()) }
     val scope = rememberCoroutineScope()
     val watchlist = remember(contentId) { OptimisticToggle(null) { actions.setWatchlist(contentId, it) } }
@@ -177,6 +182,7 @@ private fun DetailContent(
                             if (m.canPlayFromStart) ActionButton(Icons.Filled.Replay, "Play from beginning") { onPlay(contentId, true, selected?.fileId) }
                         }
                         if (options.size > 1 && selected != null) ActionButton(Icons.Outlined.Layers, selected.short) { picking = true }
+                        shuffle?.let { start -> ActionButton(Icons.Filled.Shuffle, "Shuffle", onClick = start) }
                         watchlist.value?.let { on ->
                             ToggleChip(if (on) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, if (on) "On your watchlist" else "Add to watchlist", on) { scope.launch { watchlist.toggle() } }
                         }

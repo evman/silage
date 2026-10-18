@@ -98,15 +98,19 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
 /** Starts a session, plays it inside the Silage window, returns when done. */
 @Composable
 fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fileId: Int? = null, onDone: () -> Unit,
-    onPlayNext: (String) -> Unit = {}) {
+    shuffleId: String? = null,
+    onPlayNext: (contentId: String, shuffleId: String?) -> Unit = { _, _ -> }) {
     val fullscreen = LocalPlaybackFullscreen.current
     val video = remember(contentId) { VideoSession() }
     DisposableEffect(fullscreen, contentId) { onDispose { fullscreen?.leave() } }
     var error by remember { mutableStateOf<String?>(null) }
     // Shown after an episode plays to its end, when another follows.
     var upNext by remember { mutableStateOf<Pair<EpisodeListItem, String?>?>(null) }
+    // A running shuffle: the server picks each next item; its post-roll replaces "Up next".
+    val shuffle = remember(shuffleId) { shuffleId?.let { org.siloserver.silo.playback.ShufflePlayback(koin.get(), it) } }
+    var shufflePick by remember { mutableStateOf<org.siloserver.silo.playback.ShuffleNextPick?>(null) }
     val surface = remember { CompletableDeferred<Surface>() }
-    if (error == null && upNext == null) {
+    if (error == null && upNext == null && shufflePick == null) {
         VideoSurface(onReady = { canvas, wid -> surface.complete(Surface(canvas, wid)) })
     }
     LaunchedEffect(contentId) {
@@ -137,13 +141,15 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         var meta: PlaybackMeta? = null
         var lookup: kotlinx.coroutines.Job? = null
         val catalog = koin.get<CatalogRepository>()
+        // Read the shuffle while this item plays, so its post-roll knows the next pick.
+        shuffle?.let { s -> launch { s.refresh() } }
         while (true) {
             val session = PlaybackSession(
                 launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position) },
                 openPlayer = { ready ->
                     selectedFile = ready.fileId
                     meta = ready.meta
-                    if (lookup == null && ready.meta.seriesId != null) {
+                    if (lookup == null && shuffle == null && ready.meta.seriesId != null) {
                         lookup = launch(Dispatchers.IO) {
                             nextEpisode.set(runCatching {
                                 findNextEpisode(ready.meta) { series, season -> (catalog.getEpisodes(series, season) as? ApiResult.Success)?.data?.episodes }
@@ -152,7 +158,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
                     }
                     openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video,
                         hasNextEpisode = { nextEpisode.get() != null },
-                        onNextEpisode = if (ready.meta.seriesId != null) ({ nextRequested.set(true) }) else null,
+                        onNextEpisode = if (shuffle == null && ready.meta.seriesId != null) ({ nextRequested.set(true) }) else null,
                     ) { ordinal, position, paused ->
                         change.compareAndSet(null, AudioChange(ordinal, position, paused))
                     }
@@ -163,12 +169,21 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             val outcome = withContext(Dispatchers.IO) { session.play(contentId) }
             requested = change.getAndSet(null)
             if (outcome is PlayOutcome.Failed) { fullscreen?.leave(); error = outcome.message; break }
+            if (requested == null && shuffle != null) {
+                if (outcome is PlayOutcome.Completed) {
+                    if (shuffle.latest == null) shuffle.refresh()
+                    val pick = shuffle.nextPickAfter(contentId)
+                    if (pick != null) { shufflePick = pick; break }
+                }
+                // Stopped early, or nothing left to pick: end the shuffle.
+                shuffle.stopInBackground(); fullscreen?.leave(); onDone(); break
+            }
             if (requested == null) {
                 val wantsNext = nextRequested.get() || outcome is PlayOutcome.Completed
                 lookup?.let { if (wantsNext) it.join() }
                 val next = nextEpisode.get()
                 when {
-                    next != null && nextRequested.get() -> onPlayNext(next.contentId)
+                    next != null && nextRequested.get() -> onPlayNext(next.contentId, null)
                     next != null && outcome is PlayOutcome.Completed -> upNext = next to meta?.seriesTitle
                     else -> { fullscreen?.leave(); onDone() }
                 }
@@ -179,7 +194,37 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
     error?.let { msg -> PlaybackFailure(msg, onDone) }
     upNext?.let { (next, seriesTitle) ->
         val autoplay = remember { koin.get<dev.silage.app.ui.UiPrefs>().autoplayNext }
-        UpNextScreen(next, seriesTitle, autoplay, onPlay = { onPlayNext(next.contentId) }, onBack = { fullscreen?.leave(); onDone() })
+        UpNextScreen(next, seriesTitle, autoplay, onPlay = { onPlayNext(next.contentId, null) }, onBack = { fullscreen?.leave(); onDone() })
+    }
+    val running = shuffle
+    if (running != null) shufflePick?.let { pick ->
+        val autoplay = remember { koin.get<dev.silage.app.ui.UiPrefs>().autoplayNext }
+        val scope = rememberCoroutineScope()
+        var busy by remember { mutableStateOf(false) }
+        ShuffleUpNextScreen(
+            pick, running.scopeLabel, autoplay,
+            onPlay = {
+                if (!busy) {
+                    busy = true
+                    scope.launch {
+                        // Advancing tells the server this item finished; it answers with what plays now.
+                        val now = (running.advance(contentId) as? ApiResult.Success)?.data?.current?.contentId ?: pick.contentId
+                        onPlayNext(now, shuffleId)
+                    }
+                }
+            },
+            onPickAnother = {
+                if (!busy) {
+                    busy = true
+                    scope.launch {
+                        running.pickAnother()
+                        running.nextPickAfter(contentId)?.let { shufflePick = it }
+                        busy = false
+                    }
+                }
+            },
+            onStop = { running.stopInBackground(); fullscreen?.leave(); onDone() },
+        )
     }
 }
 

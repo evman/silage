@@ -18,6 +18,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Search
@@ -91,6 +93,8 @@ fun Sidebar(
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Entry(Icons.Outlined.Search, "Search", current == Route.Search, open) { onGo(Route.Search) }
                 Entry(Icons.Outlined.Home, "Home", current == Route.Home, open) { onGo(Route.Home) }
+                Entry(Icons.Outlined.AutoAwesome, "For You", current == Route.ForYou, open) { onGo(Route.ForYou) }
+                Entry(Icons.Outlined.CalendarMonth, "Calendar", current == Route.Calendar, open) { onGo(Route.Calendar) }
                 if (libraries.isNotEmpty()) Box(Modifier.padding(vertical = 10.dp, horizontal = 12.dp).fillMaxWidth().height(1.dp).background(Silage.Hairline))
                 libraries.filter { it.visible }.forEach { lib ->
                     Entry(lib.kind.icon(), lib.name, current is Route.Library && current.id == lib.id, open) { onGo(Route.Library(lib.id, lib.name)) }

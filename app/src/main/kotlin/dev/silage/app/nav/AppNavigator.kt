@@ -11,12 +11,14 @@ sealed interface Route {
     data object Home : Route
     data object Search : Route
     data object Watchlist : Route
+    data object ForYou : Route
+    data object Calendar : Route
     data object Settings : Route
     data class Library(val id: Int, val name: String) : Route
     data class Collection(val id: String, val name: String) : Route
     data class Person(val id: Long, val name: String) : Route
     data class Detail(val contentId: String) : Route
-    data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null) : Route
+    data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null, val shuffleId: String? = null) : Route
 }
 
 private val authRoutes = setOf(Route.Connect, Route.SignIn, Route.Profiles)

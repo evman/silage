@@ -54,7 +54,7 @@ suspend fun findNextEpisode(
 
 /**
  * Shown when an episode plays to its end and another follows: the next
- * episode, Play now / Back, and (with autoplay on) a countdown that plays it.
+ * episode, Play now / Back and (with autoplay on) a countdown that plays it.
  */
 @Composable
 fun UpNextScreen(
@@ -63,11 +63,65 @@ fun UpNextScreen(
     autoplay: Boolean,
     onPlay: () -> Unit,
     onBack: () -> Unit,
+) = UpNextLayout(
+    countdownKey = next.contentId,
+    kicker = seriesTitle,
+    title = "S${next.seasonNumber} · E${next.episodeNumber}  ${next.title?.takeIf { it.isNotBlank() } ?: "Episode ${next.episodeNumber}"}",
+    overview = next.overview,
+    stillUrl = next.stillUrl,
+    stillThumbhash = next.stillThumbhash,
+    autoplay = autoplay,
+    onPlay = onPlay,
+    secondary = listOf("Back" to onBack),
+    onBack = onBack,
+)
+
+/**
+ * A shuffle's post-roll: the next random pick with Play now (counting down
+ * when autoplay is on), Pick another, and Stop shuffling. Back stops too.
+ */
+@Composable
+fun ShuffleUpNextScreen(
+    pick: org.siloserver.silo.playback.ShuffleNextPick,
+    scopeLabel: String?,
+    autoplay: Boolean,
+    onPlay: () -> Unit,
+    onPickAnother: () -> Unit,
+    onStop: () -> Unit,
+) = UpNextLayout(
+    countdownKey = pick.contentId,
+    heading = "SHUFFLE · UP NEXT",
+    kicker = listOfNotNull(scopeLabel, pick.seriesTitle?.takeIf { pick.isEpisode }).distinct().joinToString(" · ").ifBlank { null },
+    title = if (pick.isEpisode) "S${pick.seasonNumber} · E${pick.episodeNumber}  ${pick.title}" else pick.title,
+    // The overview of an unwatched episode would spoil it.
+    overview = pick.overview?.takeIf { !pick.isUnwatched },
+    stillUrl = pick.stillUrl,
+    stillThumbhash = pick.stillThumbhash,
+    autoplay = autoplay,
+    onPlay = onPlay,
+    secondary = listOf("Pick another" to onPickAnother, "Stop shuffling" to onStop),
+    onBack = onStop,
+)
+
+@Composable
+private fun UpNextLayout(
+    countdownKey: String,
+    heading: String = "UP NEXT",
+    kicker: String?,
+    title: String,
+    overview: String?,
+    stillUrl: String?,
+    stillThumbhash: String?,
+    autoplay: Boolean,
+    onPlay: () -> Unit,
+    secondary: List<Pair<String, () -> Unit>>,
+    onBack: () -> Unit,
 ) {
-    var remaining by remember(next.contentId) { mutableStateOf(UpNextCountdownSeconds) }
+    // A new pick (Pick another) restarts the countdown.
+    var remaining by remember(countdownKey) { mutableStateOf(UpNextCountdownSeconds) }
     val currentOnPlay by rememberUpdatedState(onPlay)
     if (autoplay) {
-        LaunchedEffect(next.contentId) {
+        LaunchedEffect(countdownKey) {
             while (remaining > 0) { delay(1_000); remaining-- }
             currentOnPlay()
         }
@@ -80,22 +134,19 @@ fun UpNextScreen(
                 if (e.type == KeyEventType.KeyDown && (e.key == Key.Escape || e.key == Key.Backspace)) { onBack(); true } else false
             },
     ) {
-        Artwork(next.stillUrl, next.stillThumbhash, "", Modifier.fillMaxWidth(0.62f).fillMaxHeight().align(Alignment.CenterEnd), showTitleTile = false)
+        Artwork(stillUrl, stillThumbhash, "", Modifier.fillMaxWidth(0.62f).fillMaxHeight().align(Alignment.CenterEnd), showTitleTile = false)
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black, 0.40f to Color.Black, 0.75f to Color.Black.copy(alpha = 0.35f), 1f to Color.Transparent)))
         Column(Modifier.align(Alignment.CenterStart).padding(start = 96.dp).widthIn(max = 760.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("UP NEXT", color = Silage.Amber, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 3.sp)
-            seriesTitle?.let { Text(it, color = Silage.Text2, fontSize = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            Text(
-                "S${next.seasonNumber} · E${next.episodeNumber}  ${next.title?.takeIf { it.isNotBlank() } ?: "Episode ${next.episodeNumber}"}",
-                color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            )
-            next.overview?.takeIf { it.isNotBlank() }?.let {
+            Text(heading, color = Silage.Amber, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 3.sp)
+            kicker?.let { Text(it, color = Silage.Text2, fontSize = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Text(title, color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            overview?.takeIf { it.isNotBlank() }?.let {
                 Text(it, color = Silage.Text, fontSize = 19.sp, lineHeight = 28.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 UpNextButton(if (autoplay) "Play now ($remaining)" else "Play now", primary = true, Modifier.focusRequester(playFocus), onPlay)
-                UpNextButton("Back", primary = false, onClick = onBack)
+                secondary.forEach { (label, action) -> UpNextButton(label, primary = false, onClick = action) }
             }
         }
     }

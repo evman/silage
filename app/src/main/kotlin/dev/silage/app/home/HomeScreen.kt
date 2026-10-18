@@ -48,9 +48,31 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
     // Owned by this visit's back-stack entry (cleared when it's popped); it loads on creation.
     val vm = rememberEntryViewModel { koin.get<HomeViewModel>() }
     val state by vm.uiState.collectAsState()
+    SectionRowsScreen(state.sections, state.isLoading, state.error, onRetry = { vm.refresh() }, emptyText = "Nothing on Home yet", onOpen = onOpen, onPlay = onPlay)
+}
 
-    val rows = remember(state.sections) {
-        state.sections.filter { it.items.isNotEmpty() }.map { section ->
+/** For You: the server's personal recommendation rows, laid out like Home. */
+@Composable
+fun ForYouScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> Unit) {
+    val vm = rememberEntryViewModel { org.siloserver.silo.viewmodel.RecommendationsViewModel(koin.get()) }
+    val state by vm.uiState.collectAsState()
+    SectionRowsScreen(state.sections, state.isLoading, state.error, onRetry = { vm.refresh() },
+        emptyText = "No recommendations yet. Watch a few things and check back.", onOpen = onOpen, onPlay = onPlay)
+}
+
+/** A marquee for the focused card over rows of cards (Home, For You). */
+@Composable
+fun SectionRowsScreen(
+    sections: List<org.siloserver.silo.model.section.ResolvedSection>,
+    isLoading: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
+    emptyText: String,
+    onOpen: (CardModel) -> Unit,
+    onPlay: (CardModel) -> Unit,
+) {
+    val rows = remember(sections) {
+        sections.filter { it.items.isNotEmpty() }.map { section ->
             val progress = isProgressRow(section.sectionType)
             Triple(section, progress, section.items.map { it.toCard(landscape = progress) })
         }
@@ -73,9 +95,9 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
     LaunchedEffect(rows.isNotEmpty()) { System.getenv("SILAGE_DEV_HOME_SCROLL")?.toIntOrNull()?.let { if (rows.size > it) listState.scrollToItem(it) } }
     Box(Modifier.fillMaxSize().background(Silage.Black)) {
         when {
-            rows.isEmpty() && state.isLoading -> { Marquee(marquee); Skeleton() }
-            rows.isEmpty() && state.error != null -> { Marquee(marquee); ErrorState(state.error!!) { vm.refresh() } }
-            rows.isEmpty() -> { Marquee(marquee); Text("Nothing on Home yet", color = Silage.Text2, fontSize = 24.sp, modifier = Modifier.align(Alignment.Center)) }
+            rows.isEmpty() && isLoading -> { Marquee(marquee); Skeleton() }
+            rows.isEmpty() && error != null -> { Marquee(marquee); ErrorState(error, onRetry) }
+            rows.isEmpty() -> { Marquee(marquee); Text(emptyText, color = Silage.Text2, fontSize = 24.sp, modifier = Modifier.align(Alignment.Center)) }
             else -> HomeLayout(marquee = { collapse -> FocusedMarquee(focused, marquee, collapse) }, listState = listState) {
                 items(rows, key = { it.first.id }) { (section, progress, cards) ->
                     CardRow(

@@ -268,19 +268,29 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         )
         is Route.Playing -> PlayingScreen(koin, route.contentId, route.fromStart, route.fileId,
             onDone = { if (!nav.back()) nav.root(Route.Home) },
-            onPlayNext = { next -> nav.replace(Route.Playing(next)) })
+            shuffleId = route.shuffleId,
+            onPlayNext = { next, shuffleId -> nav.replace(Route.Playing(next, shuffleId = shuffleId)) })
         Route.Home -> AppShell(nav, koin, route) {
             HomeScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) })
         }
         is Route.Library -> AppShell(nav, koin, route) {
-            LibraryScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onOpenCollection = { id, name -> nav.go(Route.Collection(id, name)) })
+            LibraryScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onOpenCollection = { id, name -> nav.go(Route.Collection(id, name)) },
+                onShuffle = { first, shuffleId -> nav.go(Route.Playing(first, shuffleId = shuffleId)) })
         }
         is Route.Collection -> AppShell(nav, koin, route) {
-            CollectionScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) })
+            CollectionScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) },
+                onShuffle = { first, shuffleId -> nav.go(Route.Playing(first, shuffleId = shuffleId)) })
+        }
+        Route.ForYou -> AppShell(nav, koin, route) {
+            dev.silage.app.home.ForYouScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) })
+        }
+        Route.Calendar -> AppShell(nav, koin, route) {
+            dev.silage.app.calendar.CalendarScreen(koin, onOpen = { id -> nav.go(Route.Detail(id)) })
         }
         is Route.Detail -> DetailScreen(koin, route.contentId,
             onPlay = { id, fromStart, fileId -> nav.go(Route.Playing(id, fromStart, fileId)) },
-            onPerson = { id, name -> nav.go(Route.Person(id, name)) })
+            onPerson = { id, name -> nav.go(Route.Person(id, name)) },
+            onShuffle = { first, shuffleId -> nav.go(Route.Playing(first, shuffleId = shuffleId)) })
         is Route.Person -> AppShell(nav, koin, route) {
             dev.silage.app.browse.PersonScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) })
         }

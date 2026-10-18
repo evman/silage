@@ -20,6 +20,8 @@ private data class UiPrefsFile(
     val autoplayNext: Boolean = true,
     /** Jump past intro markers without pressing Skip Intro. */
     val autoSkipIntro: Boolean = false,
+    /** The calendar's Following / Trending / All choice. */
+    val calendarFilter: String? = null,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -62,4 +64,8 @@ class UiPrefs(private val path: Path) {
     var autoSkipIntro: Boolean
         get() = read().autoSkipIntro
         set(value) = write { it.copy(autoSkipIntro = value) }
+
+    var calendarFilter: String?
+        get() = read().calendarFilter
+        set(value) = write { it.copy(calendarFilter = value) }
 }
