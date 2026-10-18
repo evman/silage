@@ -14,6 +14,8 @@ private data class UiPrefsFile(
     val sidebar: List<SidebarLibraryPref> = emptyList(),
     /** auto (detect the monitor's HDR), on, or off. */
     val hdrMode: String = "auto",
+    /** Where the main window was left (Windows). */
+    val window: dev.silage.app.SavedWindow? = null,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -44,4 +46,8 @@ class UiPrefs(private val path: Path) {
     var hdrMode: String
         get() = read().hdrMode
         set(value) = write { it.copy(hdrMode = value) }
+
+    var window: dev.silage.app.SavedWindow?
+        get() = read().window
+        set(value) = write { it.copy(window = value) }
 }

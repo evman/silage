@@ -19,6 +19,13 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.roundToInt
 import dev.silage.app.connect.ConnectPresenter
 import dev.silage.app.connect.ConnectScreen
 import dev.silage.app.connect.ProbeOutcome
@@ -92,6 +99,11 @@ fun main(args: Array<String>) {
         is AppDirs.Migration.Moved -> System.err.println("silage: moved ${move.from} to ${move.to}")
         is AppDirs.Migration.Failed -> crashLog.record("moving ${move.from} to ${move.to} (still using the old folder)", move.error)
     }
+    // Windows reopens the window where it was left; Linux stays fullscreen (couch use).
+    val isWindows = System.getProperty("os.name").startsWith("Windows")
+    val uiPrefs = koin.get<dev.silage.app.ui.UiPrefs>()
+    val savedWindow = if (isWindows) restorableWindow(runCatching { uiPrefs.window }.getOrNull(), screenBounds()) else null
+    val windowMemory = WindowMemory(savedWindow) { uiPrefs.window = it }
     // Developer hook for reproducing exits: post a real Esc key press after N seconds.
     System.getenv("SILAGE_DEV_BACK_AFTER")?.toLongOrNull()?.let { secs ->
         Thread {
@@ -112,9 +124,36 @@ fun main(args: Array<String>) {
               androidx.compose.ui.window.WindowExceptionHandler { t -> crashLog.record("window", t) }
           },
       ) {
-        val windowState = rememberWindowState(placement = initialWindowPlacement())
-        Window(onCloseRequest = ::exitApplication, state = windowState, title = BuildInfo.NAME, icon = LogoIcon) {
+        val windowState = rememberWindowState(
+            placement = when {
+                savedWindow == null -> initialWindowPlacement()
+                savedWindow.maximized -> WindowPlacement.Maximized
+                else -> WindowPlacement.Floating
+            },
+            position = savedWindow?.let { WindowPosition(it.x.dp, it.y.dp) } ?: WindowPosition.PlatformDefault,
+            size = savedWindow?.let { DpSize(it.width.dp, it.height.dp) } ?: DpSize(1280.dp, 800.dp),
+        )
+        Window(onCloseRequest = { if (isWindows) windowMemory.save(); exitApplication() }, state = windowState, title = BuildInfo.NAME, icon = LogoIcon) {
             val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
+            if (isWindows) {
+                LaunchedEffect(window) {
+                    // The native window handle exists once the window is shown.
+                    withTimeoutOrNull(2000) { while (!window.isDisplayable) delay(20) }
+                    WindowsChrome.useDarkTitleBar(window)
+                }
+                LaunchedEffect(windowState) {
+                    snapshotFlow { Triple(windowState.placement, windowState.position, windowState.size) }.collect { (placement, position, size) ->
+                        val bounds = (position as? WindowPosition.Absolute)
+                            ?.takeIf { !size.width.value.isNaN() && !size.height.value.isNaN() }
+                            ?.let { java.awt.Rectangle(it.x.value.roundToInt(), it.y.value.roundToInt(), size.width.value.roundToInt(), size.height.value.roundToInt()) }
+                        windowMemory.update(
+                            maximized = placement == WindowPlacement.Maximized,
+                            floatingBounds = bounds?.takeIf { placement == WindowPlacement.Floating },
+                            playbackFullscreen = playbackFullscreen.active,
+                        )
+                    }
+                }
+            }
             MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black, primary = Color.White, onPrimary = Color.Black)) {
                 // Layouts are specified at 1080p and scaled uniformly to the window (4K is 2×).
                 BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {

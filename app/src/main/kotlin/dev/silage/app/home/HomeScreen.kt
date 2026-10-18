@@ -36,6 +36,9 @@ import dev.silage.app.nav.rememberEntryViewModel
 import dev.silage.app.ui.Silage
 import dev.silage.app.ui.rememberInitialFocus
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.Snapshot
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import org.koin.core.Koin
 import org.siloserver.silo.viewmodel.HomeViewModel
 
@@ -52,13 +55,16 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
             Triple(section, progress, section.items.map { it.toCard(landscape = progress) })
         }
     }
-    var focused by remember { mutableStateOf<CardModel?>(null) }
+    // The focused card. Only the marquee reads it, so moving between cards
+    // (keys or mouse hover) doesn't recompose Home and every visible row.
+    val focused = remember { mutableStateOf<CardModel?>(null) }
     // "rowId/cardId" of the last focused card, kept across a visit to a detail page.
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
-    val restoreRow = lastFocused?.substringBefore('/')?.takeIf { r -> rows.any { it.first.id == r } }
-    val restoreCard = if (restoreRow != null) lastFocused?.substringAfter('/') else null
-    val marquee = focused
-        ?: rows.firstOrNull { it.first.id == restoreRow }?.third?.firstOrNull { it.id == restoreCard }
+    // Read without subscribing: it only matters when Home is (re)entered or its rows reload.
+    val savedFocus = remember(rows) { Snapshot.withoutReadObservation { lastFocused } }
+    val restoreRow = savedFocus?.substringBefore('/')?.takeIf { r -> rows.any { it.first.id == r } }
+    val restoreCard = if (restoreRow != null) savedFocus?.substringAfter('/') else null
+    val marquee = rows.firstOrNull { it.first.id == restoreRow }?.third?.firstOrNull { it.id == restoreCard }
         ?: rows.firstOrNull()?.third?.firstOrNull()
     val firstCard = rememberInitialFocus(rows.isNotEmpty())
 
@@ -70,12 +76,12 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
             rows.isEmpty() && state.isLoading -> { Marquee(marquee); Skeleton() }
             rows.isEmpty() && state.error != null -> { Marquee(marquee); ErrorState(state.error!!) { vm.refresh() } }
             rows.isEmpty() -> { Marquee(marquee); Text("Nothing on Home yet", color = Silage.Text2, fontSize = 24.sp, modifier = Modifier.align(Alignment.Center)) }
-            else -> HomeLayout(marquee = { collapse -> Marquee(marquee, collapse) }, listState = listState) {
+            else -> HomeLayout(marquee = { collapse -> FocusedMarquee(focused, marquee, collapse) }, listState = listState) {
                 items(rows, key = { it.first.id }) { (section, progress, cards) ->
                     CardRow(
                         section.title, cards,
                         onOpen = { if (progress) onPlay(it) else onOpen(it) },
-                        onFocus = { focused = it; lastFocused = "${section.id}/${it.id}" },
+                        onFocus = { focused.value = it; lastFocused = "${section.id}/${it.id}" },
                         firstCardFocus = if (section.id == (restoreRow ?: rows.first().first.id)) firstCard else null,
                         focusCardId = if (section.id == restoreRow) restoreCard else null,
                     )
@@ -83,6 +89,27 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
             }
         }
     }
+}
+
+/** How long focus must rest on a card before the banner switches to it. */
+internal const val MarqueeSettleMs = 150L
+
+/**
+ * The banner, following [focused] (or [fallback] until something is focused).
+ * The first focus shows at once; later moves wait [MarqueeSettleMs] so holding
+ * an arrow key doesn't start a backdrop load and crossfade for every card passed.
+ */
+@Composable
+private fun FocusedMarquee(focused: State<CardModel?>, fallback: CardModel?, collapse: Float) {
+    var shown by remember { mutableStateOf<CardModel?>(null) }
+    LaunchedEffect(focused) {
+        snapshotFlow { focused.value }.collectLatest { card ->
+            if (card == null) return@collectLatest
+            if (shown != null) delay(MarqueeSettleMs)
+            shown = card
+        }
+    }
+    Marquee(shown ?: fallback, collapse)
 }
 
 /**

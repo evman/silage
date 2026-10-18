@@ -46,11 +46,12 @@ class SplashTimelineTest {
         assertTrue(t.frame(1000, null).textRise > 0f, "the name drifts up into place")
     }
 
-    /** It felt abrupt: by default it lasts at least ~3.5 s and leaves slowly. */
-    @Test fun theDefaultSplashLingersAndLeavesGently() {
+    /** A fixed ~3.5 s splash made every launch feel slow: when the app is ready it is gone in ~1.25 s. */
+    @Test fun theDefaultSplashIsBriefWhenTheAppIsReady() {
         val d = SplashTimeline()
-        assertFalse(d.frame(3000, readyAtMs = 100).finished)
-        assertTrue(d.frame(3600, readyAtMs = 100).finished)
+        assertEquals(1f, d.frame(900, readyAtMs = 100).logoAlpha, "the intro still completes")
+        assertFalse(d.frame(1000, readyAtMs = 100).finished)
+        assertTrue(d.frame(1250, readyAtMs = 100).finished)
     }
 
     @Test fun theLogoGrowsAsTheSplashFadesIntoTheApp() {
