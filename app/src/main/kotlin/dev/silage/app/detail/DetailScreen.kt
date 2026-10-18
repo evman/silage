@@ -148,8 +148,10 @@ private fun DetailContent(
         (if (m.isSeries) next?.files?.map { it.toOption() } else item.versions.map { it.toOption() }).orEmpty().sortedBest()
     }
     val lastFile = if (m.isSeries) next?.userData?.lastFileId else item.userData?.lastFileId
-    val selected = chooseVersion(options, preferredShort, lastFile)
-    fun episodeFile(e: EpisodeListItem): Int? = chooseVersion(e.files.map { it.toOption() }, preferredShort, e.userData?.lastFileId)?.fileId
+    // The copy last played wins only under Settings → Video → Preferred version: Last played.
+    val preferLast = remember { koin.get<dev.silage.app.ui.UiPrefs>().preferredVersion == "last" }
+    val selected = chooseVersion(options, preferredShort, lastFile.takeIf { preferLast })
+    fun episodeFile(e: EpisodeListItem): Int? = chooseVersion(e.files.map { it.toOption() }, preferredShort, e.userData?.lastFileId?.takeIf { preferLast })?.fileId
     // A series' Play button appears once its episodes load; focus it then, once per visit
     // (picking another season keeps focus on the season pills).
     val playFocus = rememberInitialFocus(!m.isSeries || next != null)

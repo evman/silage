@@ -1,5 +1,6 @@
 package dev.silage.app.playback
 
+import dev.silage.app.detail.toOption
 import dev.silage.app.detail.resumePosition
 import org.siloserver.silo.model.catalog.TimeRange
 import org.siloserver.silo.model.catalog.WatchDetail
@@ -85,6 +86,8 @@ sealed interface LaunchResult {
         val fileId: Int? = null,
         /** Source clock = player clock + offset, including subsequent audio switches. */
         val timelineOffsetSeconds: Double = 0.0,
+        /** Which copy is playing and how, for Playback Info ("4K · HDR · original file"). */
+        val versionLabel: String? = null,
     ) : LaunchResult {
         fun sourcePositionSeconds(playerSeconds: Double): Double = playerSeconds + timelineOffsetSeconds
     }
@@ -100,15 +103,21 @@ class PlaybackLauncher(
     private val capabilities: ClientCodecCapabilities = DesktopCapabilities.codecs,
     private val context: ClientPlaybackContext = DesktopCapabilities.context,
     private val newAttemptId: () -> String = { UUID.randomUUID().toString() },
+    /** Without a copy chosen: the one last played (Settings: Last played) instead of the best one. */
+    private val preferLastPlayed: () -> Boolean = { false },
 ) {
-    /** [fileId]: the copy the user chose on the detail page; the first copy when absent or gone. */
+    /**
+     * [fileId]: the copy the user chose on the detail page. Without one (Home,
+     * Next Episode, Shuffle) or when it's gone: the best copy (4K before 1080p,
+     * Dolby Vision before HDR before SDR), or the last played under that setting.
+     */
     suspend fun launch(contentId: String, fromStart: Boolean = false, fileId: Int? = null, audioTrackIndex: Int? = null, positionSeconds: Double? = null): LaunchResult {
         val item = when (val r = detail(contentId)) {
             is ApiResult.Success -> r.data
             is ApiResult.Error -> return LaunchResult.Failed("Couldn't load this item: ${r.message}")
             is ApiResult.NetworkError -> return LaunchResult.Failed("Can't reach the server. Try again.")
         }
-        val chosen = item.versions.firstOrNull { it.fileId == fileId } ?: item.versions.firstOrNull()
+        val chosen = item.versions.firstOrNull { it.fileId == fileId } ?: defaultCopy(item.versions, item.userData?.lastFileId, preferLastPlayed())
         val playFileId = chosen?.fileId ?: return LaunchResult.Failed("This item has no playable file.")
         val profile = profileId() ?: return LaunchResult.Failed("No profile selected.")
 
@@ -162,6 +171,12 @@ class PlaybackLauncher(
             sourceAudio = chosen.audioTracks.orEmpty(), direct = direct,
             selectedAudioOrdinal = plan.selectedTracks.audio?.index ?: audioTrackIndex ?: chosen.effectiveAudioTrackIndex,
             fileId = playFileId, timelineOffsetSeconds = plan.timeline.timelineOffsetSeconds,
+            versionLabel = listOf(chosen.toOption().short, if (direct) "original file" else "converted by the server").joinToString(" · "),
         )
     }
 }
+
+/** The copy to play when none was chosen: see [PlaybackLauncher.launch]. */
+internal fun defaultCopy(versions: List<org.siloserver.silo.model.catalog.FileVersion>, lastFileId: Int?, preferLastPlayed: Boolean) =
+    versions.firstOrNull { preferLastPlayed && it.fileId == lastFileId }
+        ?: versions.maxByOrNull { it.toOption().rank }

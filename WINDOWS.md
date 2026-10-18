@@ -87,8 +87,11 @@ pointer is over them.
 ## Settings
 
 - **Settings → Video:** HDR mode, *Next episode* (play automatically after a
-  10-second countdown, or ask) and *Intros* (skip automatically, or show a
-  Skip button). These are stored on this PC in `ui.json`, not on your Silo
+  10-second countdown, or ask), *Intros* (skip automatically, or show a
+  Skip button) and *Preferred version*: when a title has several copies
+  (4K and 1080p, say) and none is picked with the version button, play the
+  best one (default) or the one played last. Playback Info shows which copy
+  is playing and whether it is the original file. These are stored on this PC in `ui.json`, not on your Silo
   profile.
 - **Settings → Subtitles:** size, background (shadow, outline, dark box or
   none), text color and position, with a preview. They apply from the next

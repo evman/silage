@@ -60,6 +60,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         fullscreenWindow = if (output is VideoOutput.Embedded) fullscreen else null,
         videoSession = video,
         autoSkipIntro = koin.get<dev.silage.app.ui.UiPrefs>().autoSkipIntro,
+        infoRows = listOfNotNull(ready.versionLabel?.let { "Version" to it }),
         hasNextEpisode = hasNextEpisode,
         onNextEpisode = if (onNextEpisode != null) ({ onNextEpisode(); mpv.command("stop"); Unit }) else null,
         audioRows = { mounted -> audioMenuTracks(ready.sourceAudio, mounted, ready.direct, ready.selectedAudioOrdinal) },
@@ -125,6 +126,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             start = { req -> playback.startPlaybackV3(req).also { if (it is ApiResult.Success) PlaybackLog.record(it.data) } },
             profileId = { koin.get<ProfileRepository>().getActiveProfileId() },
             serverUrl = { koin.get<TokenManager>().getServerUrl() },
+            preferLastPlayed = { koin.get<dev.silage.app.ui.UiPrefs>().preferredVersion == "last" },
         )
         // The canvas gets its native window on the next frame; without one in
         // time, mpv falls back to its own fullscreen window.

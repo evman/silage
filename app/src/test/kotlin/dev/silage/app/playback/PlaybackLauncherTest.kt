@@ -157,6 +157,22 @@ class PlaybackLauncherTest {
         assertEquals(1, sent.single().fileId)
     }
 
+    @Test fun withoutAChoiceTheBestCopyPlays() = runTest {
+        val sent = mutableListOf<PlaybackStartRequestV3>()
+        val copies = listOf(FileVersion(fileId = 1, resolution = "1080p"), FileVersion(fileId = 2, resolution = "2160p", hdr = true), FileVersion(fileId = 3, resolution = "2160p"))
+        val r = launcher(versions = copies, sent = sent).launch("m")
+        assertEquals(2, sent.single().fileId)
+        assertEquals("4K · HDR · original file", (r as LaunchResult.Ready).versionLabel)
+    }
+
+    @Test fun lastPlayedCopyOnlyUnderThatSetting() {
+        val copies = listOf(FileVersion(fileId = 1, resolution = "1080p"), FileVersion(fileId = 2, resolution = "2160p"))
+        assertEquals(2, defaultCopy(copies, lastFileId = 1, preferLastPlayed = false)?.fileId)
+        assertEquals(1, defaultCopy(copies, lastFileId = 1, preferLastPlayed = true)?.fileId)
+        assertEquals(2, defaultCopy(copies, lastFileId = 99, preferLastPlayed = true)?.fileId)
+        assertEquals(null, defaultCopy(emptyList(), null, false))
+    }
+
     @Test fun noVersionsFails() = runTest {
         assertEquals(LaunchResult.Failed("This item has no playable file."), launcher(versions = emptyList()).launch("series-1"))
     }

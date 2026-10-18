@@ -27,6 +27,8 @@ private data class UiPrefsFile(
     val subtitleBackground: String? = null,
     val subtitlePosition: String? = null,
     val subtitleColor: String? = null,
+    /** Without a copy chosen: "best" quality, or the "last" one played. */
+    val preferredVersion: String = "best",
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -73,6 +75,10 @@ class UiPrefs(private val path: Path) {
     var calendarFilter: String?
         get() = read().calendarFilter
         set(value) = write { it.copy(calendarFilter = value) }
+
+    var preferredVersion: String
+        get() = read().preferredVersion
+        set(value) = write { it.copy(preferredVersion = value) }
 
     var subtitleStyle: dev.silage.app.playback.SubtitleStyle
         get() = read().let { dev.silage.app.playback.SubtitleStyle.of(it.subtitleSize, it.subtitleBackground, it.subtitlePosition, it.subtitleColor) }

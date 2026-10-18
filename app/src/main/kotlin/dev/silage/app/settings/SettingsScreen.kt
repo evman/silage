@@ -154,6 +154,7 @@ private fun VideoSection(koin: Koin) {
     val mode = remember(version) { prefs.hdrMode }
     val autoplay = remember(version) { prefs.autoplayNext }
     val skipIntro = remember(version) { prefs.autoSkipIntro }
+    val preferredVersion = remember(version) { prefs.preferredVersion }
     Column(Modifier.verticalScroll(rememberScrollState())) {
         Heading("HDR", "Auto plays HDR natively when HDR is turned on for the monitor Silage is on.")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -172,6 +173,12 @@ private fun VideoSection(koin: Koin) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Pill("Skip automatically", selected = skipIntro) { prefs.autoSkipIntro = true }
             Pill("Show a Skip button", selected = !skipIntro) { prefs.autoSkipIntro = false }
+        }
+        Spacer(Modifier.height(40.dp))
+        Heading("Preferred version", "When a title has several copies (4K and 1080p, say) and you haven't picked one with the version button.")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("Best quality", selected = preferredVersion != "last") { prefs.preferredVersion = "best" }
+            Pill("Last played", selected = preferredVersion == "last") { prefs.preferredVersion = "last" }
         }
     }
 }

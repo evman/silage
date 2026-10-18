@@ -56,6 +56,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val hasNextEpisode: () -> Boolean = { false },
     /** Ends this episode and moves on to the next. */
     private val onNextEpisode: (() -> Unit)? = null,
+    /** Rows shown first in Playback Info (which copy is playing). */
+    private val infoRows: List<Pair<String, String>> = emptyList(),
 ) : AutoCloseable {
     private val ui = mutableStateOf(HudUi(meta = meta))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
@@ -282,7 +284,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         val visible = nav.visible
         val info = if (nav.menu == HudMenu.Info && now - lastInfoAt > 1_000) {
             lastInfoAt = now
-            InfoRows.build(mpv::getProperty)
+            infoRows + InfoRows.build(mpv::getProperty)
         } else {
             ui.value.info
         }
