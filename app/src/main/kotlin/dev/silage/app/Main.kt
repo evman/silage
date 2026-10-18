@@ -76,7 +76,7 @@ fun main(args: Array<String>) {
         // Without a usable libmpv nothing can play: explain how to install it.
         application {
             Window(onCloseRequest = ::exitApplication, title = BuildInfo.NAME, icon = LogoIcon,
-                state = rememberWindowState(placement = WindowPlacement.Fullscreen)) {
+                state = rememberWindowState(placement = initialWindowPlacement())) {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalDensity provides Density(constraints.maxHeight / 1080f, 1f)) { MpvMissingScreen(problem) }
                 }
@@ -106,8 +106,9 @@ fun main(args: Array<String>) {
               androidx.compose.ui.window.WindowExceptionHandler { t -> crashLog.record("window", t) }
           },
       ) {
-        val windowState = rememberWindowState(placement = WindowPlacement.Fullscreen)
+        val windowState = rememberWindowState(placement = initialWindowPlacement())
         Window(onCloseRequest = ::exitApplication, state = windowState, title = BuildInfo.NAME, icon = LogoIcon) {
+            val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
             MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black, primary = Color.White, onPrimary = Color.Black)) {
                 // Layouts are specified at 1080p and scaled uniformly to the window (4K is 2×).
                 BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
@@ -116,6 +117,7 @@ fun main(args: Array<String>) {
                     CompositionLocalProvider(
                         LocalDensity provides Density(scale, fontScale = 1f),
                         dev.silage.app.playback.LocalWindowDensity provides windowDensity,
+                        dev.silage.app.playback.LocalPlaybackFullscreen provides playbackFullscreen,
                     ) {
                         // The window opens on the startup animation while the start
                         // route (server, sign-in, profile) resolves underneath.
@@ -124,9 +126,16 @@ fun main(args: Array<String>) {
                         LaunchedEffect(Unit) { navigator = AppNavigator(withContext(Dispatchers.IO) { startRoute(koin) }) }
                         navigator?.let { nav ->
                             val route by nav.route.collectAsState()
-                            KeyRoot(route, onBack = nav::back) { EntryHost(nav) { entry -> AppRoutes(koin, nav, entry.route) } }
+                            KeyRoot(route, onBack = nav::back) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
                         }
                         if (!splashDone) SplashScreen(ready = navigator != null) { splashDone = true }
+                        if (System.getProperty("os.name").startsWith("Windows")) {
+                            val storageError by koin.get<org.siloserver.silo.platform.RememberedSessionStore>().error.collectAsState()
+                            storageError?.let { message ->
+                                androidx.compose.material3.Text(message, color = Color.White,
+                                    modifier = Modifier.background(Color(0xFF702626)))
+                            }
+                        }
                     }
                 }
             }
@@ -187,6 +196,8 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         Route.SignIn -> SignInScreen(
             SignInPresenter { u, p -> auth.login(u, p) },
             onSignedIn = { nav.root(Route.Profiles) },
+            remembered = koin.get<dev.silage.app.signin.RememberSignInSettings>().enabled,
+            onRememberChanged = koin.get<dev.silage.app.signin.RememberSignInSettings>()::setEnabled,
             onChangeServer = { nav.root(Route.Connect) },
         )
         Route.Profiles -> ProfilesScreen(

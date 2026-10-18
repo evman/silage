@@ -19,12 +19,12 @@ object PlaybackLog {
     val mpvLogFile get() = XdgPaths.state.resolve("mpv.log")
 
     private val pretty = Json { prettyPrint = true }
-    private val token = Regex("""(?i)(token|api_key|access_token)=[^&"]+""")
+
 
     fun describe(decision: PlaybackDecisionResponseV3): String {
         val json = SiloJson.encodeToJsonElement(PlaybackDecisionResponseV3.serializer(), decision).jsonObject
         val redacted = strip(json)
-        return token.replace(pretty.encodeToString(JsonObject.serializer(), redacted), "$1=…")
+        return dev.silage.app.SecretRedaction.text(pretty.encodeToString(JsonObject.serializer(), redacted))
     }
 
     private fun strip(o: JsonObject): JsonObject = JsonObject(o.mapValues { (k, v) ->

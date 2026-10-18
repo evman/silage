@@ -7,3 +7,18 @@ local.properties
 .superpowers/
 .kotlin/
 dist/
+toolchains/
+native/
+*.log
+ui-smoke.pid
+ui-smoke.png
+
+# Local Windows verification evidence (logs, screenshots, reports) kept at the repo root
+/*.png
+/*.json
+/*.txt
+/*.pid
+/*.patch
+/*.tgz
+/verify-*.py
+/claude-*.cmd

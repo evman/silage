@@ -70,6 +70,8 @@ object MpvRuntime {
     }
 
     private fun installHint(): String {
+        if (System.getProperty("os.name").startsWith("Windows"))
+            return "restore the complete Silage portable folder, including libmpv-2.dll beside silage.exe"
         val text = runCatching { File("/etc/os-release").readText() }.getOrDefault("")
         val (id, like) = osRelease(text)
         return installHint(id, like)

@@ -1,6 +1,8 @@
 package dev.silage.app.playback
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.launch
 import org.siloserver.silo.model.catalog.FileVersion
 import org.siloserver.silo.model.catalog.TimeRange
 import org.siloserver.silo.model.catalog.WatchDetail
@@ -31,6 +33,35 @@ class PlaybackLauncherTest {
         profileId = { "prof-1" },
         serverUrl = { "http://nas:8096" },
     )
+
+    @Test fun explicitAudioChoiceAndPositionReachServer() = runTest {
+        val sent = mutableListOf<PlaybackStartRequestV3>()
+        val r = launcher(sent = sent).launch("movie-1", audioTrackIndex = 2, positionSeconds = 42.0)
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals(2, sent.single().audioTrackIndex)
+        assertEquals(42.0, sent.single().startPosition)
+        assertEquals(42.0, r.startSeconds)
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun packagedAudioReplanUsesServerPlayerStartNotSourcePosition() = runTest {
+        val response = SiloJson.decodeFromString(PlaybackDecisionResponseV3.serializer(),
+            """{"protocol_version":3,"session_id":"sess-1","playback_plan":{"plan_id":"p1","delivery":"server_transcode_hls",
+            "stream":{"url":"/stream","protocol":"hls","headers":{}},"decision_reason":"audio",
+            "timeline":{"source_start_seconds":42.0,"stream_origin_seconds":42.0,"player_start_seconds":0.0,"timeline_offset_seconds":42.0}}}""")
+        val ready = launcher(response = ApiResult.Success(response)).launch("movie-1", audioTrackIndex = 1, positionSeconds = 42.0)
+        assertIs<LaunchResult.Ready>(ready)
+        assertEquals(0.0, ready.startSeconds, "Replanned stream starts at source 42: seeking local 42 skips ahead twice")
+        val player = FakePlayer()
+        val progress = mutableListOf<Double>()
+        val job = launch { PlaybackController(player, { _, pos, _ -> progress += pos }, {}).run(ready) }
+        try {
+            runCurrent()
+            player.state.value = dev.silage.player.PlayerState(positionSeconds = 5.0, paused = true, loaded = true)
+            runCurrent()
+            assertEquals(listOf(47.0), progress, "Progress after the audio replan must remain on the source clock")
+        } finally { job.cancel(); job.join() }
+    }
 
     @Test fun resolvesRelativeUrlAndUsesFirstVersion() = runTest {
         val sent = mutableListOf<PlaybackStartRequestV3>()

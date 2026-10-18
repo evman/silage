@@ -7,9 +7,9 @@ import kotlin.test.assertEquals
 
 class HudKeysTest {
     @Test fun awtAndMpvKeyNamesMapToTheSameKeys() {
-        assertEquals(HudKey.Back, HudKey.ofAwt(KeyEvent.VK_ESCAPE))
+        assertEquals(HudKey.Escape, HudKey.ofAwt(KeyEvent.VK_ESCAPE))
         assertEquals(HudKey.Back, HudKey.ofAwt(KeyEvent.VK_BACK_SPACE))
-        assertEquals(HudKey.Back, HudKey.ofMpv("ESC"))
+        assertEquals(HudKey.Escape, HudKey.ofMpv("ESC"))
         assertEquals(HudKey.PlayPause, HudKey.ofAwt(KeyEvent.VK_SPACE))
         assertEquals(HudKey.Left, HudKey.ofMpv("LEFT"))
         assertEquals(HudKey.Enter, HudKey.ofAwt(KeyEvent.VK_ENTER))
@@ -43,7 +43,8 @@ class HudKeysTest {
         assertEquals(Fwd10, shown.on(HudKey.Right).first.focus)
         assertEquals(Back10, shown.on(HudKey.Left).first.focus)
         assertEquals(Back10, shown.copy(focus = Back10).on(HudKey.Left).first.focus)
-        assertEquals(Info, shown.copy(focus = Info).on(HudKey.Right).first.focus)
+        assertEquals(Video, shown.copy(focus = Info).on(HudKey.Right).first.focus)
+        assertEquals(Fullscreen, shown.copy(focus = Fullscreen).on(HudKey.Right).first.focus)
         assertEquals(Audio, shown.copy(focus = Fwd10).on(HudKey.Right).first.focus)
     }
 

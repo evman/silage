@@ -45,16 +45,31 @@ private fun outputUnder(canvas: Canvas): Output? = runCatching {
     KwinOutputs.outputAt(KwinOutputs.parse(config.readText(), origins), p.x + canvas.width / 2, p.y + canvas.height / 2)
 }.getOrNull()
 
-private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready): OpenedPlayer {
+private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, paused: Boolean = false,
+    fullscreen: PlaybackFullscreen? = null, video: VideoSession = VideoSession(), onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
-    java.nio.file.Files.createDirectories(PlaybackLog.mpvLogFile.parent)
-    val dev = if (System.getenv("SILAGE_DEV_MUTE") == "1") mapOf("volume" to "0") else emptyMap()
-    val mpv = MpvPlayer(output.mpvOptions() + ("log-file" to PlaybackLog.mpvLogFile.toString()) + dev)
-    val hud = try { PlayerHud(mpv, ready.meta) } catch (t: Throwable) { mpv.close(); throw t }
+    val mpv = MpvPlayer(playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1"))
+    val sourceSwitch = !ready.direct && ready.sourceAudio.isNotEmpty()
+    val hud = try { PlayerHud(mpv, ready.meta,
+        fullscreenWindow = if (output is VideoOutput.Embedded) fullscreen else null,
+        videoSession = video,
+        audioRows = { mounted -> audioMenuTracks(ready.sourceAudio, mounted, ready.direct, ready.selectedAudioOrdinal) },
+        selectSourceAudio = if (sourceSwitch) ({ ordinal ->
+            if (ordinal != ready.selectedAudioOrdinal && ordinal in ready.sourceAudio.indices) {
+                onAudio(ordinal, ready.sourcePositionSeconds(mpv.state.value.positionSeconds), mpv.state.value.paused)
+                mpv.command("stop")
+            }
+        }) else null,
+    ) } catch (t: Throwable) { mpv.close(); throw t }
     // Subscribed before the controller loads the file, so FileLoaded can't be missed.
     val subtitles = CoroutineScope(Dispatchers.Default).launch(start = CoroutineStart.UNDISPATCHED) {
         mpv.events.filterIsInstance<PlayerEvent.FileLoaded>().first()
+        video.apply(mpv::setProperty, mpv::getProperty)
+        if (ready.direct) ready.selectedAudioOrdinal?.let { ordinal ->
+            val mounted = dev.silage.app.playback.hud.Tracks.parse(mpv.getProperty("track-list") ?: "[]").audio
+            nativeAudioId(mounted, ordinal)?.let { mpv.command("set", "aid", it.toString()) }
+        }
         ready.subtitles.forEach { mpv.command(*SubtitleCommands.add(it)) }
         ready.embeddedSubtitleStream?.let { stream ->
             SubtitleCommands.sidForStream(mpv.getProperty("track-list") ?: "[]", stream)?.let { mpv.command("set", "sid", it.toString()) }
@@ -76,6 +91,9 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready): O
 /** Starts a session, plays it inside the Silage window, returns when done. */
 @Composable
 fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fileId: Int? = null, onDone: () -> Unit) {
+    val fullscreen = LocalPlaybackFullscreen.current
+    val video = remember(contentId) { VideoSession() }
+    DisposableEffect(fullscreen, contentId) { onDispose { fullscreen?.leave() } }
     var error by remember { mutableStateOf<String?>(null) }
     val surface = remember { CompletableDeferred<Surface>() }
     if (error == null) {
@@ -96,24 +114,40 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         // The canvas gets its native window on the next frame; without one in
         // time, mpv falls back to its own fullscreen window.
         val shown = withTimeoutOrNull(3_000) { surface.await() }
-        val session = PlaybackSession(
-            launch = { id -> launcher.launch(id, fromStart, fileId) },
-            openPlayer = { ready -> openMpv(koin, shown, ready) },
-            progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
-            stopSession = { s -> playback.stopPlayback(s) },
-        )
-        // Off the UI thread: creating, running and closing mpv can block.
-        when (val outcome = withContext(Dispatchers.IO) { session.play(contentId) }) {
-            PlayOutcome.Finished -> onDone()
-            is PlayOutcome.Failed -> error = outcome.message
+        // A packaged stream can contain only one audio track. Stop that session
+        // before requesting another source ordinal using the existing start API.
+        data class AudioChange(val ordinal: Int, val position: Double, val paused: Boolean)
+        val change = java.util.concurrent.atomic.AtomicReference<AudioChange?>(null)
+        var requested: AudioChange? = null
+        var selectedFile = fileId
+        while (true) {
+            val session = PlaybackSession(
+                launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position) },
+                openPlayer = { ready ->
+                    selectedFile = ready.fileId
+                    openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video) { ordinal, position, paused ->
+                        change.compareAndSet(null, AudioChange(ordinal, position, paused))
+                    }
+                },
+                progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
+                stopSession = { s -> playback.stopPlayback(s) },
+            )
+            val outcome = withContext(Dispatchers.IO) { session.play(contentId) }
+            requested = change.getAndSet(null)
+            if (outcome is PlayOutcome.Failed) { fullscreen?.leave(); error = outcome.message; break }
+            if (requested == null) { fullscreen?.leave(); onDone(); break }
         }
     }
-    error?.let { msg ->
-        val back = remember { androidx.compose.ui.focus.FocusRequester() }
-        LaunchedEffect(Unit) { runCatching { back.requestFocus() } }
-        Column(Modifier.padding(96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(msg, style = MaterialTheme.typography.titleLarge)
-            Button(onClick = onDone, modifier = Modifier.focusRequester(back)) { Text("Back") }
-        }
+    error?.let { msg -> PlaybackFailure(msg, onDone) }
+}
+
+/** Separate rendering seam so a server/player failure's visibility is testable. */
+@Composable
+internal fun PlaybackFailure(message: String, onDone: () -> Unit) {
+    val back = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { back.requestFocus() } }
+    Column(Modifier.padding(96.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(message, color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.titleLarge)
+        Button(onClick = onDone, modifier = Modifier.focusRequester(back)) { Text("Back") }
     }
 }

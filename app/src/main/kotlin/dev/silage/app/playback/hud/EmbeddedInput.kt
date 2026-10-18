@@ -15,6 +15,7 @@ import javax.swing.SwingUtilities
  */
 fun attachEmbeddedInput(canvas: Canvas, hud: PlayerHud): () -> Unit {
     val keys = KeyEventDispatcher { e ->
+        if (!acceptsPlayerKey(canvas, e)) return@KeyEventDispatcher false
         val k = if (e.id == KeyEvent.KEY_PRESSED) HudKey.ofAwt(e.keyCode) else null
         k?.let(hud::key)
         k != null || (e.id != KeyEvent.KEY_PRESSED && HudKey.ofAwt(e.keyCode) != null)
@@ -40,4 +41,12 @@ fun attachEmbeddedInput(canvas: Canvas, hud: PlayerHud): () -> Unit {
             canvas.removeMouseMotionListener(mouse)
         }
     }
+}
+
+internal fun acceptsPlayerKey(canvas: Canvas, event: KeyEvent): Boolean {
+    val owner = SwingUtilities.getWindowAncestor(canvas) ?: return false
+    if (SwingUtilities.getWindowAncestor(event.component) != owner && event.component != owner) return false
+    if (event.isAltDown || event.isControlDown || event.isMetaDown) return false
+    if (event.component is javax.swing.text.JTextComponent) return false
+    return true
 }

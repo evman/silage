@@ -135,10 +135,7 @@ private fun ProfileEntry(profile: SidebarProfile?, open: Boolean, onClick: () ->
             .hoverable(interaction).clickable(interaction, indication = null, onClick = onClick).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(48.dp).clip(CircleShape).background(Silage.Elevated), contentAlignment = Alignment.Center) {
-            if (profile?.avatarUrl != null) Artwork(profile.avatarUrl, null, profile.name, Modifier.fillMaxSize(), showTitleTile = false)
-            else Text(profile?.name?.take(1)?.uppercase() ?: "", color = Silage.Text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-        }
+        dev.silage.app.ui.ProfileAvatar(profile?.name ?: "", profile?.avatarUrl, Modifier.size(48.dp))
         AnimatedVisibility(open, enter = fadeIn(tween(120)), exit = fadeOut(tween(80))) {
             Text(profile?.name ?: "", color = Silage.Text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.dp))

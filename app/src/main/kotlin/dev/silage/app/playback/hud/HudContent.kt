@@ -48,8 +48,17 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.mutableIntStateOf
 import dev.silage.app.playback.PlaybackMeta
+import dev.silage.app.playback.VideoSettings
+import dev.silage.app.playback.VideoControls
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.FullscreenExit
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
-enum class HudMenu { None, Audio, Subtitles, Speed, Info }
+enum class HudMenu { None, Audio, Subtitles, Speed, Info, Video }
 
 data class HudUi(
     val meta: PlaybackMeta = PlaybackMeta(),
@@ -67,6 +76,9 @@ data class HudUi(
     val speed: Double = 1.0,
     val info: List<Pair<String, String>> = emptyList(),
     val skip: SkipPrompt? = null,
+    val video: VideoSettings = VideoSettings(),
+    val videoError: String? = null,
+    val fullscreen: Boolean = false,
 )
 
 interface HudActions {
@@ -78,6 +90,8 @@ interface HudActions {
     fun subtitle(id: Int?)
     fun speed(value: Double)
     fun exit()
+    fun fullscreen() {}
+    fun video(index: Int, step: Int) {}
 }
 
 val SPEEDS = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
@@ -154,6 +168,9 @@ private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
                 UtilityButton(Icons.Outlined.Speed, active = ui.menu == HudMenu.Speed, focused = ui.focus == HudFocus.Speed) { act.openMenu(HudMenu.Speed) }
                 Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(28.dp).background(Color.White.copy(alpha = 0.14f)))
                 UtilityButton(Icons.Outlined.Info, active = ui.menu == HudMenu.Info, focused = ui.focus == HudFocus.Info) { act.openMenu(HudMenu.Info) }
+                UtilityButton(Icons.Outlined.Tune, label = "Video settings", caption = "Video", active = ui.menu == HudMenu.Video, focused = ui.focus == HudFocus.Video) { act.openMenu(HudMenu.Video) }
+                UtilityButton(if (ui.fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                    label = if (ui.fullscreen) "Exit fullscreen (F / Escape)" else "Enter fullscreen (F)", caption = "Fullscreen", focused = ui.focus == HudFocus.Fullscreen, onClick = act::fullscreen)
             }
         }
     }
@@ -199,22 +216,24 @@ private fun Disc(icon: ImageVector, primary: Boolean, size: Int, focused: Boolea
 }
 
 @Composable
-private fun UtilityButton(icon: ImageVector, modifier: Modifier = Modifier, size: Int = 48, active: Boolean = false, focused: Boolean = false, onClick: () -> Unit) {
+private fun UtilityButton(icon: ImageVector, modifier: Modifier = Modifier, size: Int = 48, active: Boolean = false, focused: Boolean = false, label: String = icon.name.substringAfterLast('.'), caption: String? = null, onClick: () -> Unit) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     Box(
-        modifier.focusRing(focused, CircleShape).size(size.dp).clip(CircleShape)
+        modifier.semantics { contentDescription = label }.focusRing(focused, CircleShape).size(size.dp).clip(CircleShape)
             .background(if (hovered || focused) Color.White.copy(alpha = if (focused) 0.16f else 0.08f) else Color.Transparent)
             .hoverable(hover).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, null, tint = if (hovered || active || focused) Color.White else Dim, modifier = Modifier.size((size * 0.5).dp))
+        caption?.let { Text(it, color = Dim, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomCenter).offset(y = 12.dp)) }
         if (active) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp).size(5.dp).clip(CircleShape).background(Amber))
     }
 }
 
 @Composable
 private fun MenuPanel(ui: HudUi, act: HudActions) {
+    if (ui.menu == HudMenu.Video) { VideoPanel(ui, act); return }
     Column(
         Modifier.width(400.dp).heightIn(max = 620.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp)).padding(vertical = 8.dp),

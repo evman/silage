@@ -19,6 +19,29 @@ class ThrowingKeyring(private val failRead: Boolean = false, private val failWri
 }
 
 class SecureBlobStoreTest {
+    @Test fun restartMustNotPreferStaleKeyringOverNewerFallback() {
+        val path = Files.createTempDirectory("silage-restart-repro").resolve("session.json")
+        val keyring = object : KeyringAccess {
+            override fun get() = "old-session"
+            override fun set(value: String) { error("simulated unavailable backend") }
+        }
+        val firstProcess = SecureBlobStore.create(path, keyring) {}
+        assertTrue(firstProcess.write("new-session"))
+        assertEquals("new-session", firstProcess.read())
+        assertEquals("new-session", SecureBlobStore.create(path, keyring) {}.read())
+    }
+
+    @Test fun successfulKeyringRecoveryRetiresTheFallback() {
+        val path = Files.createTempDirectory("silage-keyring-recovery").resolve("session.json")
+        val keyring = FakeKeyring("stale")
+        assertTrue(FileBlobStore(path).write("newer"))
+        val store = SecureBlobStore.create(path, keyring) {}
+        assertEquals("newer", keyring.value)
+        assertFalse(Files.exists(path))
+        assertTrue(store.write("latest"))
+        assertEquals("latest", SecureBlobStore.create(path, keyring) {}.read())
+    }
+
     private val dir = Files.createTempDirectory("silage-test")
     private val file = dir.resolve("data/session.json")
 
@@ -34,7 +57,12 @@ class SecureBlobStoreTest {
         val logs = mutableListOf<String>()
         val store = SecureBlobStore.create(file, keyring = null) { logs += it }
         assertTrue(store.write("{}"))
-        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
+        if (Files.getFileStore(file).supportsFileAttributeView("posix")) {
+            assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
+        } else {
+            val view = Files.getFileAttributeView(file, java.nio.file.attribute.AclFileAttributeView::class.java)
+            assertTrue(view.acl.filter { it.type() == java.nio.file.attribute.AclEntryType.ALLOW }.all { it.principal() == view.owner })
+        }
         assertTrue(logs.single().contains("no Secret Service"))
         assertEquals("{}", SecureBlobStore.create(file, keyring = null) {}.read())
     }

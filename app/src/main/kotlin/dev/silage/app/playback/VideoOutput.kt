@@ -23,7 +23,18 @@ sealed interface VideoOutput {
     data class Embedded(val wid: Long) : VideoOutput
     data class OwnWindow(val screen: String?) : VideoOutput
 
-    fun mpvOptions(): Map<String, String> = common + when (this) {
+    fun mpvOptions(osName: String = System.getProperty("os.name")): Map<String, String> {
+        if (osName.startsWith("Windows", ignoreCase = true)) {
+            // mpv expects a 32-bit HWND value, ignoring the high bits.
+            // Until Windows HDR detection is implemented, explicitly tone-map to SDR.
+            return common + mapOf("gpu-api" to "d3d11", "gpu-context" to "d3d11",
+                "hwdec" to "auto-safe", "target-colorspace-hint" to "no") + when (this) {
+                is Embedded -> mapOf("wid" to (wid and 0xffffffffL).toString(),
+                    "input-vo-keyboard" to "no", "input-cursor-passthrough" to "yes")
+                is OwnWindow -> mapOf("fullscreen" to "yes", "title" to "Silage")
+            }
+        }
+        return common + when (this) {
         // wid is an X11 window: skip the Wayland contexts mpv would try first.
         is Embedded -> mapOf("wid" to wid.toString(), "gpu-context" to "x11vk", "input-vo-keyboard" to "no", "input-cursor-passthrough" to "yes")
         is OwnWindow -> listOfNotNull(
@@ -33,6 +44,7 @@ sealed interface VideoOutput {
             "title" to "Silage",
             screen?.let { "fs-screen-name" to it },
         ).toMap()
+        }
     }
 
     companion object {

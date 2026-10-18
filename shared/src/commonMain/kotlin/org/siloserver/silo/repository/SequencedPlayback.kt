@@ -287,7 +287,17 @@ class SequencedPlayback(
         val plan = decision.playbackPlan ?: return decision
         val references = (plan.subtitle.inventory.mapNotNull { it.url } + listOfNotNull(plan.subtitle.artifact?.url))
             .filter(::isProxyAuxiliaryUrl).toSet()
-        if (references.isEmpty()) return decision
+        // The API stream route requires bearer auth even when it carries an st
+        // signature. Only the admitted server's exact session route may inherit
+        // captured credentials; opaque/external signed URLs must remain untouched.
+        val apiPrimary = runCatching {
+            val raw = plan.stream.url
+            val absolute = if (raw.startsWith("/") && !raw.startsWith("//")) entry.origin.trimEnd('/') + raw else raw
+            val url = io.ktor.http.Url(absolute)
+            isSameHttpOrigin(entry.origin, absolute) && url.user == null && url.password == null &&
+                url.fragment.isEmpty() && url.encodedPath == "/api/v2/stream/${decision.sessionId}"
+        }.getOrDefault(false)
+        if (references.isEmpty() && !(apiPrimary && sentHeaders.isNotEmpty())) return decision
         val headers = capturedProxyAuxiliaryHeaders(sentHeaders)
         require(headers["X-Profile-Id"] == entry.profileId)
         val sessionId = requireNotNull(decision.sessionId)
@@ -329,7 +339,7 @@ class SequencedPlayback(
                 val hasProxyAuxiliary = plan?.subtitle?.let { subtitle ->
                     (subtitle.inventory.mapNotNull { row -> row.url } + listOfNotNull(subtitle.artifact?.url)).any(::isProxyAuxiliaryUrl)
                 } == true
-                if (hasProxyAuxiliary && plan != null) {
+                if ((hasProxyAuxiliary || entry.attemptId in auxiliaryHeaders) && plan != null) {
                     val headers = auxiliaryHeaders[entry.attemptId]
                         ?: return@withLock failure("playback_unavailable", "The retained plan has no live auxiliary request authority.")
                     return@withLock ApiResult.Success(decision.copy(playbackPlan = plan.copy(stream = plan.stream.copy(auxiliaryRequestHeaders = headers))))

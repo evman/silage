@@ -9,6 +9,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PlaybackLogTest {
+    @Test fun productionPlayerOptionsDoNotPersistUnredactableNativeUrls() {
+        val options = playbackMpvOptions(VideoOutput.Embedded(123), paused = true, muted = true)
+        assertFalse(options.containsKey("log-file"))
+        kotlin.test.assertEquals("yes", options["pause"])
+        kotlin.test.assertEquals("0", options["volume"])
+    }
+
     private val decision = SiloJson.decodeFromString(
         PlaybackDecisionResponseV3.serializer(),
         """{"protocol_version":3,"session_id":"s1","playback_plan":{"plan_id":"p1","delivery":"original_http",
@@ -16,6 +23,15 @@ class PlaybackLogTest {
             "decision_reason":"direct",
             "subtitle":{"mode":"render","inventory":[{"track_id":"t1","combined_index":0,"source":"external","language":"eng","delivery":"sidecar","url":"/api/v2/subs/1.srt"}]}}}""",
     )
+
+    @Test fun signedStreamQueryIsRedacted() {
+        val signed = SiloJson.decodeFromString(PlaybackDecisionResponseV3.serializer(),
+            SiloJson.encodeToString(PlaybackDecisionResponseV3.serializer(), decision)
+                .replace("token=SECRET123", "st=DUMMY_SIGNED&sig=DUMMY_SIGNATURE"))
+        val text = PlaybackLog.describe(signed)
+        assertFalse(text.contains("DUMMY_SIGNED"), "signed stream credential leaked")
+        assertFalse(text.contains("DUMMY_SIGNATURE"), "stream signature leaked")
+    }
 
     @Test fun describesThePlanWithoutCredentials() {
         val text = PlaybackLog.describe(decision)
@@ -26,7 +42,7 @@ class PlaybackLogTest {
     }
 
     @Test fun kdeDisplayConfigIsReadFromTheUserConfigDirNotSilages() {
-        val p = XdgPaths.kwinOutputConfig.toString()
+        val p = XdgPaths.kwinOutputConfig.toString().replace('\\', '/')
         assertTrue(p.endsWith("/kwinoutputconfig.json"), p)
         assertFalse("/silage/" in p, p)
     }

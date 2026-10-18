@@ -17,8 +17,8 @@ class DesktopDeviceMetadataProvider(private val idFile: Path) : DeviceMetadataPr
 
     override suspend fun current(): SiloDeviceMetadata = SiloDeviceMetadata(
         id = id,
-        name = runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("Linux HTPC"),
-        platform = "linux",
+        name = runCatching { InetAddress.getLocalHost().hostName }.getOrDefault("${System.getProperty("os.name")} HTPC"),
+        platform = if (System.getProperty("os.name").startsWith("Windows")) "windows" else "linux",
         clientName = BuildInfo.NAME,
         clientVersion = BuildInfo.VERSION,
     )

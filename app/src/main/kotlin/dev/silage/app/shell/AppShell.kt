@@ -29,8 +29,14 @@ fun AppShell(nav: AppNavigator, koin: Koin, current: Route, content: @Composable
     }
     val libraries = remember(serverLibraries, prefsVersion) { SidebarEntries.libraries(serverLibraries, prefs.sidebar) }
 
+    AppShellContent(nav, current, profile, libraries, content)
+}
+
+/** Stateless shell seam: navigation chrome can be exercised without a server. */
+@Composable
+internal fun AppShellContent(nav: AppNavigator, current: Route, profile: SidebarProfile?, libraries: List<SidebarLibrary>, content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize().background(Silage.Black)) {
         Box(Modifier.fillMaxSize().padding(start = SidebarRail)) { content() }
-        Sidebar(current, profile, libraries, onGo = { nav.root(it) }, onProfile = { nav.root(Route.Profiles) })
+        Sidebar(current, profile, libraries, onGo = nav::go, onProfile = { nav.root(Route.Profiles) })
     }
 }

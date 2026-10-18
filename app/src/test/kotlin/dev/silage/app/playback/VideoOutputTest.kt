@@ -54,7 +54,7 @@ class VideoOutputTest {
     }
 
     @Test fun ownWindowIsNativeWaylandFullscreenOnTheChosenScreenWithHdrHint() {
-        val o = VideoOutput.OwnWindow("DP-3").mpvOptions()
+        val o = VideoOutput.OwnWindow("DP-3").mpvOptions("Linux")
         assertEquals("yes", o["fullscreen"])
         assertEquals("DP-3", o["fs-screen-name"])
         // Native Wayland for HDR; X11 keeps playback working where Wayland is unavailable.
@@ -65,7 +65,7 @@ class VideoOutputTest {
     }
 
     @Test fun embeddedDrawsIntoTheAppWindow() {
-        val o = VideoOutput.Embedded(0x3a00007L).mpvOptions()
+        val o = VideoOutput.Embedded(0x3a00007L).mpvOptions("Linux")
         assertEquals("60817415", o["wid"])
         assertEquals("x11vk", o["gpu-context"])
         assertEquals("no", o["input-vo-keyboard"])
@@ -75,7 +75,7 @@ class VideoOutputTest {
     }
 
     @Test fun everyOutputUsesHighQualityVideoAndADeepBuffer() {
-        for (o in listOf(VideoOutput.Embedded(1).mpvOptions(), VideoOutput.OwnWindow(null).mpvOptions())) {
+        for (o in listOf(VideoOutput.Embedded(1).mpvOptions("Linux"), VideoOutput.OwnWindow(null).mpvOptions("Linux"))) {
             assertEquals("gpu-next", o["vo"])
             // VA-API first: probing CUDA with the NVIDIA card absent stalls ~20 s.
             assertEquals("vaapi,auto-safe", o["hwdec"])
@@ -87,7 +87,7 @@ class VideoOutputTest {
 
     /** 1080p films on a 4K screen: mpv's high-quality profile and its sharpest upscaler (spec §6.3). */
     @Test fun everyOutputUpscalesWithHighQualityScalers() {
-        for (o in listOf(VideoOutput.Embedded(1).mpvOptions(), VideoOutput.OwnWindow(null).mpvOptions())) {
+        for (o in listOf(VideoOutput.Embedded(1).mpvOptions("Linux"), VideoOutput.OwnWindow(null).mpvOptions("Linux"))) {
             assertEquals("high-quality", o["profile"])
             assertEquals("ewa_lanczossharp", o["scale"])
             assertEquals("yes", o["deband"])

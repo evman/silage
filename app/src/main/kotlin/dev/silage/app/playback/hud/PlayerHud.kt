@@ -12,6 +12,9 @@ import androidx.compose.ui.unit.Density
 import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import dev.silage.app.playback.PlaybackMeta
+import dev.silage.app.playback.PlaybackFullscreen
+import dev.silage.app.playback.VideoSession
+import dev.silage.app.playback.VideoControls
 import dev.silage.player.MpvPlayer
 import dev.silage.player.PlayerEvent
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +45,12 @@ fun hudSceneSize(w: Int, h: Int): Pair<Int, Int> {
     return (w.toLong() * sh / h).toInt() to sh
 }
 
-class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable {
+class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
+    private val audioRows: ((List<Track>) -> List<Track>)? = null,
+    private val selectSourceAudio: ((Int) -> Unit)? = null,
+    private val fullscreenWindow: PlaybackFullscreen? = null,
+    private val videoSession: VideoSession = VideoSession(),
+) : AutoCloseable {
     private val ui = mutableStateOf(HudUi(meta = meta))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
     private val inbox = ConcurrentLinkedQueue<() -> Unit>()
@@ -66,7 +74,10 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
             val rows = rowsOf(menu)
             nav = nav.copy(menu = menu, menuIndex = rows.indexOfFirst { it }.coerceAtLeast(0), menuSize = rows.size)
         }
-        override fun audio(id: Int) { mpv.command(*HudCommands.audio(id)); refreshTracks(); nav = nav.copy(menu = HudMenu.None) }
+        override fun audio(id: Int) {
+            if (selectSourceAudio != null) selectSourceAudio.invoke(id) else mpv.command(*HudCommands.audio(id))
+            refreshTracks(); nav = nav.copy(menu = HudMenu.None)
+        }
         override fun subtitle(id: Int?) { mpv.command(*HudCommands.subtitle(id)); refreshTracks(); nav = nav.copy(menu = HudMenu.None) }
         override fun speed(value: Double) {
             mpv.command(*HudCommands.speed(value))
@@ -74,6 +85,13 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
             nav = nav.copy(menu = HudMenu.None)
         }
         override fun exit() { mpv.command("stop") }
+        override fun fullscreen() {
+            if (fullscreenWindow != null) fullscreenWindow.toggle() else mpv.command("cycle", "fullscreen")
+        }
+        override fun video(index: Int, step: Int) {
+            videoSession.update(VideoControls.adjust(videoSession.settings, index, step), mpv::setProperty, mpv::getProperty)
+            ui.value = ui.value.copy(video = videoSession.settings, videoError = videoSession.error)
+        }
     }
 
     /** Which rows of [menu] are selected, in display order. */
@@ -81,6 +99,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
         HudMenu.Audio -> ui.value.tracks.audio.map { it.selected }
         HudMenu.Subtitles -> listOf(ui.value.tracks.subtitles.none { it.selected }) + ui.value.tracks.subtitles.map { it.selected }
         HudMenu.Speed -> SPEEDS.map { it == ui.value.speed }
+        HudMenu.Video -> List(8) { false }
         else -> emptyList()
     }
 
@@ -120,12 +139,16 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
         inbox += {
             visibility.activity()
             keyboardFocus = true
+            nav = nav.copy(fullscreen = isFullscreen())
             val (next, effect) = nav.on(key)
             nav = next
             when (effect) {
                 HudEffect.None -> Unit
                 HudEffect.Exit -> actions.exit()
                 HudEffect.TogglePause -> actions.togglePause()
+                HudEffect.ToggleFullscreen -> actions.fullscreen()
+                HudEffect.LeaveFullscreen -> if (fullscreenWindow != null) fullscreenWindow.leave() else mpv.setProperty("fullscreen", "no")
+                is HudEffect.AdjustVideo -> actions.video(effect.index, effect.step)
                 is HudEffect.SeekBy -> actions.seekBy(effect.seconds)
                 is HudEffect.SelectRow -> selectRow(effect.menu, effect.index)
                 is HudEffect.Activate -> when (effect.control) {
@@ -137,6 +160,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
                     HudFocus.Subtitles -> actions.openMenu(HudMenu.Subtitles)
                     HudFocus.Speed -> actions.openMenu(HudMenu.Speed)
                     HudFocus.Info -> actions.openMenu(HudMenu.Info)
+                    HudFocus.Video -> actions.openMenu(HudMenu.Video)
+                    HudFocus.Fullscreen -> actions.fullscreen()
                 }
             }
         }
@@ -195,8 +220,11 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
     }
 
     private fun refreshTracks() {
-        ui.value = ui.value.copy(tracks = Tracks.parse(mpv.getProperty("track-list") ?: "[]"))
+        val mounted = Tracks.parse(mpv.getProperty("track-list") ?: "[]")
+        ui.value = ui.value.copy(tracks = mounted.copy(audio = audioRows?.invoke(mounted.audio) ?: mounted.audio))
     }
+
+    private fun isFullscreen() = fullscreenWindow?.active ?: (mpv.getProperty("fullscreen") == "yes")
 
     private fun loop() {
         while (running) {
@@ -241,6 +269,9 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta) : AutoCloseable 
             focus = if (keyboardFocus && visible) nav.focus else null,
             info = info,
             skip = skip,
+            video = videoSession.settings,
+            videoError = videoSession.error,
+            fullscreen = isFullscreen(),
         )
         if (next != ui.value) ui.value = next
 

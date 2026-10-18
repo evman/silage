@@ -44,7 +44,7 @@ fun artworkFallback(url: String?, thumbhash: String?, title: String): ArtworkFal
 object Images {
     val loader: ImageLoader by lazy {
         ImageLoader.Builder(PlatformContext.INSTANCE)
-            .components { add(KtorNetworkFetcherFactory()) }
+            .components { add(KtorNetworkFetcherFactory()); add(coil3.svg.SvgDecoder.Factory()) }
             .memoryCache { MemoryCache.Builder().maxSizeBytes(384L shl 20).build() }
             .diskCache { DiskCache.Builder().directory(XdgPaths.cache.resolve("images").toString().toPath()).maxSizeBytes(512L shl 20).build() }
             .crossfade(180)

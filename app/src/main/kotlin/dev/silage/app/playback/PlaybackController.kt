@@ -56,12 +56,12 @@ class PlaybackController(
                     while (true) {
                         delay(intervalMs)
                         val s = player.state.value
-                        if (s.loaded) progress(ready.sessionId, s.positionSeconds, s.paused)
+                        if (s.loaded) progress(ready.sessionId, ready.sourcePositionSeconds(s.positionSeconds), s.paused)
                     }
                 }
                 val pauses = launch {
                     player.state.distinctUntilChangedBy { it.paused }.drop(1).collect { s ->
-                        progress(ready.sessionId, s.positionSeconds, s.paused)
+                        progress(ready.sessionId, ready.sourcePositionSeconds(s.positionSeconds), s.paused)
                     }
                 }
                 val end = finished.await()

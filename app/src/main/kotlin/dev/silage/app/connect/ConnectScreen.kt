@@ -33,7 +33,7 @@ fun ConnectScreen(presenter: ConnectPresenter, onConnected: () -> Unit) {
     }
     FormFrame {
         Wordmark()
-        Text("A Silo client for Linux", color = Silage.Text2, fontSize = 20.sp)
+        Text("A Silo client", color = Silage.Text2, fontSize = 20.sp)
         Spacer(Modifier.height(28.dp))
         SilageField(address, { address = it }, "Server address", Modifier.fillMaxWidth().focusRequester(field), onDone = ::submit)
         PrimaryButton(if (state == ConnectState.Connecting) "Connecting…" else "Connect", enabled = state != ConnectState.Connecting, onClick = ::submit)

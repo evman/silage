@@ -49,6 +49,63 @@ class SequencedPlaybackTest {
     private fun MockRequestHandleScope.reply(body: String, status: HttpStatusCode = HttpStatusCode.OK) =
         respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
 
+    @Test fun apiPrimaryUsesCapturedAuthorityWithoutProxySubtitles() = runTest {
+        val identity = Identity(); val store = Store()
+        val wire = adoptedDecision.replace("/api/v2/stream/session-1", "/api/v2/stream/session-1?st=opaque")
+        val c = client { req -> when (req.url.encodedPath) {
+            "/api/v2/playback/capabilities" -> reply(caps())
+            "/api/v2/account/me" -> reply(account)
+            "/api/v2/playback/start" -> reply(wire, HttpStatusCode.Created)
+            "/api/v2/playback/session-1/replan" -> reply(wire)
+            else -> error("Unexpected request")
+        } }.config { defaultRequest { header("Authorization", "Bearer captured-request"); header("X-Profile-Id", "profile") } }
+        try {
+            val runtime = SequencedPlayback(PlaybackV2Api(c, ApiV2Gate.Unrestricted), identity, identity, store) { stopId }
+            val decision = assertIs<ApiResult.Success<PlaybackDecisionResponseV3>>(runtime.start(request(), identity.scope)).data
+            val stream = decision.playbackPlan!!.stream
+            assertEquals("Bearer captured-request", stream.effectiveRequestHeaders["Authorization"])
+            assertEquals("profile", stream.effectiveRequestHeaders["X-Profile-Id"])
+            assertTrue(stream.headers.isEmpty())
+            assertFalse(SiloJson.encodeToString(decision).contains("captured-request"))
+            assertFalse(SiloJson.encodeToString(store.entries).contains("captured-request"))
+            val replacement = assertIs<ApiResult.Success<PlaybackDecisionResponseV3>>(runtime.replan("session-1", replanRequest())).data
+            val repeated = assertIs<ApiResult.Success<PlaybackDecisionResponseV3>>(runtime.replan("session-1", replanRequest())).data
+            assertEquals("Bearer captured-request", replacement.playbackPlan!!.stream.effectiveRequestHeaders["Authorization"])
+            assertSame(replacement.playbackPlan!!.stream.effectiveRequestHeaders, repeated.playbackPlan!!.stream.effectiveRequestHeaders)
+            assertFalse(SiloJson.encodeToString(repeated).contains("captured-request"))
+        } finally { c.close() }
+    }
+
+    @Test fun apiPrimaryNeverSendsCapturedCredentialsToOtherOriginsOrRoutes() = runTest {
+        for (url in listOf(
+            "https://elsewhere.invalid/api/v2/stream/session-1?st=opaque",
+            "//elsewhere.invalid/api/v2/stream/session-1?st=opaque",
+            "https://example.invalid/api/v2/stream/other-session?st=opaque",
+            "https://example.invalid/unrelated?st=opaque",
+            "https://example.invalid:444/api/v2/stream/session-1?st=opaque",
+        )) {
+            val wire = adoptedDecision.replace("/api/v2/stream/session-1", url)
+            val c = client { req -> when (req.url.encodedPath) {
+                "/api/v2/playback/capabilities" -> reply(caps())
+                "/api/v2/account/me" -> reply(account)
+                "/api/v2/playback/start" -> reply(wire, HttpStatusCode.Created)
+                else -> error("Unexpected request")
+            } }.config { defaultRequest { header("Authorization", "Bearer captured-request"); header("X-Profile-Id", "profile") } }
+            try {
+                val identity = Identity()
+                val runtime = SequencedPlayback(PlaybackV2Api(c, ApiV2Gate.Unrestricted), identity, identity, Store()) { stopId }
+                val result = runtime.start(request(), identity.scope)
+                if (url.startsWith("//")) {
+                    // The decoder rejects scheme-relative mounts before authority attachment.
+                    assertIs<ApiResult.NetworkError>(result)
+                } else {
+                    val decision = assertIs<ApiResult.Success<PlaybackDecisionResponseV3>>(result, "URL $url: $result").data
+                    assertTrue(decision.playbackPlan!!.stream.effectiveRequestHeaders.isEmpty(), "Do not forward captured authority to $url")
+                }
+            } finally { c.close() }
+        }
+    }
+
     @Test fun proxyAuxiliaryUsesActualRequestHeadersOnlyEphemerallyAndFencesIdentity() = runTest {
         val identity = Identity(); val store = Store()
         val wire = adoptedDecision.replace("/api/v2/stream/session-1", "https://proxy.example/stream/direct/opaque-signed-reference")

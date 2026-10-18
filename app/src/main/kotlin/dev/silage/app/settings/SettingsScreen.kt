@@ -158,16 +158,30 @@ private fun VideoSection(koin: Koin) {
 @Composable
 private fun AccountSection(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServer: () -> Unit, onSignedOut: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val rememberedSettings = remember { koin.get<dev.silage.app.signin.RememberSignInSettings>() }
+    var remembered by remember { mutableStateOf(rememberedSettings.enabled) }
+    var saveError by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Heading("Account")
+        dev.silage.app.signin.RememberSignInControl(remembered) { next ->
+            if (rememberedSettings.setEnabled(next)) { remembered = next; saveError = null }
+            else saveError = org.siloserver.silo.platform.RememberedSessionStore.WRITE_ERROR
+        }
+        saveError?.let { Text(it, color = Silage.Error, fontSize = 18.sp) }
         Pill("Switch profile", onClick = onSwitchProfile)
         Pill("Switch server", onClick = onSwitchServer)
-        Pill("Sign out") { scope.launch { runCatching { koin.get<AuthRepository>().logout() }; onSignedOut() } }
+        Pill("Sign out") { scope.launch {
+            if (signOutAccount(
+                logout = { koin.get<AuthRepository>().logout() },
+                hasSession = { koin.get<org.siloserver.silo.network.TokenManager>().getRefreshToken() != null },
+            )) onSignedOut()
+            else saveError = "Sign-out could not clear saved sign-in. Check access to the Silage data folder and try again."
+        } }
     }
 }
 
 @Composable
-private fun AboutSection(koin: Koin) {
+internal fun AboutSection(koin: Koin) {
     var server by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { server = runCatching { koin.get<TokenManager>().getServerUrl() }.getOrDefault("") }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -176,6 +190,6 @@ private fun AboutSection(koin: Koin) {
         Row { Text("Server", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp)); Text(server, color = Silage.Text, fontSize = 20.sp) }
         Row { Text("Logs", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp)); Text(XdgPaths.state.toString(), color = Silage.Text, fontSize = 20.sp) }
         Spacer(Modifier.height(20.dp))
-        Text("Silage is a Silo client for Linux. Silo is a trademark of Silo Media L.L.C.; Silage is not affiliated with it.", color = Silage.Text3, fontSize = 17.sp)
+        Text("Silage is a Silo client. Silo is a trademark of Silo Media L.L.C.; Silage is not affiliated with it.", color = Silage.Text3, fontSize = 17.sp)
     }
 }

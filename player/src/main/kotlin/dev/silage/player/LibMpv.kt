@@ -46,7 +46,7 @@ interface LibMpv : Library {
          * libmpv2, Fedora's mpv-libs) ship only the soname libmpv.so.2; the
          * bare libmpv.so comes with -dev packages (Arch ships both).
          */
-        val NAMES = listOf("libmpv.so.2", "mpv")
+        val NAMES = if (com.sun.jna.Platform.isWindows()) listOf("libmpv-2", "mpv-2", "mpv") else listOf("libmpv.so.2", "mpv")
 
         /** The first of [names] that [loader] can load; the error lists every attempt. */
         fun <T> loadFirst(names: List<String>, loader: (String) -> T): T {
@@ -67,7 +67,7 @@ interface LibMpv : Library {
          * environment, so reset it first (number parsing only).
          */
         fun load(): LibMpv {
-            Native.load("c", LibC::class.java).setlocale(LC_NUMERIC, "C")
+            Native.load(if (com.sun.jna.Platform.isWindows()) "msvcrt" else "c", LibC::class.java).setlocale(if (com.sun.jna.Platform.isWindows()) 4 else LC_NUMERIC, "C")
             val lib = loadFirst(NAMES) { Native.load(it, LibMpv::class.java) }
             val major = lib.mpv_client_api_version() ushr 16
             check(major >= 2) { "libmpv client API $major is too old; install mpv ≥ 0.38" }

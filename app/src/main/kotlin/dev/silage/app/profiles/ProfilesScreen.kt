@@ -91,10 +91,7 @@ fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit, onChang
 
 @Composable
 private fun Avatar(p: ProfileRow, size: Int) {
-    Box(Modifier.size(size.dp).clip(CircleShape).background(Silage.Elevated), contentAlignment = Alignment.Center) {
-        if (p.avatarUrl != null) Artwork(p.avatarUrl, null, p.name, Modifier.fillMaxSize(), showTitleTile = false)
-        else Text(p.name.take(1).uppercase(), color = Silage.Text, fontSize = (size * 0.42).sp, fontWeight = FontWeight.SemiBold)
-    }
+    dev.silage.app.ui.ProfileAvatar(p.name, p.avatarUrl, Modifier.size(size.dp), (size * 0.42).toInt())
 }
 
 @Composable

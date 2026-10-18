@@ -91,11 +91,12 @@ object HudCommands {
 }
 
 enum class HudKey {
-    Back, PlayPause, Left, Right, Up, Down, Enter, Info;
+    Back, Escape, PlayPause, Left, Right, Up, Down, Enter, Info, Fullscreen;
 
     companion object {
         fun ofAwt(code: Int): HudKey? = when (code) {
-            java.awt.event.KeyEvent.VK_ESCAPE, java.awt.event.KeyEvent.VK_BACK_SPACE, java.awt.event.KeyEvent.VK_Q -> Back
+            java.awt.event.KeyEvent.VK_ESCAPE -> Escape
+            java.awt.event.KeyEvent.VK_BACK_SPACE, java.awt.event.KeyEvent.VK_Q -> Back
             java.awt.event.KeyEvent.VK_SPACE, java.awt.event.KeyEvent.VK_K -> PlayPause
             java.awt.event.KeyEvent.VK_LEFT -> Left
             java.awt.event.KeyEvent.VK_RIGHT -> Right
@@ -103,12 +104,14 @@ enum class HudKey {
             java.awt.event.KeyEvent.VK_DOWN -> Down
             java.awt.event.KeyEvent.VK_ENTER -> Enter
             java.awt.event.KeyEvent.VK_I -> Info
+            java.awt.event.KeyEvent.VK_F -> Fullscreen
             else -> null
         }
 
         /** mpv key names, as bound in [MPV_KEYS]. */
         fun ofMpv(name: String): HudKey? = when (name) {
-            "ESC", "BS", "q" -> Back
+            "ESC" -> Escape
+            "BS", "q" -> Back
             "SPACE", "k" -> PlayPause
             "LEFT" -> Left
             "RIGHT" -> Right
@@ -116,20 +119,24 @@ enum class HudKey {
             "DOWN" -> Down
             "ENTER" -> Enter
             "i" -> Info
+            "f", "F" -> Fullscreen
             else -> null
         }
 
-        val MPV_KEYS = listOf("ESC", "BS", "q", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i")
+        val MPV_KEYS = listOf("ESC", "BS", "q", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F")
     }
 }
 
 /** The HUD controls reachable with the arrow keys. */
-enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Info }
+enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Video, Fullscreen, Info }
 
 sealed interface HudEffect {
     data object None : HudEffect
     data object Exit : HudEffect
     data object TogglePause : HudEffect
+    data object ToggleFullscreen : HudEffect
+    data object LeaveFullscreen : HudEffect
+    data class AdjustVideo(val index: Int, val step: Int) : HudEffect
     data class SeekBy(val seconds: Double) : HudEffect
     data class Activate(val control: HudFocus) : HudEffect
     data class SelectRow(val menu: HudMenu, val index: Int) : HudEffect
@@ -147,8 +154,13 @@ data class HudNav(
     val menuIndex: Int = 0,
     val menuSize: Int = 0,
     val hasSkip: Boolean = false,
+    val fullscreen: Boolean = false,
 ) {
     fun on(key: HudKey): Pair<HudNav, HudEffect> {
+        if (key == HudKey.Fullscreen) return copy(visible = true) to HudEffect.ToggleFullscreen
+        if (key == HudKey.Escape) return if (fullscreen) this to HudEffect.LeaveFullscreen else on(HudKey.Back)
+        if (menu == HudMenu.Video && key in listOf(HudKey.Left, HudKey.Right, HudKey.Enter))
+            return this to HudEffect.AdjustVideo(menuIndex, if (key == HudKey.Left) -1 else 1)
         if (key == HudKey.PlayPause) return copy(visible = true) to HudEffect.TogglePause
         if (key == HudKey.Info) return copy(visible = true, menu = if (menu == HudMenu.Info) HudMenu.None else HudMenu.Info) to HudEffect.None
         if (!visible) return when (key) {
@@ -191,7 +203,7 @@ data class HudNav(
     }
 
     companion object {
-        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Info)
+        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Info, HudFocus.Video, HudFocus.Fullscreen)
     }
 }
 

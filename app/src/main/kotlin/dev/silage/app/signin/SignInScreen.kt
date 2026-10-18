@@ -18,7 +18,14 @@ import dev.silage.app.ui.Wordmark
 import kotlinx.coroutines.launch
 
 @Composable
-fun SignInScreen(presenter: SignInPresenter, onSignedIn: () -> Unit, onChangeServer: () -> Unit) {
+fun SignInScreen(
+    presenter: SignInPresenter,
+    onSignedIn: () -> Unit,
+    onChangeServer: () -> Unit,
+    remembered: Boolean = false,
+    onRememberChanged: (Boolean) -> Boolean = { true },
+) {
+    var rememberSignIn by remember { mutableStateOf(remembered) }
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var state by remember { mutableStateOf<SignInState>(SignInState.Idle) }
@@ -39,6 +46,10 @@ fun SignInScreen(presenter: SignInPresenter, onSignedIn: () -> Unit, onChangeSer
         Spacer(Modifier.height(28.dp))
         SilageField(user, { user = it }, "Username", Modifier.fillMaxWidth().focusRequester(first))
         SilageField(pass, { pass = it }, "Password", Modifier.fillMaxWidth(), password = true, onDone = ::submit)
+        RememberSignInControl(rememberSignIn, enabled = state != SignInState.Working) { next ->
+            if (onRememberChanged(next)) { rememberSignIn = next; state = SignInState.Idle }
+            else state = SignInState.Error(org.siloserver.silo.platform.RememberedSessionStore.WRITE_ERROR)
+        }
         PrimaryButton(if (state == SignInState.Working) "Signing in…" else "Sign in", enabled = state != SignInState.Working, onClick = ::submit)
         (state as? SignInState.Error)?.let { Text(it.message, color = Silage.Error.copy(red = 1f), fontSize = 18.sp, textAlign = TextAlign.Center) }
         TextLink("Change server", onChangeServer)

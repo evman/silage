@@ -18,6 +18,8 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 
@@ -38,8 +40,12 @@ fun KeyRoot(route: Route, onBack: () -> Boolean, content: @Composable () -> Unit
             .focusRequester(self)
             .onFocusChanged { rootFocused = it.isFocused }
             .focusable()
+            .onPreviewKeyEvent { e ->
+                route !is Route.Playing && e.type == KeyEventType.KeyDown &&
+                    e.isAltPressed && e.key == Key.DirectionLeft && onBack()
+            }
             .onKeyEvent { e ->
-                if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                if (route is Route.Playing || e.type != KeyEventType.KeyDown) return@onKeyEvent false
                 fun move(d: FocusDirection) = focus.moveFocus(if (rootFocused) FocusDirection.Next else d)
                 when (e.key) {
                     Key.DirectionLeft -> move(FocusDirection.Left)

@@ -28,10 +28,19 @@ kotlin {
             dependencies {
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.java.keyring)
+                implementation("net.java.dev.jna:jna-platform:${libs.versions.jna.get()}")
             }
         }
         val desktopTest by getting {
             resources.srcDir("src/commonTest/resources")
         }
+    }
+}
+
+// Child-JVM restart smoke uses precisely this test runtime, not global Java.
+tasks.withType<Test>().configureEach {
+    doFirst {
+        systemProperty("silage.test.classpath", classpath.asPath)
+        rootProject.layout.buildDirectory.file("remember-test-classpath.txt").get().asFile.writeText(classpath.asPath)
     }
 }

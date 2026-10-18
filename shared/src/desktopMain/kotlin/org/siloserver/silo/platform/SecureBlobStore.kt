@@ -15,7 +15,19 @@ class FileBlobStore(private val path: Path) : BlobStore {
         Files.createDirectories(path.parent)
         val tmp = path.resolveSibling("${path.fileName}.tmp")
         Files.deleteIfExists(tmp)
-        Files.createFile(tmp, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+        if (Files.getFileStore(path.parent).supportsFileAttributeView("posix")) {
+            Files.createFile(tmp, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+        } else {
+            val owner = Files.getOwner(path.parent)
+            val acl = listOf(java.nio.file.attribute.AclEntry.newBuilder()
+                .setType(java.nio.file.attribute.AclEntryType.ALLOW).setPrincipal(owner)
+                .setPermissions(java.util.EnumSet.allOf(java.nio.file.attribute.AclEntryPermission::class.java)).build())
+            // Apply the restrictive DACL at creation, before any secret is written.
+            Files.createFile(tmp, object : java.nio.file.attribute.FileAttribute<List<java.nio.file.attribute.AclEntry>> {
+                override fun name() = "acl:acl"
+                override fun value() = acl
+            })
+        }
         Files.writeString(tmp, contents)
         Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }.isSuccess
@@ -59,20 +71,23 @@ interface KeyringAccess {
 private class KeyringBlobStore(
     private val keyring: KeyringAccess,
     private val file: FileBlobStore,
+    private val fallbackFile: Path,
     private val log: (String) -> Unit,
 ) : BlobStore {
     @Volatile private var degraded = false
 
     override fun read(): String? =
-        if (degraded) file.read() else runCatching { keyring.get() }.getOrElse { file.read() }
+        if (degraded) file.read() else file.read() ?: runCatching { keyring.get() }.getOrNull()
 
     override fun write(contents: String): Boolean {
         if (!degraded) {
             try {
-                keyring.set(contents); return true
-            } catch (e: Exception) {
+                keyring.set(contents)
+                Files.deleteIfExists(fallbackFile)
+                return true
+            } catch (_: Exception) {
                 degraded = true
-                log("Silage: keyring refused to save the session (${e.message}); storing it in an owner-only file instead")
+                log("Silage: keyring refused to save the session; storing it in an owner-only file instead")
             }
         }
         return file.write(contents)
@@ -82,8 +97,8 @@ private class KeyringBlobStore(
 object SecureBlobStore {
     /**
      * Keyring when available, otherwise [fallbackFile]. If the keyring is
-     * empty but an older fallback file exists (keyring installed later), the
-     * file's contents migrate into the keyring and the file is deleted.
+     * available and a fallback exists, that newer fallback supersedes stale
+     * keyring data and is retired only after a successful keyring write.
      */
     fun create(
         fallbackFile: Path,
@@ -95,10 +110,11 @@ object SecureBlobStore {
             log("Silage: no Secret Service keyring found; storing session in $fallbackFile (mode 0600)")
             return file
         }
-        val store = KeyringBlobStore(keyring, file, log)
-        // Migrate only when the keyring answered "no entry"; a refused read is not empty.
+        val store = KeyringBlobStore(keyring, file, fallbackFile, log)
+        // A fallback was written after keyring failure and must not be shadowed
+        // by older readable keyring metadata at the next process startup.
         val keyringRead = runCatching { keyring.get() }
-        if (keyringRead.isSuccess && keyringRead.getOrNull() == null) {
+        if (keyringRead.isSuccess) {
             file.read()?.let { legacy ->
                 if (runCatching { keyring.set(legacy) }.isSuccess) Files.deleteIfExists(fallbackFile)
             }

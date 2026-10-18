@@ -35,6 +35,7 @@ dependencies {
     implementation(compose.materialIconsExtended)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.ktor3)
+    implementation("io.coil-kt.coil3:coil-svg:3.1.0")
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.coroutines.swing)
     testImplementation(kotlin("test"))
@@ -47,16 +48,16 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-    jvmArgs("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
+    if (!System.getProperty("os.name").startsWith("Windows")) jvmArgs("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
 }
 
 compose.desktop {
     application {
         mainClass = "dev.silage.app.MainKt"
         // WmClass sets the X11 window class to "silage" (matches the desktop entry).
-        jvmArgs += listOf("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
+        if (!System.getProperty("os.name").startsWith("Windows")) jvmArgs += listOf("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
         nativeDistributions {
-            targetFormats(TargetFormat.AppImage)
+            targetFormats(if (System.getProperty("os.name").startsWith("Windows")) TargetFormat.Exe else TargetFormat.AppImage)
             // From suggestRuntimeModules, plus EC crypto (HTTPS servers) and naming.
             modules("java.instrument", "java.management", "jdk.security.auth", "jdk.unsupported", "jdk.crypto.ec", "java.naming")
             packageName = "silage"

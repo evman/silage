@@ -63,9 +63,12 @@ class AppNavigator(start: Route) {
 
     private fun publish() { _entry.value = stack.last(); _route.value = stack.last().route }
 
-    fun go(route: Route) { stack.addLast(NavEntry(route, nextId++)); publish() }
+    fun go(route: Route) {
+        if (stack.last().route == route) return
+        stack.addLast(NavEntry(route, nextId++)); publish()
+    }
 
-    /** A sidebar destination or an auth step: replaces the stack (sidebar pages keep Home beneath them). */
+    /** Explicit history reset (authentication/profile transitions); non-Home browse roots keep Home beneath them. */
     fun root(route: Route) {
         stack.forEach { it.close() }
         stack.clear()

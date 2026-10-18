@@ -70,7 +70,15 @@ sealed interface LaunchResult {
         val subtitles: List<SubtitleLoad> = emptyList(),
         /** FFmpeg stream index of a built-in subtitle to switch on in direct play. */
         val embeddedSubtitleStream: Int? = null,
-    ) : LaunchResult
+        val sourceAudio: List<org.siloserver.silo.model.catalog.AudioTrack> = emptyList(),
+        val direct: Boolean = true,
+        val selectedAudioOrdinal: Int? = null,
+        val fileId: Int? = null,
+        /** Source clock = player clock + offset, including subsequent audio switches. */
+        val timelineOffsetSeconds: Double = 0.0,
+    ) : LaunchResult {
+        fun sourcePositionSeconds(playerSeconds: Double): Double = playerSeconds + timelineOffsetSeconds
+    }
     data class Failed(val message: String) : LaunchResult
 }
 
@@ -85,7 +93,7 @@ class PlaybackLauncher(
     private val newAttemptId: () -> String = { UUID.randomUUID().toString() },
 ) {
     /** [fileId]: the copy the user chose on the detail page; the first copy when absent or gone. */
-    suspend fun launch(contentId: String, fromStart: Boolean = false, fileId: Int? = null): LaunchResult {
+    suspend fun launch(contentId: String, fromStart: Boolean = false, fileId: Int? = null, audioTrackIndex: Int? = null, positionSeconds: Double? = null): LaunchResult {
         val item = when (val r = detail(contentId)) {
             is ApiResult.Success -> r.data
             is ApiResult.Error -> return LaunchResult.Failed("Couldn't load this item: ${r.message}")
@@ -100,6 +108,8 @@ class PlaybackLauncher(
             fileId = playFileId,
             profileId = profile,
             playbackAttemptId = newAttemptId(),
+            audioTrackIndex = audioTrackIndex,
+            startPosition = positionSeconds,
             subtitleFidelityPreference = SubtitleFidelityPreference.PRESERVE,
             capabilities = capabilities,
             clientPlaybackContext = context,
@@ -133,8 +143,16 @@ class PlaybackLauncher(
             null
         }
         return LaunchResult.Ready(
-            sessionId, url, plan.stream.effectiveRequestHeaders, startSeconds = playStart(item.userData, fromStart), meta = PlaybackMeta.of(item),
+            sessionId, url, plan.stream.effectiveRequestHeaders,
+            // A packaged replan can begin at source 42s while mpv's clock starts
+            // at zero. Seeking to the source position again would skip twice.
+            startSeconds = if (plan.timeline.timelineOffsetSeconds != 0.0) plan.timeline.playerStartSeconds
+                else positionSeconds ?: playStart(item.userData, fromStart),
+            meta = PlaybackMeta.of(item),
             subtitles = subtitles, embeddedSubtitleStream = embeddedStream,
+            sourceAudio = chosen.audioTracks.orEmpty(), direct = direct,
+            selectedAudioOrdinal = plan.selectedTracks.audio?.index ?: audioTrackIndex ?: chosen.effectiveAudioTrackIndex,
+            fileId = playFileId, timelineOffsetSeconds = plan.timeline.timelineOffsetSeconds,
         )
     }
 }

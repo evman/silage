@@ -11,10 +11,10 @@ import java.time.Instant
 class CrashLog(private val file: Path = XdgPaths.state.resolve("silage.log")) {
     fun record(where: String, t: Throwable) {
         runCatching {
-            val trace = StringWriter().also { t.printStackTrace(PrintWriter(it)) }.toString()
+            val trace = SecretRedaction.text(StringWriter().also { t.printStackTrace(PrintWriter(it)) }.toString())
             Files.createDirectories(file.parent)
             Files.writeString(file, "${Instant.now()} [$where] $trace\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         }
-        System.err.println("silage: unexpected error in $where: $t")
+        System.err.println(SecretRedaction.text("silage: unexpected error in $where: $t"))
     }
 }
