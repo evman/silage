@@ -99,7 +99,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         HudMenu.Audio -> ui.value.tracks.audio.map { it.selected }
         HudMenu.Subtitles -> listOf(ui.value.tracks.subtitles.none { it.selected }) + ui.value.tracks.subtitles.map { it.selected }
         HudMenu.Speed -> SPEEDS.map { it == ui.value.speed }
-        HudMenu.Video -> List(8) { false }
+        HudMenu.Video -> List(VideoControls.RowCount) { false }
         else -> emptyList()
     }
 

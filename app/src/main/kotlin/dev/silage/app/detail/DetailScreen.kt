@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.silage.app.browse.Pill
 import dev.silage.app.home.ErrorState
+import dev.silage.app.ui.ArrowRow
 import dev.silage.app.ui.Artwork
 import dev.silage.app.ui.Silage
 import dev.silage.app.ui.focusCard
@@ -155,7 +156,7 @@ private fun DetailContent(
             }
             if (m.isSeries && seasons.isNotEmpty()) {
                 item {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 64.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 56.dp, bottom = 20.dp)) {
+                    ArrowRow(contentPadding = PaddingValues(horizontal = 64.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 56.dp, bottom = 20.dp)) {
                         items(seasons, key = { it.contentId }) { s ->
                             Pill(s.title ?: if (s.seasonNumber == 0) "Specials" else "Season ${s.seasonNumber}", selected = s.seasonNumber == season) { onSeason(s.seasonNumber) }
                         }
@@ -166,7 +167,7 @@ private fun DetailContent(
             if (m.cast.isNotEmpty()) {
                 item {
                     Text("Cast", color = Silage.Text2, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 64.dp, top = 56.dp, bottom = 18.dp))
-                    LazyRow(contentPadding = PaddingValues(horizontal = 64.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                    ArrowRow(contentPadding = PaddingValues(horizontal = 64.dp), horizontalArrangement = Arrangement.spacedBy(28.dp), arrowOffsetY = 20.dp) {
                         items(m.cast) { c -> CastView(c) }
                     }
                 }

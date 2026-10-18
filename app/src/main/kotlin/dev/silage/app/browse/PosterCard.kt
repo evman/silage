@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.silage.app.ui.ArrowRow
 import dev.silage.app.ui.Artwork
 import dev.silage.app.ui.Silage
 import dev.silage.app.ui.focusCard
@@ -91,7 +92,8 @@ fun CardRow(
     val landscape = cards.firstOrNull()?.landscape == true
     Column(Modifier.fillMaxWidth()) {
         Text(title, color = Silage.Text2, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 64.dp, bottom = 14.dp))
-        LazyRow(contentPadding = PaddingValues(horizontal = 64.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        // ‹ › buttons for the mouse; centred on the artwork rather than artwork plus caption.
+        ArrowRow(contentPadding = PaddingValues(horizontal = 64.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(24.dp), arrowOffsetY = 26.dp) {
             itemsIndexed(cards, key = { _, c -> c.id }) { i, card ->
                 MediaCard(
                     card, width = if (landscape) 400.dp else 200.dp,

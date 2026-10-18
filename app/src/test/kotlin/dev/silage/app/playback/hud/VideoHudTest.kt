@@ -25,15 +25,17 @@ class VideoHudTest {
         onNodeWithContentDescription("Enter fullscreen (F)").performClick()
         onNodeWithContentDescription("Exit fullscreen (F / Escape)").assertExists()
         onNodeWithContentDescription("Video settings").performClick()
-        onNodeWithContentDescription("Increase Brightness").performClick()
-        runOnIdle { assertEquals(5, ui.video.brightness) }
+        onNodeWithContentDescription("Increase Zoom").performClick()
+        runOnIdle { assertEquals(0.1, ui.video.zoom) }
+        // Picture adjustments (brightness etc.) were removed: only fit, aspect and zoom remain.
+        onNodeWithContentDescription("Increase Brightness").assertDoesNotExist()
         onNodeWithText("Restore video defaults").performClick()
         runOnIdle { assertEquals(VideoSettings(), ui.video) }
     }
     @Test fun videoKeyboardStaysOpenAndUsesDirectionalAdjustment() {
-        val nav = HudNav(menu = HudMenu.Video, menuIndex = 3, menuSize = 8)
-        assertEquals(HudEffect.AdjustVideo(3, -1), nav.on(HudKey.Left).second)
+        val nav = HudNav(menu = HudMenu.Video, menuIndex = 2, menuSize = VideoControls.RowCount)
+        assertEquals(HudEffect.AdjustVideo(2, -1), nav.on(HudKey.Left).second)
         assertEquals(HudMenu.Video, nav.on(HudKey.Enter).first.menu)
-        assertEquals(HudEffect.AdjustVideo(3, 1), nav.on(HudKey.Enter).second)
+        assertEquals(HudEffect.AdjustVideo(2, 1), nav.on(HudKey.Enter).second)
     }
 }

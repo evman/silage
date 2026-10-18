@@ -57,18 +57,18 @@ class WindowsAdvancedVideoSmokeTest {
                     mpv.load(clip)
                     await("No native playback") { (mpv.getProperty("time-pos")?.toDoubleOrNull() ?: 0.0) >= 1.0 }
                     hud.open(HudMenu.Video)
-                    // Cycle fit and aspect, then set every adjustment via actual HUD keyboard actions.
-                    for (i in 0..6) {
+                    // Cycle fit and aspect, then step zoom, via actual HUD keyboard actions.
+                    val last = VideoControls.labels.lastIndex
+                    for (i in 0..last) {
                         hud.key(HudKey.Right)
                         Thread.sleep(250)
-                        println("ADVANCED_VIDEO_STEP $i settings=${session.settings} error=${session.error} native-aspect=${mpv.getProperty("video-aspect-override")} native-gamma=${mpv.getProperty("gamma")}")
-                        if (i < 6) hud.key(HudKey.Down)
+                        println("ADVANCED_VIDEO_STEP $i settings=${session.settings} error=${session.error} native-aspect=${mpv.getProperty("video-aspect-override")} native-zoom=${mpv.getProperty("video-zoom")}")
+                        if (i < last) hud.key(HudKey.Down)
                     }
-                    await("HUD video properties not applied") { mpv.getProperty("gamma")?.toDoubleOrNull()?.toInt() == 5 }
+                    await("HUD video properties not applied") { mpv.getProperty("video-zoom")?.toDoubleOrNull()?.let { kotlin.math.abs(it - 0.1) < 0.00001 } == true }
                     assertEquals("1.000000", mpv.getProperty("panscan"))
                     assertEquals(16.0/9, mpv.getProperty("video-aspect-override")!!.toDouble(), 0.00001)
                     assertEquals(0.1, mpv.getProperty("video-zoom")!!.toDouble(), 0.00001)
-                    for (k in listOf("brightness","contrast","saturation","gamma")) assertEquals(5.0,mpv.getProperty(k)!!.toDouble())
                     println("ADVANCED_VIDEO_SMOKE properties=" + session.settings.properties().keys.associateWith(mpv::getProperty))
                     evidence("video-controls-native.png")
                     val before = mpv.getProperty("time-pos")!!.toDouble()
@@ -92,10 +92,10 @@ class WindowsAdvancedVideoSmokeTest {
                     await("Escape did not restore fullscreen") { !fullscreen.active && rect() == initial }
                     assertEquals(style,u.GetWindowLongW(hwnd,-16))
                     hud.key(HudKey.Down); hud.key(HudKey.Enter)
-                    await("Reset failed") { mpv.getProperty("gamma")?.toDoubleOrNull()?.toInt() == 0 }
+                    await("Reset failed") { mpv.getProperty("video-zoom")?.toDoubleOrNull() == 0.0 }
                     assertEquals(VideoSettings(), session.settings)
                     assertNull(session.error)
-                    repeat(6) { hud.key(HudKey.Up) } // reset row 7 -> aspect row 1
+                    repeat(VideoControls.ResetIndex - 1) { hud.key(HudKey.Up) } // reset row -> aspect row 1
                     for (expected in listOf(16.0/9, 4.0/3, 2.35, -2.0)) {
                         hud.key(HudKey.Right)
                         await("Aspect preset not applied: $expected") {

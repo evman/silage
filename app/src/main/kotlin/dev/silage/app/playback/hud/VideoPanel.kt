@@ -40,11 +40,11 @@ internal fun VideoPanel(ui: HudUi, act: HudActions) {
                 VideoStep("+", "Increase $label") { act.video(i, 1) }
             }
         }
-        Text("Zoom 50–200% · picture adjustments −100 to +100", color = Color.LightGray, fontSize = 12.sp,
+        Text("Zoom 50–200%", color = Color.LightGray, fontSize = 12.sp,
             modifier = Modifier.padding(vertical = 8.dp))
         Text("Restore video defaults", color = Color.White, fontSize = 17.sp,
-            modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = if (ui.focus != null && ui.menuIndex == 7) 0.24f else 0.10f), RoundedCornerShape(8.dp))
-                .clickable { act.video(7, 1) }.padding(14.dp))
+            modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = if (ui.focus != null && ui.menuIndex == VideoControls.ResetIndex) 0.24f else 0.10f), RoundedCornerShape(8.dp))
+                .clickable { act.video(VideoControls.ResetIndex, 1) }.padding(14.dp))
         ui.videoError?.let { Text(it, color = Color(0xFFFFB4AB), fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp)) }
         Text("↑↓ select · ←→ adjust · Enter next/reset · Escape close", color = Color.LightGray,
             fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
