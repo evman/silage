@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,7 +59,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 
-enum class HudMenu { None, Audio, Subtitles, Speed, Info, Video }
+enum class HudMenu { None, Audio, Subtitles, Speed, Chapters, Info, Video }
 
 data class HudUi(
     val meta: PlaybackMeta = PlaybackMeta(),
@@ -76,6 +77,7 @@ data class HudUi(
     val speed: Double = 1.0,
     val info: List<Pair<String, String>> = emptyList(),
     val skip: SkipPrompt? = null,
+    val chapters: List<Chapter> = emptyList(),
     val video: VideoSettings = VideoSettings(),
     val videoError: String? = null,
     val fullscreen: Boolean = false,
@@ -92,6 +94,9 @@ interface HudActions {
     fun exit()
     fun fullscreen() {}
     fun video(index: Int, step: Int) {}
+    fun chapter(index: Int) {}
+    /** Ends this episode and moves on to the next one (the credits' "Next Episode"). */
+    fun nextEpisode() {}
 }
 
 val SPEEDS = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
@@ -125,7 +130,8 @@ fun HudContent(ui: HudUi, act: HudActions) {
                 Modifier.align(Alignment.BottomEnd).padding(end = 64.dp, bottom = if (ui.visible) 200.dp else 72.dp)
                     .focusRing(ui.focus == HudFocus.Skip, RoundedCornerShape(12.dp))
                     .clip(RoundedCornerShape(10.dp)).background(Color.White)
-                    .clickable { act.seekTo(skip.target) }.padding(horizontal = 28.dp, vertical = 14.dp),
+                    .clickable { if (skip.kind == SkipPrompt.Kind.NextEpisode) act.nextEpisode() else act.seekTo(skip.target) }
+                    .padding(horizontal = 28.dp, vertical = 14.dp),
             ) { Text(skip.label, color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) }
         }
         AnimatedVisibility(
@@ -166,6 +172,9 @@ private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
                 UtilityButton(Icons.AutoMirrored.Outlined.VolumeUp, active = ui.menu == HudMenu.Audio, focused = ui.focus == HudFocus.Audio) { act.openMenu(HudMenu.Audio) }
                 UtilityButton(Icons.Outlined.Subtitles, active = ui.menu == HudMenu.Subtitles, focused = ui.focus == HudFocus.Subtitles) { act.openMenu(HudMenu.Subtitles) }
                 UtilityButton(Icons.Outlined.Speed, active = ui.menu == HudMenu.Speed, focused = ui.focus == HudFocus.Speed) { act.openMenu(HudMenu.Speed) }
+                if (ui.chapters.isNotEmpty()) {
+                    UtilityButton(Icons.Outlined.Bookmarks, label = "Chapters", active = ui.menu == HudMenu.Chapters, focused = ui.focus == HudFocus.Chapters) { act.openMenu(HudMenu.Chapters) }
+                }
                 Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(28.dp).background(Color.White.copy(alpha = 0.14f)))
                 UtilityButton(Icons.Outlined.Info, active = ui.menu == HudMenu.Info, focused = ui.focus == HudFocus.Info) { act.openMenu(HudMenu.Info) }
                 UtilityButton(Icons.Outlined.Tune, label = "Video settings", caption = "Video", active = ui.menu == HudMenu.Video, focused = ui.focus == HudFocus.Video) { act.openMenu(HudMenu.Video) }
@@ -236,7 +245,9 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
     if (ui.menu == HudMenu.Video) { VideoPanel(ui, act); return }
     Column(
         Modifier.width(400.dp).heightIn(max = 620.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp)).padding(vertical = 8.dp),
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+            // Long lists (a file with many chapters) scroll inside the panel.
+            .verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
     ) {
         val (title, rows) = when (ui.menu) {
             HudMenu.Audio -> "Audio" to ui.tracks.audio.map { t -> Triple(t.label, t.selected) { act.audio(t.id) } }
@@ -245,6 +256,10 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
                     ui.tracks.subtitles.map { t -> Triple(t.label, t.selected) { act.subtitle(t.id) } }
                 )
             HudMenu.Speed -> "Speed" to SPEEDS.map { s -> Triple(if (s == 1.0) "Normal" else "${s}×", ui.speed == s) { act.speed(s) } }
+            HudMenu.Chapters -> {
+                val current = Chapter.indexAt(ui.chapters, ui.position)
+                "Chapters" to ui.chapters.mapIndexed { i, c -> Triple("${formatTime(c.start)}   ${c.title}", i == current) { act.chapter(i) } }
+            }
             else -> "" to emptyList()
         }
         Text(title, color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))

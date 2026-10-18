@@ -18,7 +18,10 @@ fun MpvPlayer.asOpened(): OpenedPlayer {
 }
 
 sealed interface PlayOutcome {
+    /** Stopped before the end (Back, or a source/stream switch). */
     data object Finished : PlayOutcome
+    /** Played to the end of the file: time for "Up next". */
+    data object Completed : PlayOutcome
     data class Failed(val message: String) : PlayOutcome
 }
 
@@ -51,10 +54,10 @@ class PlaybackSession(
                 progress = progress,
                 stop = { sessionId -> player.close(); stopSession(sessionId) },
             ).run(ready)
-            return if (end is PlayerEvent.Ended && end.reason == EndReason.ERROR) {
-                PlayOutcome.Failed("Playback failed: ${end.error ?: "unknown error"}")
-            } else {
-                PlayOutcome.Finished
+            return when {
+                end is PlayerEvent.Ended && end.reason == EndReason.ERROR -> PlayOutcome.Failed("Playback failed: ${end.error ?: "unknown error"}")
+                end is PlayerEvent.Ended && end.reason == EndReason.EOF -> PlayOutcome.Completed
+                else -> PlayOutcome.Finished
             }
         } finally {
             player.close()

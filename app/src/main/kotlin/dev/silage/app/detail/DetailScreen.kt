@@ -1,6 +1,16 @@
 package dev.silage.app.detail
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.animateContentSize
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -59,7 +69,7 @@ import org.siloserver.silo.repository.CatalogRepository
 
 /** Movie, episode or series detail. [onPlay] gets a content id, whether to start over, and the chosen copy. */
 @Composable
-fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) -> Unit) {
+fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) -> Unit, onPerson: (Long, String) -> Unit = { _, _ -> }) {
     val catalog = remember { koin.get<CatalogRepository>() }
     var item by remember(contentId) { mutableStateOf<ItemDetail?>(null) }
     var error by remember(contentId) { mutableStateOf<String?>(null) }
@@ -67,6 +77,8 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
     var season by rememberSaveable(contentId) { mutableStateOf<Int?>(null) }
     var episodes by remember(contentId) { mutableStateOf(emptyList<EpisodeListItem>()) }
     var attempt by remember { mutableStateOf(0) }
+    // Bumped after marking an episode watched, to reload the season's episodes.
+    var episodesVersion by remember { mutableStateOf(0) }
 
     LaunchedEffect(contentId, attempt) {
         error = null
@@ -84,21 +96,23 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
             }
         }
     }
-    LaunchedEffect(contentId, season) {
+    LaunchedEffect(contentId, season, episodesVersion) {
         val s = season ?: return@LaunchedEffect
-        (catalog.getEpisodes(contentId, s) as? ApiResult.Success)?.data?.episodes?.let { episodes = it }
+        (catalog.getEpisodes(contentId, s, fresh = episodesVersion > 0) as? ApiResult.Success)?.data?.episodes?.let { episodes = it }
     }
 
     val d = item
     when {
         error != null && d == null -> ErrorState(error!!) { attempt++ }
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
-        else -> DetailContent(d.toDetailModel(), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId)
+        else -> DetailContent(koin, d.toDetailModel(), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId,
+            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ })
     }
 }
 
 @Composable
 private fun DetailContent(
+    koin: Koin,
     m: DetailModel,
     item: ItemDetail,
     seasons: List<Season>,
@@ -107,7 +121,19 @@ private fun DetailContent(
     onSeason: (Int) -> Unit,
     onPlay: (String, Boolean, Int?) -> Unit,
     contentId: String,
+    onPerson: (Long, String) -> Unit,
+    onEpisodesChanged: () -> Unit,
 ) {
+    val actions = remember { ItemActions(koin.get(), koin.get(), koin.get()) }
+    val scope = rememberCoroutineScope()
+    val watchlist = remember(contentId) { OptimisticToggle(null) { actions.setWatchlist(contentId, it) } }
+    val favorite = remember(contentId) { OptimisticToggle(null) { actions.setFavorite(contentId, it) } }
+    // Series are marked watched episode by episode; movies and episodes as a whole.
+    val watched = remember(contentId) { OptimisticToggle(if (m.isSeries) null else item.userData?.played == true) { actions.setWatched(contentId, it) } }
+    LaunchedEffect(contentId) {
+        watchlist.load(actions.inWatchlist(contentId))
+        favorite.load(actions.isFavorite(contentId))
+    }
     // The copy to play (in practice, which library): last played, else best.
     // For a series, the kind picked (e.g. "4K · HDR") carries to other episodes.
     var preferredShort by rememberSaveable(contentId) { mutableStateOf<String?>(null) }
@@ -151,6 +177,18 @@ private fun DetailContent(
                             if (m.canPlayFromStart) ActionButton(Icons.Filled.Replay, "Play from beginning") { onPlay(contentId, true, selected?.fileId) }
                         }
                         if (options.size > 1 && selected != null) ActionButton(Icons.Outlined.Layers, selected.short) { picking = true }
+                        watchlist.value?.let { on ->
+                            ToggleChip(if (on) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, if (on) "On your watchlist" else "Add to watchlist", on) { scope.launch { watchlist.toggle() } }
+                        }
+                        favorite.value?.let { on ->
+                            ToggleChip(if (on) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, if (on) "Favorite" else "Add to favorites", on) { scope.launch { favorite.toggle() } }
+                        }
+                        watched.value?.let { on ->
+                            ToggleChip(if (on) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle, if (on) "Watched" else "Mark as watched", on) { scope.launch { watched.toggle() } }
+                        }
+                    }
+                    if (watchlist.failed || favorite.failed || watched.failed) {
+                        Text("Couldn't save that change on the server. Try again.", color = Silage.Error, fontSize = 17.sp)
                     }
                 }
             }
@@ -162,13 +200,17 @@ private fun DetailContent(
                         }
                     }
                 }
-                items(episodes, key = { it.contentId }) { e -> EpisodeRowView(e.toRow()) { onPlay(e.contentId, false, episodeFile(e)) } }
+                items(episodes, key = { it.contentId }) { e ->
+                    EpisodeRowView(e.toRow(), onToggleWatched = { now -> actions.setWatched(e.contentId, now).also { if (it) onEpisodesChanged() } }) {
+                        onPlay(e.contentId, false, episodeFile(e))
+                    }
+                }
             }
             if (m.cast.isNotEmpty()) {
                 item {
                     Text("Cast", color = Silage.Text2, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 64.dp, top = 56.dp, bottom = 18.dp))
                     ArrowRow(contentPadding = PaddingValues(horizontal = 64.dp), horizontalArrangement = Arrangement.spacedBy(28.dp), arrowOffsetY = 20.dp) {
-                        items(m.cast) { c -> CastView(c) }
+                        items(m.cast) { c -> CastView(c, onOpen = c.personId?.let { id -> { onPerson(id, c.name) } }) }
                     }
                 }
             }
@@ -196,8 +238,33 @@ private fun ActionButton(icon: ImageVector, label: String, modifier: Modifier = 
     }
 }
 
+/**
+ * A round icon button for an on/off setting (watchlist, favorite, watched).
+ * Its label slides out while it's hovered or focused; [on] fills it amber-on-white.
+ */
 @Composable
-private fun EpisodeRowView(e: EpisodeRow, onClick: () -> Unit) {
+private fun ToggleChip(icon: ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val active = interaction.isActive()
+    Row(
+        Modifier.height(60.dp).clip(RoundedCornerShape(30.dp))
+            .background(if (active) Color.White else Color.White.copy(alpha = 0.14f))
+            .semantics { contentDescription = label }
+            .hoverable(interaction).clickable(interaction, indication = null, onClick = onClick)
+            .animateContentSize()
+            .padding(horizontal = 15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = when { active -> Color.Black; on -> Silage.Amber; else -> Color.White }, modifier = Modifier.size(30.dp))
+        if (active) {
+            Spacer(Modifier.width(10.dp))
+            Text(label, color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun EpisodeRowView(e: EpisodeRow, onToggleWatched: suspend (Boolean) -> Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val active = interaction.isActive()
     val shape = RoundedCornerShape(10.dp)
@@ -225,13 +292,28 @@ private fun EpisodeRowView(e: EpisodeRow, onClick: () -> Unit) {
             e.runtime?.let { Text(it, color = Silage.Text3, fontSize = 16.sp) }
             e.overview?.let { Text(it, color = Silage.Text2, fontSize = 17.sp, lineHeight = 25.sp, maxLines = 3, overflow = TextOverflow.Ellipsis) }
         }
+        val watched = remember(e.id, e.watched) { OptimisticToggle(e.watched, onToggleWatched) }
+        val scope = rememberCoroutineScope()
+        val on = watched.value == true
+        Spacer(Modifier.width(16.dp))
+        ToggleChip(if (on) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle, if (on) "Mark as unwatched" else "Mark as watched", on) {
+            scope.launch { watched.toggle() }
+        }
     }
 }
 
+/** A cast member; with [onOpen], clicking opens their other titles. */
 @Composable
-private fun CastView(c: CastCard) {
-    Column(Modifier.width(140.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(120.dp).clip(CircleShape)) { Artwork(c.photoUrl, c.photoThumbhash, c.name, Modifier.fillMaxSize()) }
+private fun CastView(c: CastCard, onOpen: (() -> Unit)?) {
+    val interaction = remember { MutableInteractionSource() }
+    val active = onOpen != null && interaction.isActive()
+    Column(
+        Modifier.width(140.dp).then(
+            if (onOpen != null) Modifier.hoverable(interaction).clickable(interaction, indication = null, onClick = onOpen) else Modifier,
+        ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(120.dp).focusCard(active, CircleShape).clip(CircleShape)) { Artwork(c.photoUrl, c.photoThumbhash, c.name, Modifier.fillMaxSize()) }
         Spacer(Modifier.height(10.dp))
         Text(c.name, color = Silage.Text, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         c.role?.let { Text(it, color = Silage.Text3, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }

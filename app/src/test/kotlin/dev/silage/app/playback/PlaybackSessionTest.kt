@@ -54,8 +54,13 @@ class PlaybackSessionTest {
         assertEquals(PlayOutcome.Failed("Playback failed: loading failed"), outcome)
     }
 
+    @Test fun playingToTheEndIsCompletedAndStoppingEarlyIsFinished() = runTest {
+        assertEquals(PlayOutcome.Completed, session().play("m"), "end of file: time for Up next")
+        assertEquals(PlayOutcome.Finished, session(open = { ScriptedPlayer(log, PlayerEvent.Ended(EndReason.STOP, null)) }).play("m"))
+    }
+
     @Test fun windowClosesBeforeServerStop() = runTest {
-        assertEquals(PlayOutcome.Finished, session().play("m"))
+        assertEquals(PlayOutcome.Completed, session().play("m"))
         assertEquals(listOf("player.stop", "player.close", "session.stop:sess-1"), log)
     }
 }

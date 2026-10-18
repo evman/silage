@@ -33,6 +33,8 @@ import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.network.apiv2.WatchDetailV2Api
 import org.siloserver.silo.repository.PlaybackRepository
 import org.siloserver.silo.repository.ProfileRepository
+import org.siloserver.silo.repository.CatalogRepository
+import org.siloserver.silo.model.catalog.EpisodeListItem
 
 private class Surface(val canvas: Canvas, val wid: Long?)
 
@@ -46,7 +48,9 @@ private fun outputUnder(canvas: Canvas): Output? = runCatching {
 }.getOrNull()
 
 private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, paused: Boolean = false,
-    fullscreen: PlaybackFullscreen? = null, video: VideoSession = VideoSession(), onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
+    fullscreen: PlaybackFullscreen? = null, video: VideoSession = VideoSession(),
+    hasNextEpisode: () -> Boolean = { false }, onNextEpisode: (() -> Unit)? = null,
+    onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
     val mpv = MpvPlayer(playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1"))
@@ -54,6 +58,9 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val hud = try { PlayerHud(mpv, ready.meta,
         fullscreenWindow = if (output is VideoOutput.Embedded) fullscreen else null,
         videoSession = video,
+        autoSkipIntro = koin.get<dev.silage.app.ui.UiPrefs>().autoSkipIntro,
+        hasNextEpisode = hasNextEpisode,
+        onNextEpisode = if (onNextEpisode != null) ({ onNextEpisode(); mpv.command("stop"); Unit }) else null,
         audioRows = { mounted -> audioMenuTracks(ready.sourceAudio, mounted, ready.direct, ready.selectedAudioOrdinal) },
         selectSourceAudio = if (sourceSwitch) ({ ordinal ->
             if (ordinal != ready.selectedAudioOrdinal && ordinal in ready.sourceAudio.indices) {
@@ -90,13 +97,16 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
 
 /** Starts a session, plays it inside the Silage window, returns when done. */
 @Composable
-fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fileId: Int? = null, onDone: () -> Unit) {
+fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fileId: Int? = null, onDone: () -> Unit,
+    onPlayNext: (String) -> Unit = {}) {
     val fullscreen = LocalPlaybackFullscreen.current
     val video = remember(contentId) { VideoSession() }
     DisposableEffect(fullscreen, contentId) { onDispose { fullscreen?.leave() } }
     var error by remember { mutableStateOf<String?>(null) }
+    // Shown after an episode plays to its end, when another follows.
+    var upNext by remember { mutableStateOf<Pair<EpisodeListItem, String?>?>(null) }
     val surface = remember { CompletableDeferred<Surface>() }
-    if (error == null) {
+    if (error == null && upNext == null) {
         VideoSurface(onReady = { canvas, wid -> surface.complete(Surface(canvas, wid)) })
     }
     LaunchedEffect(contentId) {
@@ -120,12 +130,30 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         val change = java.util.concurrent.atomic.AtomicReference<AudioChange?>(null)
         var requested: AudioChange? = null
         var selectedFile = fileId
+        // The next episode is looked up while this one plays, for the credits'
+        // "Next Episode" button and the "Up next" screen afterwards.
+        val nextEpisode = java.util.concurrent.atomic.AtomicReference<EpisodeListItem?>(null)
+        val nextRequested = java.util.concurrent.atomic.AtomicBoolean(false)
+        var meta: PlaybackMeta? = null
+        var lookup: kotlinx.coroutines.Job? = null
+        val catalog = koin.get<CatalogRepository>()
         while (true) {
             val session = PlaybackSession(
                 launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position) },
                 openPlayer = { ready ->
                     selectedFile = ready.fileId
-                    openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video) { ordinal, position, paused ->
+                    meta = ready.meta
+                    if (lookup == null && ready.meta.seriesId != null) {
+                        lookup = launch(Dispatchers.IO) {
+                            nextEpisode.set(runCatching {
+                                findNextEpisode(ready.meta) { series, season -> (catalog.getEpisodes(series, season) as? ApiResult.Success)?.data?.episodes }
+                            }.getOrNull())
+                        }
+                    }
+                    openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video,
+                        hasNextEpisode = { nextEpisode.get() != null },
+                        onNextEpisode = if (ready.meta.seriesId != null) ({ nextRequested.set(true) }) else null,
+                    ) { ordinal, position, paused ->
                         change.compareAndSet(null, AudioChange(ordinal, position, paused))
                     }
                 },
@@ -135,10 +163,24 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             val outcome = withContext(Dispatchers.IO) { session.play(contentId) }
             requested = change.getAndSet(null)
             if (outcome is PlayOutcome.Failed) { fullscreen?.leave(); error = outcome.message; break }
-            if (requested == null) { fullscreen?.leave(); onDone(); break }
+            if (requested == null) {
+                val wantsNext = nextRequested.get() || outcome is PlayOutcome.Completed
+                lookup?.let { if (wantsNext) it.join() }
+                val next = nextEpisode.get()
+                when {
+                    next != null && nextRequested.get() -> onPlayNext(next.contentId)
+                    next != null && outcome is PlayOutcome.Completed -> upNext = next to meta?.seriesTitle
+                    else -> { fullscreen?.leave(); onDone() }
+                }
+                break
+            }
         }
     }
     error?.let { msg -> PlaybackFailure(msg, onDone) }
+    upNext?.let { (next, seriesTitle) ->
+        val autoplay = remember { koin.get<dev.silage.app.ui.UiPrefs>().autoplayNext }
+        UpNextScreen(next, seriesTitle, autoplay, onPlay = { onPlayNext(next.contentId) }, onBack = { fullscreen?.leave(); onDone() })
+    }
 }
 
 /** Separate rendering seam so a server/player failure's visibility is testable. */

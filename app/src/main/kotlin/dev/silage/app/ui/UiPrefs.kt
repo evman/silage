@@ -16,6 +16,10 @@ private data class UiPrefsFile(
     val hdrMode: String = "auto",
     /** Where the main window was left (Windows). */
     val window: dev.silage.app.SavedWindow? = null,
+    /** Play the next episode after the "Up next" countdown. */
+    val autoplayNext: Boolean = true,
+    /** Jump past intro markers without pressing Skip Intro. */
+    val autoSkipIntro: Boolean = false,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -50,4 +54,12 @@ class UiPrefs(private val path: Path) {
     var window: dev.silage.app.SavedWindow?
         get() = read().window
         set(value) = write { it.copy(window = value) }
+
+    var autoplayNext: Boolean
+        get() = read().autoplayNext
+        set(value) = write { it.copy(autoplayNext = value) }
+
+    var autoSkipIntro: Boolean
+        get() = read().autoSkipIntro
+        set(value) = write { it.copy(autoSkipIntro = value) }
 }

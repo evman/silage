@@ -6,7 +6,7 @@ import org.siloserver.silo.model.catalog.EpisodeListItem
 import org.siloserver.silo.model.catalog.ItemDetail
 import org.siloserver.silo.model.catalog.LeafItemUserData
 
-data class CastCard(val name: String, val role: String?, val photoUrl: String?, val photoThumbhash: String?)
+data class CastCard(val name: String, val role: String?, val photoUrl: String?, val photoThumbhash: String?, val personId: Long? = null)
 
 data class DetailModel(
     val title: String,
@@ -62,7 +62,7 @@ fun ItemDetail.toDetailModel(): DetailModel {
         overview = overview?.takeIf { it.isNotBlank() },
         playLabel = if (resume != null) "Resume from ${formatTime(resume)}" else "Play",
         canPlayFromStart = resume != null,
-        cast = cast.sortedBy { it.order }.take(20).map { CastCard(it.name, it.character, it.photoUrl, it.photoThumbhash) },
+        cast = cast.sortedBy { it.order }.take(20).map { CastCard(it.name, it.character, it.photoUrl, it.photoThumbhash, it.personId?.toLongOrNull()) },
         isSeries = isSeries,
     )
 }

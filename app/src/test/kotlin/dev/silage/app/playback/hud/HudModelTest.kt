@@ -88,7 +88,30 @@ class HudModelTest {
     }
 
     @Test fun skipCreditsShowsDuringTheCredits() {
-        assertEquals(SkipPrompt("Skip Credits", 3000.0), SkipPrompt.at(2950.0, intro, credits))
+        assertEquals(SkipPrompt("Skip Credits", 3000.0, SkipPrompt.Kind.Credits), SkipPrompt.at(2950.0, intro, credits))
         assertEquals(null, SkipPrompt.at(500.0, null, null))
+    }
+
+    @Test fun creditsOfAnEpisodeWithANextOneOfferTheNextEpisode() {
+        assertEquals(SkipPrompt("Next Episode", 3000.0, SkipPrompt.Kind.NextEpisode), SkipPrompt.at(2950.0, intro, credits, hasNextEpisode = true))
+        assertEquals(SkipPrompt.Kind.Intro, SkipPrompt.at(40.0, intro, credits, hasNextEpisode = true)?.kind, "the intro is still just skipped")
+    }
+
+    @Test fun chaptersParseFromMpvAndTheCurrentOneFollowsPosition() {
+        val chapters = Chapter.parse("""[{"title":"Opening","time":0.0},{"time":312.5},{"title":"","time":120.0}]""")
+        assertEquals(listOf(Chapter("Opening", 0.0), Chapter("Chapter 3", 120.0), Chapter("Chapter 2", 312.5)), chapters)
+        assertEquals(0, Chapter.indexAt(chapters, 10.0))
+        assertEquals(1, Chapter.indexAt(chapters, 119.8), "within half a second of a start counts as that chapter")
+        assertEquals(2, Chapter.indexAt(chapters, 4000.0))
+        assertEquals(emptyList(), Chapter.parse(null))
+        assertEquals(emptyList(), Chapter.parse("not json"))
+    }
+
+    @Test fun theChaptersButtonIsOnlyAFocusStopWhenThereAreChapters() {
+        val without = HudNav(focus = HudFocus.Speed)
+        assertEquals(HudFocus.Info, without.on(HudKey.Right).first.focus)
+        val with = HudNav(focus = HudFocus.Speed, hasChapters = true)
+        assertEquals(HudFocus.Chapters, with.on(HudKey.Right).first.focus)
+        assertEquals(HudEffect.Activate(HudFocus.Chapters), with.copy(focus = HudFocus.Chapters).on(HudKey.Enter).second)
     }
 }

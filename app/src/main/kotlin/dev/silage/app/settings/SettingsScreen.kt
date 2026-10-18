@@ -34,6 +34,7 @@ import dev.silage.app.shell.SidebarEntries
 import dev.silage.app.shell.icon
 import dev.silage.app.ui.Silage
 import dev.silage.app.ui.UiPrefs
+import dev.silage.app.playback.UpNextCountdownSeconds
 import dev.silage.app.ui.isActive
 import kotlinx.coroutines.launch
 import org.koin.core.Koin
@@ -145,12 +146,26 @@ private fun VideoSection(koin: Koin) {
     val prefs = remember { koin.get<UiPrefs>() }
     val version by prefs.changes.collectAsState()
     val mode = remember(version) { prefs.hdrMode }
-    Column {
+    val autoplay = remember(version) { prefs.autoplayNext }
+    val skipIntro = remember(version) { prefs.autoSkipIntro }
+    Column(Modifier.verticalScroll(rememberScrollState())) {
         Heading("HDR", "Auto plays HDR natively when HDR is turned on for the monitor Silage is on.")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Pill("Auto", selected = mode == "auto") { prefs.hdrMode = "auto" }
             Pill("Always", selected = mode == "on") { prefs.hdrMode = "on" }
             Pill("Never", selected = mode == "off") { prefs.hdrMode = "off" }
+        }
+        Spacer(Modifier.height(40.dp))
+        Heading("Next episode", "When an episode ends, play the next one after a $UpNextCountdownSeconds-second countdown.")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("Automatically", selected = autoplay) { prefs.autoplayNext = true }
+            Pill("Ask me", selected = !autoplay) { prefs.autoplayNext = false }
+        }
+        Spacer(Modifier.height(40.dp))
+        Heading("Intros", "Skip intros by themselves when the server knows where they are.")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("Skip automatically", selected = skipIntro) { prefs.autoSkipIntro = true }
+            Pill("Show a Skip button", selected = !skipIntro) { prefs.autoSkipIntro = false }
         }
     }
 }

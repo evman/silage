@@ -6,6 +6,16 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class AppNavigatorTest {
+    @Test fun theNextEpisodeReplacesThePlayerSoBackReturnsToTheShow() {
+        val nav = AppNavigator(Route.Home)
+        nav.go(Route.Detail("show"))
+        nav.go(Route.Playing("e1"))
+        nav.replace(Route.Playing("e2"))
+        assertEquals(Route.Playing("e2"), nav.route.value)
+        assertTrue(nav.back())
+        assertEquals(Route.Detail("show"), nav.route.value)
+    }
+
     @Test fun playerReturnsToThePageItCameFrom() {
         val nav = AppNavigator(Route.Home)
         nav.root(Route.Library(1, "Movies"))

@@ -14,6 +14,7 @@ sealed interface Route {
     data object Settings : Route
     data class Library(val id: Int, val name: String) : Route
     data class Collection(val id: String, val name: String) : Route
+    data class Person(val id: Long, val name: String) : Route
     data class Detail(val contentId: String) : Route
     data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null) : Route
 }
@@ -73,6 +74,14 @@ class AppNavigator(start: Route) {
         stack.forEach { it.close() }
         stack.clear()
         if (route != Route.Home && route !in authRoutes) stack.addLast(NavEntry(Route.Home, nextId++))
+        stack.addLast(NavEntry(route, nextId++))
+        publish()
+    }
+
+    /** Swaps the current page for [route] (e.g. the player moving on to the next episode), so Back skips it. */
+    fun replace(route: Route) {
+        if (stack.last().route == route) return
+        stack.removeLast().close()
         stack.addLast(NavEntry(route, nextId++))
         publish()
     }

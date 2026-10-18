@@ -83,11 +83,13 @@ class PlaybackLauncherTest {
     @Test fun episodeCarriesTitleLineAndMarkersForTheHud() = runTest {
         val r = launcher(item = {
             WatchDetail(contentId = it, type = "episode", title = "Pilot", versions = listOf(FileVersion(fileId = 77)),
-                seriesTitle = "Severance", seasonNumber = 1, episodeNumber = 3,
+                seriesId = "series-9", seriesTitle = "Severance", seasonNumber = 1, episodeNumber = 3,
                 intro = TimeRange(30.0, 95.0), credits = TimeRange(2900.0, 3000.0))
         }).launch("ep-1")
         assertIs<LaunchResult.Ready>(r)
-        assertEquals(PlaybackMeta("Pilot", "Severance · S1 E3", TimeRange(30.0, 95.0), TimeRange(2900.0, 3000.0)), r.meta)
+        // The series and episode numbers ride along so the player can find the next episode.
+        assertEquals(PlaybackMeta("Pilot", "Severance · S1 E3", TimeRange(30.0, 95.0), TimeRange(2900.0, 3000.0),
+            seriesId = "series-9", seriesTitle = "Severance", seasonNumber = 1, episodeNumber = 3), r.meta)
     }
 
     @Test fun movieLineIsItsYear() = runTest {

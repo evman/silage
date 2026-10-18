@@ -22,6 +22,11 @@ data class PlaybackMeta(
     val line: String? = null,
     val intro: TimeRange? = null,
     val credits: TimeRange? = null,
+    /** Set for an episode, so the player can find what comes next. */
+    val seriesId: String? = null,
+    val seriesTitle: String? = null,
+    val seasonNumber: Int? = null,
+    val episodeNumber: Int? = null,
 ) {
     companion object {
         fun of(item: WatchDetail) = PlaybackMeta(
@@ -36,6 +41,10 @@ data class PlaybackMeta(
             },
             intro = item.intro,
             credits = item.credits,
+            seriesId = item.seriesId,
+            seriesTitle = item.seriesTitle,
+            seasonNumber = item.seasonNumber,
+            episodeNumber = item.episodeNumber,
         )
     }
 }

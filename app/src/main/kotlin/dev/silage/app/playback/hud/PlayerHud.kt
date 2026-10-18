@@ -50,6 +50,12 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val selectSourceAudio: ((Int) -> Unit)? = null,
     private val fullscreenWindow: PlaybackFullscreen? = null,
     private val videoSession: VideoSession = VideoSession(),
+    /** Jump past the intro marker by itself, once per playback. */
+    private val autoSkipIntro: Boolean = false,
+    /** Whether a next episode is known yet; while it is, the credits button reads "Next Episode". */
+    private val hasNextEpisode: () -> Boolean = { false },
+    /** Ends this episode and moves on to the next. */
+    private val onNextEpisode: (() -> Unit)? = null,
 ) : AutoCloseable {
     private val ui = mutableStateOf(HudUi(meta = meta))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
@@ -88,6 +94,11 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         override fun fullscreen() {
             if (fullscreenWindow != null) fullscreenWindow.toggle() else mpv.command("cycle", "fullscreen")
         }
+        override fun chapter(index: Int) {
+            ui.value.chapters.getOrNull(index)?.let { seekTo(it.start) }
+            nav = nav.copy(menu = HudMenu.None)
+        }
+        override fun nextEpisode() { onNextEpisode?.invoke() }
         override fun video(index: Int, step: Int) {
             videoSession.update(VideoControls.adjust(videoSession.settings, index, step), mpv::setProperty, mpv::getProperty)
             ui.value = ui.value.copy(video = videoSession.settings, videoError = videoSession.error)
@@ -100,6 +111,9 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         HudMenu.Subtitles -> listOf(ui.value.tracks.subtitles.none { it.selected }) + ui.value.tracks.subtitles.map { it.selected }
         HudMenu.Speed -> SPEEDS.map { it == ui.value.speed }
         HudMenu.Video -> List(VideoControls.RowCount) { false }
+        HudMenu.Chapters -> Chapter.indexAt(ui.value.chapters, mpv.state.value.positionSeconds).let { current ->
+            ui.value.chapters.indices.map { it == current }
+        }
         else -> emptyList()
     }
 
@@ -108,6 +122,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             HudMenu.Audio -> ui.value.tracks.audio.getOrNull(index)?.let { actions.audio(it.id) }
             HudMenu.Subtitles -> if (index == 0) actions.subtitle(null) else ui.value.tracks.subtitles.getOrNull(index - 1)?.let { actions.subtitle(it.id) }
             HudMenu.Speed -> SPEEDS.getOrNull(index)?.let(actions::speed)
+            HudMenu.Chapters -> actions.chapter(index)
             else -> Unit
         }
     }
@@ -152,13 +167,14 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                 is HudEffect.SeekBy -> actions.seekBy(effect.seconds)
                 is HudEffect.SelectRow -> selectRow(effect.menu, effect.index)
                 is HudEffect.Activate -> when (effect.control) {
-                    HudFocus.Skip -> ui.value.skip?.let { actions.seekTo(it.target) }
+                    HudFocus.Skip -> ui.value.skip?.let { if (it.kind == SkipPrompt.Kind.NextEpisode) actions.nextEpisode() else actions.seekTo(it.target) }
                     HudFocus.Seek, HudFocus.PlayPause -> actions.togglePause()
                     HudFocus.Back10 -> actions.seekBy(-10.0)
                     HudFocus.Fwd10 -> actions.seekBy(10.0)
                     HudFocus.Audio -> actions.openMenu(HudMenu.Audio)
                     HudFocus.Subtitles -> actions.openMenu(HudMenu.Subtitles)
                     HudFocus.Speed -> actions.openMenu(HudMenu.Speed)
+                    HudFocus.Chapters -> actions.openMenu(HudMenu.Chapters)
                     HudFocus.Info -> actions.openMenu(HudMenu.Info)
                     HudFocus.Video -> actions.openMenu(HudMenu.Video)
                     HudFocus.Fullscreen -> actions.fullscreen()
@@ -196,6 +212,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private var native: Memory? = null
     private var overlayShown = false
     private var lastInfoAt = 0L
+    private var chaptersLoaded = false
+    private var introAutoSkipped = false
 
     private fun pointerNow(type: PointerEventType, x: Float, y: Float) {
         visibility.activity()
@@ -246,7 +264,19 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
 
         val s = mpv.state.value
         val now = System.currentTimeMillis()
-        val skip = SkipPrompt.at(s.positionSeconds, ui.value.meta.intro, ui.value.meta.credits)
+        // Chapters are known once the file is loaded (it has a duration).
+        if (!chaptersLoaded && s.durationSeconds > 0) {
+            chaptersLoaded = true
+            val chapters = Chapter.parse(mpv.getProperty("chapter-list"))
+            ui.value = ui.value.copy(chapters = chapters)
+            nav = nav.copy(hasChapters = chapters.isNotEmpty())
+        }
+        val skip = SkipPrompt.at(s.positionSeconds, ui.value.meta.intro, ui.value.meta.credits,
+            hasNextEpisode = onNextEpisode != null && hasNextEpisode())
+        if (autoSkipIntro && !introAutoSkipped && skip?.kind == SkipPrompt.Kind.Intro) {
+            introAutoSkipped = true
+            actions.seekTo(skip.target)
+        }
         if (nav.visible && !visibility.visible(now, s.paused, nav.menu != HudMenu.None)) nav = nav.copy(visible = false, focus = HudFocus.PlayPause)
         nav = nav.copy(hasSkip = skip != null, focus = if (skip == null && nav.focus == HudFocus.Skip) HudFocus.Seek else nav.focus)
         val visible = nav.visible

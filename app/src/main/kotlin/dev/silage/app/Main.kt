@@ -266,7 +266,9 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             onSelected = { nav.root(Route.Home) },
             onChangeServer = { nav.root(Route.Connect) },
         )
-        is Route.Playing -> PlayingScreen(koin, route.contentId, route.fromStart, route.fileId, onDone = { if (!nav.back()) nav.root(Route.Home) })
+        is Route.Playing -> PlayingScreen(koin, route.contentId, route.fromStart, route.fileId,
+            onDone = { if (!nav.back()) nav.root(Route.Home) },
+            onPlayNext = { next -> nav.replace(Route.Playing(next)) })
         Route.Home -> AppShell(nav, koin, route) {
             HomeScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) })
         }
@@ -276,7 +278,12 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         is Route.Collection -> AppShell(nav, koin, route) {
             CollectionScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) })
         }
-        is Route.Detail -> DetailScreen(koin, route.contentId, onPlay = { id, fromStart, fileId -> nav.go(Route.Playing(id, fromStart, fileId)) })
+        is Route.Detail -> DetailScreen(koin, route.contentId,
+            onPlay = { id, fromStart, fileId -> nav.go(Route.Playing(id, fromStart, fileId)) },
+            onPerson = { id, name -> nav.go(Route.Person(id, name)) })
+        is Route.Person -> AppShell(nav, koin, route) {
+            dev.silage.app.browse.PersonScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) })
+        }
         Route.Search -> AppShell(nav, koin, route) { SearchScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         Route.Watchlist -> AppShell(nav, koin, route) { WatchlistScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         Route.Settings -> AppShell(nav, koin, route) {

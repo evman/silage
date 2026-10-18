@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -30,6 +31,25 @@ class HudVisibility(private val hideAfterMs: Long, shownAt: Long = System.curren
 }
 
 data class Track(val id: Int, val label: String, val selected: Boolean)
+
+/** A chapter from the file (mpv's `chapter-list`), by start time. */
+data class Chapter(val title: String, val start: Double) {
+    companion object {
+        /** Parses mpv's `chapter-list` property (JSON); untitled chapters are numbered. */
+        fun parse(json: String?): List<Chapter> = runCatching {
+            Json.parseToJsonElement(json ?: "[]").jsonArray.mapIndexed { i, e ->
+                val o = e.jsonObject
+                Chapter(
+                    title = o["title"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: "Chapter ${i + 1}",
+                    start = o["time"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                )
+            }.sortedBy { it.start }
+        }.getOrDefault(emptyList())
+
+        /** The chapter playing at [position], or -1 before the first. */
+        fun indexAt(chapters: List<Chapter>, position: Double): Int = chapters.indexOfLast { it.start <= position + 0.5 }
+    }
+}
 
 data class Tracks(val audio: List<Track>, val subtitles: List<Track>) {
     companion object {
@@ -128,7 +148,7 @@ enum class HudKey {
 }
 
 /** The HUD controls reachable with the arrow keys. */
-enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Video, Fullscreen, Info }
+enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Chapters, Video, Fullscreen, Info }
 
 sealed interface HudEffect {
     data object None : HudEffect
@@ -155,7 +175,11 @@ data class HudNav(
     val menuSize: Int = 0,
     val hasSkip: Boolean = false,
     val fullscreen: Boolean = false,
+    /** The Chapters button only exists (and takes focus) when the file has chapters. */
+    val hasChapters: Boolean = false,
 ) {
+    private val row get() = if (hasChapters) ROW else ROW - HudFocus.Chapters
+
     fun on(key: HudKey): Pair<HudNav, HudEffect> {
         if (key == HudKey.Fullscreen) return copy(visible = true) to HudEffect.ToggleFullscreen
         if (key == HudKey.Escape) return if (fullscreen) this to HudEffect.LeaveFullscreen else on(HudKey.Back)
@@ -184,7 +208,7 @@ data class HudNav(
                 when (focus) {
                     HudFocus.Seek -> this to HudEffect.SeekBy(10.0 * step)
                     HudFocus.Skip -> this to HudEffect.None
-                    else -> copy(focus = ROW[(ROW.indexOf(focus) + step).coerceIn(0, ROW.size - 1)]) to HudEffect.None
+                    else -> copy(focus = row[(row.indexOf(focus) + step).coerceIn(0, row.size - 1)]) to HudEffect.None
                 }
             }
             HudKey.Up -> copy(focus = when (focus) {
@@ -203,22 +227,29 @@ data class HudNav(
     }
 
     companion object {
-        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Info, HudFocus.Video, HudFocus.Fullscreen)
+        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Chapters, HudFocus.Info, HudFocus.Video, HudFocus.Fullscreen)
     }
 }
 
-/** A "Skip Intro" / "Skip Credits" button, shown while inside a server marker. */
-data class SkipPrompt(val label: String, val target: Double) {
+/**
+ * A "Skip Intro" / "Skip Credits" button, shown while inside a server marker.
+ * During the credits of an episode with a next one it becomes "Next Episode".
+ */
+data class SkipPrompt(val label: String, val target: Double, val kind: Kind = Kind.Intro) {
+    enum class Kind { Intro, Credits, NextEpisode }
+
     companion object {
         fun at(
             position: Double,
             intro: org.siloserver.silo.model.catalog.TimeRange?,
             credits: org.siloserver.silo.model.catalog.TimeRange?,
+            hasNextEpisode: Boolean = false,
         ): SkipPrompt? {
             fun inside(r: org.siloserver.silo.model.catalog.TimeRange?) = r != null && position >= r.start && position < r.end - 1.0
             return when {
-                inside(intro) -> SkipPrompt("Skip Intro", intro!!.end)
-                inside(credits) -> SkipPrompt("Skip Credits", credits!!.end)
+                inside(intro) -> SkipPrompt("Skip Intro", intro!!.end, Kind.Intro)
+                inside(credits) && hasNextEpisode -> SkipPrompt("Next Episode", credits!!.end, Kind.NextEpisode)
+                inside(credits) -> SkipPrompt("Skip Credits", credits!!.end, Kind.Credits)
                 else -> null
             }
         }
