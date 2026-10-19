@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Movie
@@ -110,6 +111,7 @@ fun Sidebar(
                 }
                 Box(Modifier.padding(vertical = 10.dp, horizontal = 12.dp).fillMaxWidth().height(1.dp).background(Silage.Hairline))
                 Entry(Icons.Outlined.BookmarkBorder, "Watchlist", current == Route.Watchlist, open) { onGo(Route.Watchlist) }
+                Entry(Icons.Outlined.CollectionsBookmark, "Collections", current == Route.Collections || current is Route.Collection, open) { onGo(Route.Collections) }
             }
             if (notificationsAvailable) {
                 Entry(Icons.Outlined.Notifications, if (unread > 0) "Notifications ($unread)" else "Notifications", current == Route.Notifications, open,

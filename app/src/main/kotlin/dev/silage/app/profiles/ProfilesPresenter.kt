@@ -26,6 +26,12 @@ class ProfilesPresenter(
         is ApiResult.NetworkError -> ProfilesState.Error("Can't reach the server. Try again.")
     }
 
+    /**
+     * The only profile, to pick without showing "Who's watching?" (its PIN is
+     * still asked for); null when there are several, or none.
+     */
+    fun soleProfile(state: ProfilesState): ProfileRow? = (state as? ProfilesState.Loaded)?.profiles?.singleOrNull()
+
     suspend fun choose(profile: ProfileRow, pin: String?): ProfilesState {
         var token: String? = null
         if (profile.hasPin) {

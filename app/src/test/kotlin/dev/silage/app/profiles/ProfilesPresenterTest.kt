@@ -21,6 +21,14 @@ class ProfilesPresenterTest {
         assertEquals(listOf("Ann", "Kids"), (presenter().load() as ProfilesState.Loaded).profiles.map { it.name })
     }
 
+    @Test fun onlyASingleProfileIsPickedOnItsOwn() = runTest {
+        val one = ProfilesPresenter(list = { ApiResult.Success(listOf(ProfileRow("p1", "Ann", hasPin = false))) },
+            verifyPin = { _, _ -> ApiResult.Success(null) }, select = { _, _ -> ProfileCommitResult.Committed })
+        assertEquals("p1", one.soleProfile(one.load())?.id)
+        assertEquals(null, presenter().soleProfile(presenter().load()))
+        assertEquals(null, presenter().soleProfile(ProfilesState.Error("x")))
+    }
+
     @Test fun selectWithoutPin() = runTest {
         val selected = mutableListOf<Pair<String, String?>>()
         assertEquals(ProfilesState.Selected, presenter(selected = selected).choose(ProfileRow("p1", "Ann", false), pin = null))

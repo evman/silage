@@ -49,8 +49,12 @@ PC or Windows account starts signed out.
 
 ## What works
 
-- Connect, sign in, profiles (with PINs), Home, libraries, collections, search
-  and title pages, with resume and choice of version.
+- Connect, sign in, profiles (with PINs; with a single profile Silage skips
+  "Who's watching?" and only asks for its PIN if it has one), Home,
+  libraries, search and title pages, with resume and choice of version.
+- Collections: the sidebar's Collections page lists every collection you
+  can see, with a pill per collection group; libraries also have their own
+  Collections tab.
 - Playback inside the Silage window (Direct3D 11, hardware decoding), with a
   player bar for audio, subtitles, speed, chapters, playback info and fullscreen.
 - Skip Intro / Skip Credits, Next Episode during the credits, an "Up next"

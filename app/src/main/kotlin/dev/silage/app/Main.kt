@@ -316,6 +316,9 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         Route.Notifications -> AppShell(nav, koin, route) {
             dev.silage.app.notifications.NotificationsScreen(koin, onOpen = { nav.go(Route.Detail(it)) })
         }
+        Route.Collections -> AppShell(nav, koin, route) {
+            dev.silage.app.browse.CollectionsScreen(koin, onOpenCollection = { id, name -> nav.go(Route.Collection(id, name)) })
+        }
         Route.Watchlist -> AppShell(nav, koin, route) { WatchlistScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         Route.Settings -> AppShell(nav, koin, route) {
             SettingsScreen(koin, onSwitchProfile = { nav.root(Route.Profiles) }, onSwitchServer = { nav.root(Route.Connect) }, onSignedOut = { nav.root(Route.SignIn) })

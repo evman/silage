@@ -15,6 +15,7 @@ sealed interface Route {
     data object Calendar : Route
     data object Notifications : Route
     data object Requests : Route
+    data object Collections : Route
     data object Settings : Route
     data class Library(val id: Int, val name: String) : Route
     data class Collection(val id: String, val name: String) : Route

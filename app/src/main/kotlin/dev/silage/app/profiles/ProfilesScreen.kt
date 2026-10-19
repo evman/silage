@@ -44,10 +44,26 @@ fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit, onChang
     var loadAttempt by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
     val firstAvatar = remember { FocusRequester() }
+    // Set when the only profile was picked on its own, so a failure or a
+    // cancelled PIN shows the picker instead of trying again.
+    var autoTried by remember { mutableStateOf(false) }
     LaunchedEffect(loadAttempt) {
         state = ProfilesState.Loading
-        state = presenter.load()
-        (state as? ProfilesState.Loaded)?.let { profiles = it.profiles }
+        val loaded = presenter.load()
+        (loaded as? ProfilesState.Loaded)?.let { profiles = it.profiles }
+        val sole = presenter.soleProfile(loaded)
+        if (sole != null && !autoTried) {
+            // One profile: no "Who's watching?" (a PIN profile goes straight to its PIN pad).
+            autoTried = true
+            state = presenter.choose(sole, null)
+            when (val s = state) {
+                ProfilesState.Selected -> onSelected()
+                is ProfilesState.NeedsPin -> { pinTarget = s.profile; pin = "" }
+                else -> Unit
+            }
+        } else {
+            state = loaded
+        }
     }
     LaunchedEffect(profiles.isNotEmpty(), pinTarget) { if (profiles.isNotEmpty() && pinTarget == null) runCatching { firstAvatar.requestFocus() } }
     fun choose(p: ProfileRow, pinValue: String?) = scope.launch {
