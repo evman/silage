@@ -23,4 +23,26 @@ class CollectionsScreenTest {
         assertEquals("https://silo.example/api/v2/images/1.jpg", card.imageUrl)
         assertEquals("1 item", c("y", "One", items = 1).toCard(null).caption)
     }
+
+    @Test fun aCollectionTheStrictModelRejectsDoesNotHideTheOthers() {
+        val json = org.siloserver.silo.network.SiloJson.parseToJsonElement("""
+            {"items":[
+              {"id":"c1","name":"Bond","item_count":25,"poster_url":"/p/1.jpg","group_id":"g1","sort_order":2},
+              {"id":42,"name":"Smart","query_definition":"rules as a string","sort_config":[1,2],"allowed_profile_ids":null},
+              {"id":"c3"},
+              {"name":"No id"}
+            ],
+            "groups":[{"id":"g1","name":"Sagas","sort_order":1},{"name":"broken"}]}
+        """)
+        val (collections, groups) = parseCollections(json)
+        assertEquals(listOf("c1", "42"), collections.map { it.id })
+        assertEquals(25, collections[0].itemCount)
+        assertEquals("g1", collections[0].groupId)
+        assertEquals(listOf("Sagas"), groups.map { it.name })
+    }
+
+    @Test fun aBareListIsAcceptedToo() {
+        val json = org.siloserver.silo.network.SiloJson.parseToJsonElement("""[{"id":"a","name":"A"}]""")
+        assertEquals(listOf("a"), parseCollections(json).first.map { it.id })
+    }
 }
