@@ -42,7 +42,7 @@ Or pick yours:
 ```sh
 curl -fLO https://github.com/evman/silage/releases/latest/download/silage-bin-x86_64.pkg.tar.zst && sudo pacman -U silage-bin-x86_64.pkg.tar.zst
 ```
-Coming to the AUR as `silage-bin` (new AUR accounts are temporarily paused); then `paru -S silage-bin` or `yay -S silage-bin` will work too.
+To build the Arch package yourself, download the release's [PKGBUILD](https://github.com/evman/silage/releases/latest/download/PKGBUILD). It pins the matching Linux tarball checksum and can be built with `makepkg`.
 
 **Ubuntu 24.04+ / Debian 13**:
 ```sh

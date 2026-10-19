@@ -14,7 +14,7 @@ conflicts=('silage')
 options=('!strip' '!debug')
 source=("$url/releases/download/v$pkgver/silage-$pkgver-linux-x86_64.tar.gz")
 # The release workflow writes the exact tarball checksum in its published PKGBUILD.
-sha256sums=('@LINUX_TARBALL_SHA256@')
+sha256sums=('c74cec1be0a13d6848f6cb85c89a649a8c774f0f27cc58ab2a47b6e64c7859c7')
 
 package() {
   cd "silage-$pkgver"
