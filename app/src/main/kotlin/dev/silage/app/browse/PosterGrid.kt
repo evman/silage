@@ -1,5 +1,7 @@
 package dev.silage.app.browse
 
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -40,7 +42,7 @@ fun Pill(label: String, selected: Boolean = false, onClick: () -> Unit) {
         Modifier.height(48.dp).clip(RoundedCornerShape(24.dp))
             .background(if (active) Color.White else Color.White.copy(alpha = 0.08f))
             .then(if (selected && !active) Modifier.border(2.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(24.dp)) else Modifier)
-            .hoverable(interaction).clickable(interaction, indication = null, onClick = onClick)
+            .hoverable(interaction).pointerHoverIcon(PointerIcon.Hand).clickable(interaction, indication = null, onClick = onClick)
             .padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center,
     ) { Text(label, color = if (active) Color.Black else Silage.Text, fontSize = 18.sp) }
@@ -84,6 +86,7 @@ fun PosterGrid(
             if (!state.endReached && !state.loading && state.error == null && last >= items.size - 14) onLoadMore()
         }
     }
+    Box(Modifier.fillMaxSize()) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(200.dp),
         state = grid,
@@ -111,4 +114,17 @@ fun PosterGrid(
         }
         footer()
     }
+    // A slim scrollbar for the mouse, as Windows lists have.
+    androidx.compose.foundation.VerticalScrollbar(
+        adapter = androidx.compose.foundation.rememberScrollbarAdapter(grid),
+        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(vertical = 12.dp, horizontal = 8.dp),
+        style = SilageScrollbar,
+    )
+    }
 }
+
+/** Scrollbar colours for the black pages. */
+val SilageScrollbar = androidx.compose.foundation.ScrollbarStyle(
+    minimalHeight = 48.dp, thickness = 8.dp, shape = RoundedCornerShape(4.dp), hoverDurationMillis = 300,
+    unhoverColor = Color.White.copy(alpha = 0.16f), hoverColor = Color.White.copy(alpha = 0.45f),
+)

@@ -1,5 +1,7 @@
 package dev.silage.app.shell
 
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -131,7 +133,7 @@ private fun Entry(icon: ImageVector, label: String, selected: Boolean, open: Boo
     Box(
         Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp))
             .background(if (active) Color.White else Color.Transparent)
-            .hoverable(interaction)
+            .hoverable(interaction).pointerHoverIcon(PointerIcon.Hand)
             .clickable(interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -159,7 +161,7 @@ private fun ProfileEntry(profile: SidebarProfile?, open: Boolean, onClick: () ->
     val active = interaction.isActive()
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(if (active) Color.White.copy(alpha = 0.12f) else Color.Transparent)
-            .hoverable(interaction).clickable(interaction, indication = null, onClick = onClick).padding(8.dp),
+            .hoverable(interaction).pointerHoverIcon(PointerIcon.Hand).clickable(interaction, indication = null, onClick = onClick).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         dev.silage.app.ui.ProfileAvatar(profile?.name ?: "", profile?.avatarUrl, Modifier.size(48.dp))

@@ -44,6 +44,10 @@ import dev.silage.app.nav.KeyRoot
 import dev.silage.app.splash.SplashScreen
 import dev.silage.app.ui.LogoIcon
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -133,7 +137,8 @@ fun main(args: Array<String>) {
             position = savedWindow?.let { WindowPosition(it.x.dp, it.y.dp) } ?: WindowPosition.PlatformDefault,
             size = savedWindow?.let { DpSize(it.width.dp, it.height.dp) } ?: DpSize(1280.dp, 800.dp),
         )
-        Window(onCloseRequest = { if (isWindows) windowMemory.save(); exitApplication() }, state = windowState, title = BuildInfo.NAME, icon = LogoIcon) {
+        Window(onCloseRequest = { if (isWindows) windowMemory.save(); exitApplication() }, state = windowState, title = BuildInfo.NAME, icon = LogoIcon,
+            onPreviewKeyEvent = { e -> interfaceZoomKey(e)?.let { step -> uiPrefs.interfaceSize = step(uiPrefs.interfaceSize); true } ?: false }) {
             val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
             val liveFeatures = remember { koin.get<dev.silage.app.shell.LiveFeatures>() }
             LaunchedEffect(window) { liveFeatures.appInForeground = { window.isActive } }
@@ -159,12 +164,17 @@ fun main(args: Array<String>) {
             MaterialTheme(colorScheme = darkColorScheme(background = Color.Black, surface = Color.Black, primary = Color.White, onPrimary = Color.Black)) {
                 // Layouts are specified at 1080p and scaled uniformly to the window (4K is 2×).
                 BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
-                    val scale = constraints.maxHeight / 1080f
+                    // Settings → Interface → Size (Ctrl + / Ctrl − / Ctrl 0) shrinks the 1080p layout to fit more.
+                    val prefsVersion by uiPrefs.changes.collectAsState()
+                    val interfaceSize = remember(prefsVersion) { uiPrefs.interfaceSize }
+                    val scale = constraints.maxHeight / 1080f * interfaceSize.factor
                     val windowDensity = LocalDensity.current
                     CompositionLocalProvider(
                         LocalDensity provides Density(scale, fontScale = 1f),
                         dev.silage.app.playback.LocalWindowDensity provides windowDensity,
                         dev.silage.app.playback.LocalPlaybackFullscreen provides playbackFullscreen,
+                        // Right-click menus (cards, the search box) in the app's dark style.
+                        androidx.compose.foundation.LocalContextMenuRepresentation provides androidx.compose.foundation.DarkDefaultContextMenuRepresentation,
                     ) {
                         // The window opens on the startup animation while the start
                         // route (server, sign-in, profile) resolves underneath.
@@ -172,6 +182,15 @@ fun main(args: Array<String>) {
                         var splashDone by remember { mutableStateOf(false) }
                         LaunchedEffect(Unit) { navigator = AppNavigator(withContext(Dispatchers.IO) { startRoute(koin) }) }
                         navigator?.let { nav ->
+                            // The mouse's Back button goes back, as in Explorer and browsers (not while playing).
+                            DisposableEffect(nav) {
+                                val listener = java.awt.event.AWTEventListener { e ->
+                                    if (e is java.awt.event.MouseEvent && e.id == java.awt.event.MouseEvent.MOUSE_PRESSED && e.button == 4 &&
+                                        nav.route.value !is Route.Playing) javax.swing.SwingUtilities.invokeLater { nav.back() }
+                                }
+                                java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(listener, java.awt.AWTEvent.MOUSE_EVENT_MASK)
+                                onDispose { java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(listener) }
+                            }
                             // A clicked notification toast: bring the window forward on the inbox.
                             LaunchedEffect(nav) {
                                 liveFeatures.openInbox.collect {
@@ -181,7 +200,7 @@ fun main(args: Array<String>) {
                                 }
                             }
                             val route by nav.route.collectAsState()
-                            KeyRoot(route, onBack = nav::back) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
+                            KeyRoot(route, onBack = nav::back, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
                         }
                         if (!splashDone) SplashScreen(ready = navigator != null) { splashDone = true }
                         if (System.getProperty("os.name").startsWith("Windows")) {
@@ -323,5 +342,19 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         Route.Settings -> AppShell(nav, koin, route) {
             SettingsScreen(koin, onSwitchProfile = { nav.root(Route.Profiles) }, onSwitchServer = { nav.root(Route.Connect) }, onSignedOut = { nav.root(Route.SignIn) })
         }
+    }
+}
+
+/**
+ * Ctrl + / Ctrl − / Ctrl 0 (as in browsers): how to change the interface size,
+ * or null for any other key.
+ */
+internal fun interfaceZoomKey(e: androidx.compose.ui.input.key.KeyEvent): ((dev.silage.app.ui.InterfaceSize) -> dev.silage.app.ui.InterfaceSize)? {
+    if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown || !e.isCtrlPressed) return null
+    return when (e.key) {
+        androidx.compose.ui.input.key.Key.Equals, androidx.compose.ui.input.key.Key.Plus, androidx.compose.ui.input.key.Key.NumPadAdd -> { s -> s.step(1) }
+        androidx.compose.ui.input.key.Key.Minus, androidx.compose.ui.input.key.Key.NumPadSubtract -> { s -> s.step(-1) }
+        androidx.compose.ui.input.key.Key.Zero, androidx.compose.ui.input.key.Key.NumPad0 -> { _ -> dev.silage.app.ui.InterfaceSize.Default }
+        else -> null
     }
 }

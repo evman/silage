@@ -20,6 +20,8 @@ data class CardModel(
     val metaLine: String,
     /** The content id to open (the detail page) or play. */
     val openTarget: String,
+    /** The catalog type (movie, series, episode…), for the right-click menu; null for collections and requests. */
+    val kind: String? = null,
 )
 
 fun isProgressRow(sectionType: String): Boolean =
@@ -58,6 +60,7 @@ private fun card(
         overview = overview,
         metaLine = listOfNotNull(year.takeIf { it > 0 }?.toString(), formatRuntime(runtime), rating).joinToString(" · "),
         openTarget = id,
+        kind = type,
     )
 }
 

@@ -23,6 +23,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -50,6 +51,18 @@ fun MediaCard(
     val active = interaction.isActive()
     LaunchedEffect(active) { if (active) onFocus() }
     val height = if (card.landscape) width * 9f / 16f else width * 1.5f
+    // Right-click: Play / Open / Watchlist / Watched, where the page offers it.
+    val menu = LocalCardMenu.current
+    if (menu != null && card.kind != null) {
+        androidx.compose.foundation.ContextMenuArea(items = { menu.items(card) }) { CardBody(card, width, height, active, interaction, onOpen, modifier, focusRequester) }
+    } else {
+        CardBody(card, width, height, active, interaction, onOpen, modifier, focusRequester)
+    }
+}
+
+@Composable
+private fun CardBody(card: CardModel, width: Dp, height: Dp, active: Boolean, interaction: MutableInteractionSource, onOpen: () -> Unit,
+    modifier: Modifier, focusRequester: FocusRequester?) {
     Column(modifier.width(width)) {
         Box(
             Modifier.size(width, height)
@@ -57,6 +70,7 @@ fun MediaCard(
                 .focusCard(active, CardShape)
                 .clip(CardShape)
                 .hoverable(interaction)
+                .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand)
                 .clickable(interaction, indication = null, onClick = onOpen),
         ) {
             Artwork(card.imageUrl, card.thumbhash, card.title, Modifier.fillMaxSize())

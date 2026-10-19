@@ -29,6 +29,8 @@ private data class UiPrefsFile(
     val subtitleColor: String? = null,
     /** Without a copy chosen: "best" quality, or the "last" one played. */
     val preferredVersion: String = "best",
+    /** How big the interface is drawn: see [InterfaceSize]. */
+    val interfaceSize: String = InterfaceSize.Default.wire,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -76,6 +78,10 @@ class UiPrefs(private val path: Path) {
         get() = read().calendarFilter
         set(value) = write { it.copy(calendarFilter = value) }
 
+    var interfaceSize: InterfaceSize
+        get() = InterfaceSize.of(read().interfaceSize)
+        set(value) = write { it.copy(interfaceSize = value.wire) }
+
     var preferredVersion: String
         get() = read().preferredVersion
         set(value) = write { it.copy(preferredVersion = value) }
@@ -86,4 +92,24 @@ class UiPrefs(private val path: Path) {
             it.copy(subtitleSize = value.size.wire, subtitleBackground = value.background.wire,
                 subtitlePosition = value.position.wire, subtitleColor = value.color.wire)
         }
+}
+
+/**
+ * The interface's size relative to the 1080p layout fitted to the window:
+ * Large is the original TV-style size; the others fit more on screen, as
+ * desktop apps do.
+ */
+enum class InterfaceSize(val wire: String, val label: String, val factor: Float) {
+    Small("small", "Small", 0.72f),
+    Medium("medium", "Medium", 0.85f),
+    Large("large", "Large", 1.0f),
+    ;
+
+    /** One step smaller or larger (Ctrl − / Ctrl +), stopping at the ends. */
+    fun step(by: Int): InterfaceSize = entries[(ordinal + by).coerceIn(0, entries.lastIndex)]
+
+    companion object {
+        val Default = Medium
+        fun of(wire: String?): InterfaceSize = entries.firstOrNull { it.wire == wire } ?: Default
+    }
 }

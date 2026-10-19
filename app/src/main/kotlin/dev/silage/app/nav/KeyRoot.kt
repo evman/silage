@@ -19,6 +19,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
@@ -30,7 +31,7 @@ import androidx.compose.ui.platform.LocalFocusManager
  * swallows every key; from the root, an arrow enters the page.
  */
 @Composable
-fun KeyRoot(route: Route, onBack: () -> Boolean, content: @Composable () -> Unit) {
+fun KeyRoot(route: Route, onBack: () -> Boolean, onSearch: () -> Unit = {}, content: @Composable () -> Unit) {
     val focus = LocalFocusManager.current
     val self = remember { FocusRequester() }
     var rootFocused by remember { mutableStateOf(false) }
@@ -41,8 +42,13 @@ fun KeyRoot(route: Route, onBack: () -> Boolean, content: @Composable () -> Unit
             .onFocusChanged { rootFocused = it.isFocused }
             .focusable()
             .onPreviewKeyEvent { e ->
-                route !is Route.Playing && e.type == KeyEventType.KeyDown &&
-                    e.isAltPressed && e.key == Key.DirectionLeft && onBack()
+                if (route is Route.Playing || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when {
+                    e.isAltPressed && e.key == Key.DirectionLeft -> onBack()
+                    // Ctrl+F: search, as in Windows apps.
+                    e.isCtrlPressed && e.key == Key.F -> { onSearch(); true }
+                    else -> false
+                }
             }
             .onKeyEvent { e ->
                 if (route is Route.Playing || e.type != KeyEventType.KeyDown) return@onKeyEvent false

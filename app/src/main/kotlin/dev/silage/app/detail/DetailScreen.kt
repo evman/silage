@@ -1,5 +1,7 @@
 package dev.silage.app.detail
 
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.foundation.background
 import androidx.compose.animation.animateContentSize
 import androidx.compose.material.icons.filled.Bookmark
@@ -236,7 +238,7 @@ internal fun ActionButton(icon: ImageVector, label: String, modifier: Modifier =
     Row(
         modifier.height(60.dp).clip(RoundedCornerShape(30.dp))
             .background(if (active) Color.White else Color.White.copy(alpha = 0.14f))
-            .hoverable(interaction).clickable(interaction, indication = null, onClick = onClick)
+            .hoverable(interaction).pointerHoverIcon(PointerIcon.Hand).clickable(interaction, indication = null, onClick = onClick)
             .padding(start = 22.dp, end = 30.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

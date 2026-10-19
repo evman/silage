@@ -52,3 +52,9 @@ fun aiProgressLabel(fraction: Double, message: String): String {
     val pct = (fraction.coerceIn(0.0, 1.0) * 100).toInt()
     return if (message.isBlank()) "Creating subtitles · $pct%" else "Creating subtitles · $pct% · $message"
 }
+
+/** The keyboard's media keys, while a video plays. */
+enum class MediaKey { PlayPause, Next, Previous, Stop }
+
+/** Where a double-click on the picture toggles fullscreen (fractions of the height). */
+internal val DoubleClickBand = 0.15f..0.72f

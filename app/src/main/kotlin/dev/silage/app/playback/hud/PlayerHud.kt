@@ -279,6 +279,36 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         inbox += { pointerNow(type, x, y) }
     }
 
+    /**
+     * A double-click on the picture toggles fullscreen, as in Windows players;
+     * only in the middle band, away from the back button and the player bar.
+     */
+    fun videoDoubleClick(fy: Float) {
+        inbox += { if (nav.menu == HudMenu.None && fy in DoubleClickBand) actions.fullscreen() }
+    }
+
+    /** A keyboard media key (Play/Pause, Next, Previous, Stop): shows the bar and acts. */
+    fun mediaKey(key: MediaKey) {
+        inbox += {
+            visibility.activity()
+            nav = nav.copy(visible = true)
+            when (key) {
+                MediaKey.PlayPause -> actions.togglePause()
+                MediaKey.Stop -> actions.exit()
+                MediaKey.Next -> if (onNextEpisode != null && hasNextEpisode()) actions.nextEpisode() else actions.seekBy(30.0)
+                MediaKey.Previous -> actions.seekBy(-10.0)
+            }
+        }
+    }
+
+    /** A press, release or move as fractions (0..1) of the video surface, so the seek bar can be dragged. */
+    fun pointerEvent(fx: Float, fy: Float, type: PointerEventType) {
+        inbox += {
+            val b = bitmap
+            if (b != null) pointerNow(type, fx * b.width, fy * b.height)
+        }
+    }
+
     /** Pointer input as fractions (0..1) of the video surface, from the Silage window. */
     fun pointerAt(fx: Float, fy: Float, press: Boolean) {
         inbox += {
@@ -306,17 +336,27 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private var chaptersLoaded = false
     private var introAutoSkipped = false
 
+    /** The primary button is held (a press reached the scene and no release yet): moves then drag. */
+    private var primaryDown = false
+    /** A press only revealed the hidden HUD, so its release is not passed on either. */
+    private var swallowRelease = false
+
     private fun pointerNow(type: PointerEventType, x: Float, y: Float) {
         visibility.activity()
         keyboardFocus = false
+        if (type == PointerEventType.Release && swallowRelease) { swallowRelease = false; return }
         if (!nav.visible) {
             nav = nav.copy(visible = true)
-            if (type != PointerEventType.Move) return // the first click only reveals the HUD
+            if (type == PointerEventType.Press) { swallowRelease = true; return } // the first click only reveals the HUD
+        }
+        when (type) {
+            PointerEventType.Press -> primaryDown = true
+            PointerEventType.Release -> primaryDown = false
         }
         scene?.sendPointerEvent(
             eventType = type,
             position = Offset(x, y),
-            buttons = if (type == PointerEventType.Press) PointerButtons(isPrimaryPressed = true) else PointerButtons(),
+            buttons = if (primaryDown) PointerButtons(isPrimaryPressed = true) else PointerButtons(),
             button = if (type == PointerEventType.Move) null else PointerButton.Primary,
         )
     }

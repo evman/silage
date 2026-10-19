@@ -116,7 +116,13 @@ private fun InterfaceSection(koin: Koin) {
         (personal.listUserLibraries() as? ApiResult.Success)?.let { server = personal.withoutHidden(it.data) }
     }
     val all = remember(server, version) { SidebarEntries.libraries(server, prefs.sidebar) }
+    val size = remember(version) { prefs.interfaceSize }
     Column(Modifier.verticalScroll(rememberScrollState())) {
+        Heading("Size", "How big text and posters are. Ctrl + and Ctrl − change it anywhere; Ctrl 0 goes back to Medium.")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            dev.silage.app.ui.InterfaceSize.entries.forEach { s -> Pill(s.label, selected = size == s) { prefs.interfaceSize = s } }
+        }
+        Spacer(Modifier.height(40.dp))
         Heading("Sidebar", "Choose which libraries appear in the sidebar, and their order.")
         SidebarEditorList(all) { prefs.sidebar = it }
     }

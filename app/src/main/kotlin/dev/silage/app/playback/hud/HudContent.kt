@@ -48,6 +48,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import dev.silage.app.playback.PlaybackMeta
 import dev.silage.app.playback.VideoSettings
 import dev.silage.app.playback.VideoControls
@@ -194,30 +203,69 @@ private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
     }
 }
 
+/**
+ * The seek bar: a white thumb on the played part that grows under the
+ * pointer and can be dragged; a click jumps there; hovering or dragging
+ * shows the time at that point above the bar.
+ */
 @Composable
 private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, focused: Boolean, onSeek: (Double) -> Unit, markers: List<Double>) {
-    val hover = remember { MutableInteractionSource() }
-    val hovered by hover.collectIsHoveredAsState()
-    var width = remember { mutableIntStateOf(1) }
+    var widthPx by remember { mutableIntStateOf(1) }
+    var hoverX by remember { mutableStateOf<Float?>(null) }
+    var dragFrac by remember { mutableStateOf<Float?>(null) }
+    fun fracAt(x: Float) = (x / widthPx).coerceIn(0f, 1f)
     fun frac(v: Double) = if (duration > 0) (v / duration).coerceIn(0.0, 1.0).toFloat() else 0f
+    val shown = dragFrac ?: frac(position)
+    val active = hoverX != null || dragFrac != null || focused
+    val barHeight by animateDpAsState(if (active) 8.dp else 5.dp, tween(120))
+    val thumb by animateDpAsState(if (dragFrac != null) 24.dp else if (active) 20.dp else 14.dp, tween(120))
     Box(
-        Modifier.fillMaxWidth().height(28.dp).hoverable(hover).onSizeChanged { width.intValue = it.width }
-            .pointerInput(duration) { detectTapGestures { o -> if (duration > 0) onSeek(duration * (o.x / width.intValue).coerceIn(0f, 1f)) } },
+        Modifier.fillMaxWidth().height(40.dp).onSizeChanged { widthPx = it.width.coerceAtLeast(1) }
+            .pointerHoverIcon(PointerIcon.Hand)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        hoverX = if (e.type == PointerEventType.Exit) null else e.changes.firstOrNull()?.position?.x
+                    }
+                }
+            }
+            .pointerInput(duration) { detectTapGestures { o -> if (duration > 0) onSeek(duration * fracAt(o.x)) } }
+            .pointerInput(duration) {
+                detectHorizontalDragGestures(
+                    onDragStart = { o -> dragFrac = fracAt(o.x) },
+                    onDragEnd = { dragFrac?.let { if (duration > 0) onSeek(duration * it) }; dragFrac = null },
+                    onDragCancel = { dragFrac = null },
+                ) { change, _ -> change.consume(); dragFrac = fracAt(change.position.x) }
+            },
         contentAlignment = Alignment.CenterStart,
     ) {
-        val h = if (hovered || focused) 7.dp else 4.dp
-        Box(Modifier.fillMaxWidth().height(h).clip(CircleShape).background(Color.White.copy(alpha = 0.15f)))
-        Box(Modifier.fillMaxWidth(frac(bufferedTo)).height(h).clip(CircleShape).background(Color.White.copy(alpha = 0.30f)))
-        Box(Modifier.fillMaxWidth(frac(position)).height(h).shadow(6.dp, CircleShape, ambientColor = Color.White, spotColor = Color.White).clip(CircleShape).background(Color.White))
-        if (focused) {
-            Box(Modifier.fillMaxWidth(frac(position)).height(22.dp)) {
-                Box(Modifier.align(Alignment.CenterEnd).offset(x = 11.dp).size(22.dp).clip(CircleShape).background(Color.White))
-            }
-        }
+        Box(Modifier.fillMaxWidth().height(barHeight).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)))
+        Box(Modifier.fillMaxWidth(frac(bufferedTo)).height(barHeight).clip(CircleShape).background(Color.White.copy(alpha = 0.32f)))
+        Box(Modifier.fillMaxWidth(shown).height(barHeight).clip(CircleShape).background(Amber))
         markers.forEach { m ->
             Box(Modifier.fillMaxWidth(frac(m)).height(14.dp)) {
                 Box(Modifier.align(Alignment.CenterEnd).width(2.dp).height(14.dp).background(Color.White.copy(alpha = 0.55f)))
             }
+        }
+        // The thumb, centred on the end of the played part.
+        Box(Modifier.fillMaxWidth(shown).height(thumb)) {
+            Box(
+                Modifier.align(Alignment.CenterEnd).offset(x = thumb / 2).size(thumb)
+                    .shadow(6.dp, CircleShape).clip(CircleShape).background(Color.White)
+                    .then(if (focused) Modifier.border(3.dp, Amber, CircleShape) else Modifier),
+            )
+        }
+        val bubbleAt = dragFrac?.let { it * widthPx } ?: hoverX
+        if (bubbleAt != null && duration > 0) {
+            Box(
+                Modifier.offset {
+                    val w = 84.dp.roundToPx()
+                    IntOffset((bubbleAt - w / 2f).roundToInt().coerceIn(0, (widthPx - w).coerceAtLeast(0)), -46.dp.roundToPx())
+                }.width(84.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.85f))
+                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(8.dp)).padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text(formatTime(duration * fracAt(bubbleAt)), color = Color.White, fontSize = 15.sp, fontFamily = FontFamily.Monospace) }
         }
     }
 }

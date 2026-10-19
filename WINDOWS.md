@@ -90,9 +90,24 @@ PC or Windows account starts signed out.
 | Space | — | play / pause |
 | F | — | fullscreen |
 | I | — | playback info |
+| Ctrl+F | search | — |
+| Ctrl + / Ctrl − / Ctrl 0 | interface size bigger / smaller / Medium | — |
+| Media keys | — | Play/Pause, Stop, Next (next episode, else +30 s), Previous (−10 s) |
 
-With the mouse, rows of posters show ‹ › buttons at their edges while the
-pointer is over them.
+With the mouse:
+
+- Rows of posters show ‹ › buttons at their edges while the pointer is over
+  them, and long pages have a scrollbar.
+- Right-click a poster for Play, Open, Add to / Remove from watchlist and
+  Mark as watched / unwatched.
+- The mouse's Back button goes back (except while playing).
+- In the player, drag the dot on the seek bar (or click anywhere on it); the
+  time under the pointer shows above the bar. Double-click the picture to
+  switch fullscreen.
+
+The keyboard's media keys work while a video is open and are given back to
+other apps (music players) when it closes; a key another app is already
+holding isn't available to Silage.
 
 ## Settings
 
@@ -107,14 +122,17 @@ pointer is over them.
   none), text color and position, with a preview. They apply from the next
   video played and are stored in `ui.json`. Styled (ASS) subtitles keep their
   own look apart from the size.
-- **Settings → Interface:** which libraries appear in the sidebar, and their order.
+- **Settings → Interface:** *Size* (Small, Medium or Large; Large is the
+  original TV-style size), and which libraries appear in the sidebar, and
+  their order.
 
 ## Known limitations
 
 - No HDR passthrough on Windows: HDR video is tone-mapped to SDR, including
   with the HDR setting on *Always*.
 - The interface is laid out for a 1080p screen and scales with the window
-  height, so small windows have small text.
+  height, so small windows have small text (Settings → Interface → Size
+  makes it bigger or smaller).
 - Dolby Vision plays from its HDR10 base layer with the Dolby Vision
   metadata applied by mpv (profiles 5, 7 and 8, including UHD Blu-ray
   remuxes); the profile 7 enhancement layer is ignored.

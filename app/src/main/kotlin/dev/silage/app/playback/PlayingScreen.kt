@@ -111,12 +111,15 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     }
     val canvas = surface?.canvas
     val detach = if (output is VideoOutput.Embedded && canvas != null) attachEmbeddedInput(canvas, hud) else ({})
+    // Play/Pause, Next, Previous and Stop on the keyboard, only while this video is open.
+    val mediaKeys = WindowsMediaKeys { hud.mediaKey(it) }
     val port = mpv.asOpened()
     return object : OpenedPlayer by port {
         override fun close() {
             subtitles.cancel()
             authRefresh?.cancel()
             detach()
+            mediaKeys.close()
             hud.close()
             port.close()
         }

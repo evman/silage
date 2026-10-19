@@ -21,13 +21,18 @@ fun attachEmbeddedInput(canvas: Canvas, hud: PlayerHud): () -> Unit {
         k != null || (e.id != KeyEvent.KEY_PRESSED && HudKey.ofAwt(e.keyCode) != null)
     }
     val mouse = object : MouseAdapter() {
-        private fun at(e: MouseEvent, press: Boolean) {
+        private fun at(e: MouseEvent, type: androidx.compose.ui.input.pointer.PointerEventType) {
             val c = e.component
-            if (c.width > 0 && c.height > 0) hud.pointerAt(e.x.toFloat() / c.width, e.y.toFloat() / c.height, press)
+            if (c.width > 0 && c.height > 0) hud.pointerEvent(e.x.toFloat() / c.width, e.y.toFloat() / c.height, type)
         }
-        override fun mouseMoved(e: MouseEvent) = at(e, press = false)
-        override fun mouseDragged(e: MouseEvent) = at(e, press = false)
-        override fun mousePressed(e: MouseEvent) { if (e.button == MouseEvent.BUTTON1) at(e, press = true) }
+        override fun mouseMoved(e: MouseEvent) = at(e, androidx.compose.ui.input.pointer.PointerEventType.Move)
+        override fun mouseDragged(e: MouseEvent) = at(e, androidx.compose.ui.input.pointer.PointerEventType.Move)
+        override fun mousePressed(e: MouseEvent) { if (e.button == MouseEvent.BUTTON1) at(e, androidx.compose.ui.input.pointer.PointerEventType.Press) }
+        override fun mouseReleased(e: MouseEvent) { if (e.button == MouseEvent.BUTTON1) at(e, androidx.compose.ui.input.pointer.PointerEventType.Release) }
+        override fun mouseClicked(e: MouseEvent) {
+            val c = e.component
+            if (e.button == MouseEvent.BUTTON1 && e.clickCount == 2 && c.height > 0) hud.videoDoubleClick(e.y.toFloat() / c.height)
+        }
     }
     SwingUtilities.invokeLater {
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(keys)
