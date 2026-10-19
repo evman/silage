@@ -63,6 +63,7 @@ private fun outputUnder(canvas: Canvas): Output? = runCatching {
 private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, paused: Boolean = false,
     fullscreen: PlaybackFullscreen? = null, video: VideoSession = VideoSession(),
     hasNextEpisode: () -> Boolean = { false }, onNextEpisode: (() -> Unit)? = null,
+    subtitleTools: ((MpvPlayer) -> dev.silage.app.playback.hud.SubtitleTools)? = null,
     onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
@@ -74,6 +75,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         videoSession = video,
         autoSkipIntro = koin.get<dev.silage.app.ui.UiPrefs>().autoSkipIntro,
         infoRows = listOfNotNull(ready.versionLabel?.let { "Version" to it }),
+        subtitleTools = subtitleTools?.invoke(mpv),
         hasNextEpisode = hasNextEpisode,
         onNextEpisode = if (onNextEpisode != null) ({ onNextEpisode(); mpv.command("stop"); Unit }) else null,
         audioRows = { mounted -> audioMenuTracks(ready.sourceAudio, mounted, ready.direct, ready.selectedAudioOrdinal) },
@@ -158,7 +160,11 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         val shown = withTimeoutOrNull(3_000) { surface.await() }
         // A packaged stream can contain only one audio track. Stop that session
         // before requesting another source ordinal using the existing start API.
-        data class AudioChange(val ordinal: Int, val position: Double, val paused: Boolean)
+        // Also a stored subtitle to switch to (found or AI-made): the new session's plan lists it.
+        data class AudioChange(val ordinal: Int?, val position: Double, val paused: Boolean, val storedSubtitle: Int? = null)
+        // Kept for later restarts (an audio switch) so the chosen subtitle stays on.
+        var storedSubtitle: Int? = null
+        val profile = withContext(Dispatchers.IO) { runCatching { koin.get<ProfileRepository>().getActiveProfile() }.getOrNull() }
         val change = java.util.concurrent.atomic.AtomicReference<AudioChange?>(null)
         var requested: AudioChange? = null
         var selectedFile = fileId
@@ -173,7 +179,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         shuffle?.let { s -> launch { s.refresh() } }
         while (true) {
             val session = PlaybackSession(
-                launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position) },
+                launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position, storedSubtitle) },
                 openPlayer = { ready ->
                     selectedFile = ready.fileId
                     meta = ready.meta
@@ -184,7 +190,23 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
                             }.getOrNull())
                         }
                     }
-                    openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video,
+                    val tools: ((MpvPlayer) -> dev.silage.app.playback.hud.SubtitleTools)? = ready.fileId?.let { mediaFileId -> { mpv: MpvPlayer ->
+                        val ordinal = ready.selectedAudioOrdinal ?: 0
+                        ServerSubtitleTools(
+                            koin.get(), mediaFileId,
+                            languages = searchLanguages(profile?.subtitleLanguage, profile?.language),
+                            audioOrdinal = ordinal,
+                            audioLanguage = ready.sourceAudio.getOrNull(ordinal)?.language,
+                            profileLanguage = profile?.subtitleLanguage ?: profile?.language,
+                            // Restart the session where it is; its new plan lists the stored subtitle.
+                            onUse = { id ->
+                                val s = mpv.state.value
+                                change.compareAndSet(null, AudioChange(ready.selectedAudioOrdinal, ready.sourcePositionSeconds(s.positionSeconds), s.paused, storedSubtitle = id))
+                                mpv.command("stop")
+                            },
+                        )
+                    } }
+                    openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video, subtitleTools = tools,
                         hasNextEpisode = { nextEpisode.get() != null },
                         onNextEpisode = if (shuffle == null && ready.meta.seriesId != null) ({ nextRequested.set(true) }) else null,
                     ) { ordinal, position, paused ->
@@ -196,6 +218,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             )
             val outcome = withContext(Dispatchers.IO) { session.play(contentId) }
             requested = change.getAndSet(null)
+            requested?.storedSubtitle?.let { storedSubtitle = it }
             if (outcome is PlayOutcome.Failed) { fullscreen?.leave(); error = outcome.message; break }
             if (requested == null && shuffle != null) {
                 if (outcome is PlayOutcome.Completed) {

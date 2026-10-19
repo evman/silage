@@ -119,7 +119,9 @@ class PlaybackLauncher(
      * Next Episode, Shuffle) or when it's gone: the best copy (4K before 1080p,
      * Dolby Vision before HDR before SDR), or the last played under that setting.
      */
-    suspend fun launch(contentId: String, fromStart: Boolean = false, fileId: Int? = null, audioTrackIndex: Int? = null, positionSeconds: Double? = null): LaunchResult {
+    suspend fun launch(contentId: String, fromStart: Boolean = false, fileId: Int? = null, audioTrackIndex: Int? = null, positionSeconds: Double? = null,
+        /** A subtitle stored on the server (downloaded or AI-made) to switch on instead of the plan's choice. */
+        storedSubtitleId: Int? = null): LaunchResult {
         val item = when (val r = detail(contentId)) {
             is ApiResult.Success -> r.data
             is ApiResult.Error -> return LaunchResult.Failed("Couldn't load this item: ${r.message}")
@@ -158,7 +160,11 @@ class PlaybackLauncher(
         // headers (as the Android app's media interceptor adds them).
         val needsMediaAuth = !direct && sameOrigin(url, base)
         val headers = if (needsMediaAuth) mediaAuth() + plan.stream.effectiveRequestHeaders else plan.stream.effectiveRequestHeaders
-        val selectedId = plan.selectedTracks.subtitle?.id?.takeIf { plan.subtitle.mode != PlaybackSubtitleModeV3.OFF }
+        val stored = storedSubtitleId?.let { id ->
+            val key = org.siloserver.silo.model.subtitles.SubtitleSyncState.storedKey(id)
+            plan.subtitle.inventory.firstOrNull { it.syncKey == key && it.delivery == SUBTITLE_DELIVERY_SIDECAR && it.url != null }
+        }
+        val selectedId = stored?.trackId ?: plan.selectedTracks.subtitle?.id?.takeIf { plan.subtitle.mode != PlaybackSubtitleModeV3.OFF }
         val subtitles = plan.subtitle.inventory
             .filter { it.delivery == SUBTITLE_DELIVERY_SIDECAR && it.url != null && !(direct && it.source == "embedded") }
             .map { s ->

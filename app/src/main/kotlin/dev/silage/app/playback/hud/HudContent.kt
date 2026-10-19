@@ -59,7 +59,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 
-enum class HudMenu { None, Audio, Subtitles, Speed, Chapters, Info, Video }
+enum class HudMenu { None, Audio, Subtitles, Speed, Chapters, Info, Video, FindSubtitles, AiSubtitles }
 
 data class HudUi(
     val meta: PlaybackMeta = PlaybackMeta(),
@@ -81,6 +81,9 @@ data class HudUi(
     val video: VideoSettings = VideoSettings(),
     val videoError: String? = null,
     val fullscreen: Boolean = false,
+    /** Find / AI subtitles are offered (the server's subtitle tools are wired in). */
+    val hasSubtitleTools: Boolean = false,
+    val finder: FinderUi = FinderUi(),
 )
 
 interface HudActions {
@@ -97,6 +100,12 @@ interface HudActions {
     fun chapter(index: Int) {}
     /** Ends this episode and moves on to the next one (the credits' "Next Episode"). */
     fun nextEpisode() {}
+    /** Opens the Find subtitles panel (and searches). */
+    fun findSubtitles() {}
+    /** Opens the AI subtitles panel. */
+    fun createSubtitles() {}
+    fun pickHit(index: Int) {}
+    fun pickAi(index: Int) {}
 }
 
 val SPEEDS = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
@@ -243,6 +252,7 @@ private fun UtilityButton(icon: ImageVector, modifier: Modifier = Modifier, size
 @Composable
 private fun MenuPanel(ui: HudUi, act: HudActions) {
     if (ui.menu == HudMenu.Video) { VideoPanel(ui, act); return }
+    if (ui.menu == HudMenu.FindSubtitles || ui.menu == HudMenu.AiSubtitles) { FinderPanel(ui, act); return }
     Column(
         Modifier.width(400.dp).heightIn(max = 620.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
@@ -253,7 +263,10 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
             HudMenu.Audio -> "Audio" to ui.tracks.audio.map { t -> Triple(t.label, t.selected) { act.audio(t.id) } }
             HudMenu.Subtitles -> "Subtitles" to (
                 listOf(Triple("Off", ui.tracks.subtitles.none { it.selected }) { act.subtitle(null) }) +
-                    ui.tracks.subtitles.map { t -> Triple(t.label, t.selected) { act.subtitle(t.id) } }
+                    ui.tracks.subtitles.map { t -> Triple(t.label, t.selected) { act.subtitle(t.id) } } +
+                    subtitleExtras(ui.hasSubtitleTools, ui.finder).map { e ->
+                        Triple(extraLabel(e, ui.finder), false) { if (e == SubtitleExtra.Find) act.findSubtitles() else act.createSubtitles() }
+                    }
                 )
             HudMenu.Speed -> "Speed" to SPEEDS.map { s -> Triple(if (s == 1.0) "Normal" else "${s}×", ui.speed == s) { act.speed(s) } }
             HudMenu.Chapters -> {
@@ -264,12 +277,34 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
         }
         Text(title, color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
         if (rows.isEmpty()) Text("None available", color = Dim, fontSize = 17.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp))
-        rows.forEachIndexed { i, (label, selected, onClick) -> MenuRow(label, selected, highlighted = i == ui.menuIndex && ui.focus != null, onClick) }
+        rows.forEachIndexed { i, (label, selected, onClick) -> MenuRow(label, selected, highlighted = i == ui.menuIndex && ui.focus != null, onClick = onClick) }
+    }
+}
+
+/** Find subtitles (provider results) or Create with AI (the options), with a status line. */
+@Composable
+private fun FinderPanel(ui: HudUi, act: HudActions) {
+    val f = ui.finder
+    val find = ui.menu == HudMenu.FindSubtitles
+    Column(
+        Modifier.width(680.dp).heightIn(max = 620.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+            .verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+    ) {
+        Text(if (find) "FIND SUBTITLES" else "CREATE SUBTITLES WITH AI", color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
+        val status = f.status ?: if (!find && f.aiProgress != null) f.aiProgress else null
+        if (status != null) Row(Modifier.padding(horizontal = 24.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (f.busy) { CircularProgressIndicator(Modifier.size(18.dp), color = Text, strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)) }
+            Text(status, color = Dim, fontSize = 16.sp)
+        }
+        if (find) f.hits.forEachIndexed { i, h -> MenuRow(h.label, false, highlighted = i == ui.menuIndex && ui.focus != null, detail = h.detail) { act.pickHit(i) } }
+        else if (f.aiProgress == null) f.aiOptions.forEachIndexed { i, o -> MenuRow(o.label, false, highlighted = i == ui.menuIndex && ui.focus != null) { act.pickAi(i) } }
     }
 }
 
 @Composable
-private fun MenuRow(label: String, selected: Boolean, highlighted: Boolean, onClick: () -> Unit) {
+private fun MenuRow(label: String, selected: Boolean, highlighted: Boolean, detail: String? = null, onClick: () -> Unit) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     Row(
@@ -287,7 +322,10 @@ private fun MenuRow(label: String, selected: Boolean, highlighted: Boolean, onCl
     ) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(if (selected) Amber else Color.Transparent))
         Spacer(Modifier.width(16.dp))
-        Text(label, color = if (selected || highlighted) Color.White else Dim, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.padding(vertical = if (detail != null) 8.dp else 0.dp)) {
+            Text(label, color = if (selected || highlighted) Color.White else Dim, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            detail?.let { Text(it, color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
     }
 }
 

@@ -63,6 +63,12 @@ PC or Windows account starts signed out.
   shows titles that aren't in the library yet under *Not in your library*;
   a title's page has a Request button and shows how the request is going,
   and the Requests page in the sidebar lists your requests and suggestions.
+- Subtitles from the player: the Subtitles menu has *Find subtitles…*,
+  which searches the server's subtitle providers in your profile's subtitle
+  language (and English), and, when the server has AI subtitles turned on,
+  *Create subtitles with AI…*, which transcribes the audio (and translates
+  it into your language if that differs). The chosen subtitles switch on by
+  themselves; the video restarts where it was, which takes a moment.
 - Notifications: the bell in the sidebar shows how many are unread and opens
   the inbox (new episodes, fulfilled requests). While Silage is in the
   background, new ones also pop up as Windows notifications; clicking one
@@ -110,8 +116,7 @@ pointer is over them.
   remuxes); the profile 7 enhancement layer is ignored.
 - Mostly tested on a single monitor; multi-monitor and mixed-DPI setups have
   had less testing.
-- Finding, downloading or AI-generating subtitles, Watch Together, TV
-  sign-in and offline downloads are not available yet.
+- Watch Together, TV sign-in and offline downloads are not available yet.
 
 ## Building from source
 

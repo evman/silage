@@ -131,6 +131,23 @@ class PlaybackLauncherTest {
         assertEquals(3, r.embeddedSubtitleStream)
     }
 
+    /** After finding or creating a subtitle the session restarts, and its plan lists the stored one by sync key. */
+    @Test fun aStoredSubtitleIsSwitchedOnInsteadOfThePlansChoice() = runTest {
+        val response = SiloJson.decodeFromString(PlaybackDecisionResponseV3.serializer(),
+            """{"protocol_version":3,"session_id":"s","playback_plan":{"plan_id":"p","delivery":"original_http",
+            "stream":{"url":"/v","protocol":"http_progressive","headers":{}},"decision_reason":"direct",
+            "selected_tracks":{"subtitle":{"id":"x0"}},
+            "subtitle":{"mode":"render","inventory":[
+              {"track_id":"x0","combined_index":0,"source":"external","language":"en","delivery":"sidecar","url":"/s/0.vtt"},
+              {"track_id":"d1","combined_index":1,"source":"downloaded","language":"fr","delivery":"sidecar","url":"/s/1.vtt","sync_key":"stored-7"}]}}}""")
+        val r = launcher(response = ApiResult.Success(response)).launch("m", storedSubtitleId = 7)
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals(listOf(false, true), r.subtitles.map { it.select })
+        val plain = launcher(response = ApiResult.Success(response)).launch("m")
+        assertIs<LaunchResult.Ready>(plain)
+        assertEquals(listOf(true, false), plain.subtitles.map { it.select })
+    }
+
     @Test fun subtitlesOffSelectsNothing() = runTest {
         val r = launcher(response = ApiResult.Success(withSubs("server_transcode_hls", selected = null))).launch("m")
         assertIs<LaunchResult.Ready>(r)

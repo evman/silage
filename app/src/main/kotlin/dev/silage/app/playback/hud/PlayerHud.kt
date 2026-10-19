@@ -58,8 +58,10 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val onNextEpisode: (() -> Unit)? = null,
     /** Rows shown first in Playback Info (which copy is playing). */
     private val infoRows: List<Pair<String, String>> = emptyList(),
+    /** Find / download / AI subtitles; null hides them. */
+    private val subtitleTools: SubtitleTools? = null,
 ) : AutoCloseable {
-    private val ui = mutableStateOf(HudUi(meta = meta))
+    private val ui = mutableStateOf(HudUi(meta = meta, hasSubtitleTools = subtitleTools != null))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
     private val inbox = ConcurrentLinkedQueue<() -> Unit>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -101,16 +103,84 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             nav = nav.copy(menu = HudMenu.None)
         }
         override fun nextEpisode() { onNextEpisode?.invoke() }
+        override fun findSubtitles() {
+            val tools = subtitleTools ?: return
+            nav = nav.copy(menu = HudMenu.FindSubtitles, menuIndex = 0, menuSize = 0)
+            setFinder { it.copy(status = "Searching for ${tools.searchLabel} subtitles…", busy = true, hits = emptyList()) }
+            scope.launch {
+                val result = tools.search()
+                inbox += {
+                    result.onSuccess { hits ->
+                        setFinder { it.copy(busy = false, hits = hits, status = if (hits.isEmpty()) "No ${tools.searchLabel} subtitles found for this file." else null) }
+                    }.onFailure { e -> setFinder { it.copy(busy = false, status = "Couldn't search: ${e.message ?: "unknown error"}") } }
+                    if (nav.menu == HudMenu.FindSubtitles) nav = nav.copy(menuIndex = 0, menuSize = ui.value.finder.hits.size)
+                }
+            }
+        }
+        override fun pickHit(index: Int) {
+            val tools = subtitleTools ?: return
+            val hit = ui.value.finder.hits.getOrNull(index) ?: return
+            if (ui.value.finder.busy) return
+            val hits = ui.value.finder.hits
+            nav = nav.copy(menu = HudMenu.FindSubtitles, menuIndex = 0, menuSize = 0)
+            setFinder { it.copy(status = "Downloading ${hit.label}…", busy = true, hits = emptyList()) }
+            scope.launch {
+                val result = tools.download(hit)
+                inbox += {
+                    result.onSuccess { id ->
+                        setFinder { it.copy(status = "Loading the subtitles…", busy = true) }
+                        tools.use(id)
+                    }.onFailure { e ->
+                        setFinder { it.copy(busy = false, hits = hits, status = "Couldn't download: ${e.message ?: "unknown error"}") }
+                        if (nav.menu == HudMenu.FindSubtitles) nav = nav.copy(menuSize = hits.size)
+                    }
+                }
+            }
+        }
+        override fun createSubtitles() {
+            if (subtitleTools == null) return
+            val f = ui.value.finder
+            setFinder { it.copy(status = null, busy = false) }
+            nav = nav.copy(menu = HudMenu.AiSubtitles, menuIndex = 0, menuSize = if (f.aiProgress == null) f.aiOptions.size else 0)
+        }
+        override fun pickAi(index: Int) {
+            val tools = subtitleTools ?: return
+            val f = ui.value.finder
+            val option = f.aiOptions.getOrNull(index) ?: return
+            if (f.aiProgress != null) return
+            nav = nav.copy(menu = HudMenu.AiSubtitles, menuIndex = 0, menuSize = 0)
+            setFinder { it.copy(status = null, busy = true, aiProgress = aiProgressLabel(0.0, "starting")) }
+            val position = mpv.state.value.positionSeconds
+            scope.launch {
+                val result = tools.create(option, position) { fraction, message ->
+                    inbox += { setFinder { it.copy(aiProgress = aiProgressLabel(fraction, message)) } }
+                }
+                inbox += {
+                    result.onSuccess { id ->
+                        setFinder { it.copy(aiProgress = null, busy = true, status = "Subtitles ready, loading them…") }
+                        tools.use(id)
+                    }.onFailure { e ->
+                        setFinder { it.copy(aiProgress = null, busy = false, status = "Couldn't create subtitles: ${e.message ?: "unknown error"}") }
+                        if (nav.menu == HudMenu.AiSubtitles) nav = nav.copy(menuSize = ui.value.finder.aiOptions.size)
+                    }
+                }
+            }
+        }
         override fun video(index: Int, step: Int) {
             videoSession.update(VideoControls.adjust(videoSession.settings, index, step), mpv::setProperty, mpv::getProperty)
             ui.value = ui.value.copy(video = videoSession.settings, videoError = videoSession.error)
         }
     }
 
+    private fun setFinder(update: (FinderUi) -> FinderUi) { ui.value = ui.value.copy(finder = update(ui.value.finder)) }
+
     /** Which rows of [menu] are selected, in display order. */
     private fun rowsOf(menu: HudMenu): List<Boolean> = when (menu) {
         HudMenu.Audio -> ui.value.tracks.audio.map { it.selected }
-        HudMenu.Subtitles -> listOf(ui.value.tracks.subtitles.none { it.selected }) + ui.value.tracks.subtitles.map { it.selected }
+        HudMenu.Subtitles -> listOf(ui.value.tracks.subtitles.none { it.selected }) + ui.value.tracks.subtitles.map { it.selected } +
+            subtitleExtras(subtitleTools != null, ui.value.finder).map { false }
+        HudMenu.FindSubtitles -> ui.value.finder.hits.map { false }
+        HudMenu.AiSubtitles -> if (ui.value.finder.aiProgress == null) ui.value.finder.aiOptions.map { false } else emptyList()
         HudMenu.Speed -> SPEEDS.map { it == ui.value.speed }
         HudMenu.Video -> List(VideoControls.RowCount) { false }
         HudMenu.Chapters -> Chapter.indexAt(ui.value.chapters, mpv.state.value.positionSeconds).let { current ->
@@ -122,7 +192,20 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private fun selectRow(menu: HudMenu, index: Int) {
         when (menu) {
             HudMenu.Audio -> ui.value.tracks.audio.getOrNull(index)?.let { actions.audio(it.id) }
-            HudMenu.Subtitles -> if (index == 0) actions.subtitle(null) else ui.value.tracks.subtitles.getOrNull(index - 1)?.let { actions.subtitle(it.id) }
+            HudMenu.Subtitles -> {
+                val tracks = ui.value.tracks.subtitles
+                when {
+                    index == 0 -> actions.subtitle(null)
+                    index - 1 < tracks.size -> actions.subtitle(tracks[index - 1].id)
+                    else -> when (subtitleExtras(subtitleTools != null, ui.value.finder).getOrNull(index - 1 - tracks.size)) {
+                        SubtitleExtra.Find -> actions.findSubtitles()
+                        SubtitleExtra.Ai -> actions.createSubtitles()
+                        null -> Unit
+                    }
+                }
+            }
+            HudMenu.FindSubtitles -> actions.pickHit(index)
+            HudMenu.AiSubtitles -> actions.pickAi(index)
             HudMenu.Speed -> SPEEDS.getOrNull(index)?.let(actions::speed)
             HudMenu.Chapters -> actions.chapter(index)
             else -> Unit
@@ -137,6 +220,12 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         mpv.command("keybind", "MOUSE_MOVE", "script-message silage-mouse")
         mpv.command("keybind", "MBTN_LEFT", "script-message silage-click")
         HudKey.MPV_KEYS.forEach { mpv.command("keybind", it, "script-message silage-key $it") }
+        subtitleTools?.let { tools ->
+            scope.launch {
+                val options = runCatching { tools.aiOptions() }.getOrDefault(emptyList())
+                inbox += { setFinder { it.copy(aiOptions = options) } }
+            }
+        }
         scope.launch {
             mpv.events.filterIsInstance<PlayerEvent.ClientMessage>().collect { m ->
                 when (m.args.firstOrNull()) {
