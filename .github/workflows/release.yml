@@ -62,10 +62,13 @@ jobs:
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           cmd /d /c "package-windows.cmd -PappVersion=$version <nul"
           if ($LASTEXITCODE -ne 0) { Get-Content package-windows.log; exit $LASTEXITCODE }
-          $reported = & ./dist/Silage/silage.exe --version
+          $versionFile = Join-Path $env:RUNNER_TEMP 'silage-version.txt'
+          $probe = Start-Process ./dist/Silage/silage.exe -ArgumentList '--version' -Wait -PassThru -RedirectStandardOutput $versionFile
+          if ($probe.ExitCode -ne 0) { throw 'Version probe failed' }
+          $reported = (Get-Content $versionFile -Raw).Trim()
           if ($reported -ne "Silage $version") { throw "Unexpected build version: $reported" }
-          & ./dist/Silage/silage.exe --check
-          if ($LASTEXITCODE -ne 0) { throw 'Bundled playback check failed' }
+          $check = Start-Process ./dist/Silage/silage.exe -ArgumentList '--check' -Wait -PassThru
+          if ($check.ExitCode -ne 0) { throw 'Bundled playback check failed' }
           Copy-Item dist/Silage-Portable.exe "dist/Silage-$version-Windows-x64.exe"
           Copy-Item dist/Silage-Windows-x64.zip "dist/Silage-$version-Windows-x64.zip"
       - uses: actions/upload-artifact@v7
@@ -234,5 +237,8 @@ jobs:
           if ($check.ExitCode -ne 0) { throw 'Published portable EXE failed its playback check' }
           $inner = Get-ChildItem download/.silage-runtime -Recurse -Filter silage.exe | Select-Object -First 1
           if (-not $inner) { throw 'Portable EXE did not extract its runtime' }
-          $reported = & $inner.FullName --version
+          $versionFile = Join-Path $env:RUNNER_TEMP 'published-silage-version.txt'
+          $probe = Start-Process $inner.FullName -ArgumentList '--version' -Wait -PassThru -RedirectStandardOutput $versionFile
+          if ($probe.ExitCode -ne 0) { throw 'Published version probe failed' }
+          $reported = (Get-Content $versionFile -Raw).Trim()
           if ($reported -ne "Silage $version") { throw "Unexpected published version: $reported" }
