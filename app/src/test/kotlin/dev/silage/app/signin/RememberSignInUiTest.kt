@@ -14,7 +14,7 @@ class RememberSignInUiTest {
             SignInScreen(SignInPresenter { _, _ -> ApiResult.Success(Unit) }, {}, {},
                 remembered = false, onRememberChanged = { remember = it; true })
         } }
-        onNodeWithText("Remember me on this Windows account").assertIsDisplayed()
+        onNodeWithText(rememberSignInLabel()).assertIsDisplayed()
         onNodeWithContentDescription("Remember me").assertIsOff().performClick().assertIsOn()
         assertTrue(remember)
         onNodeWithContentDescription("Remember me").performClick().assertIsOff()
@@ -27,7 +27,7 @@ class RememberSignInUiTest {
                 remembered = false, onRememberChanged = { false })
         } }
         onNodeWithContentDescription("Remember me").performClick().assertIsOff()
-        onNodeWithText(org.siloserver.silo.platform.RememberedSessionStore.WRITE_ERROR).assertIsDisplayed()
+        onNodeWithText(signInStorageError()).assertIsDisplayed()
     }
 
     @Test fun serverErrorDoesNotEchoSensitiveResponse() = runTest {

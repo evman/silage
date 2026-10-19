@@ -30,7 +30,8 @@ import dev.silage.app.ui.SilageLogo
 /**
  * The startup animation: the logo fades in soft and grey with a white halo,
  * brightens to crisp white, and an amber glow breathes behind it until
- * [ready]; then the splash fades away over the app and calls [onFinished].
+ * [ready] and at least four seconds have elapsed; then the splash fades
+ * away over the app and calls [onFinished].
  */
 @Composable
 fun SplashScreen(ready: Boolean, onFinished: () -> Unit) {

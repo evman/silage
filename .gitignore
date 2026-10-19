@@ -9,6 +9,9 @@ local.properties
 dist/
 toolchains/
 native/
+userdata/
+.silage-runtime/
+__pycache__/
 *.log
 ui-smoke.pid
 ui-smoke.png

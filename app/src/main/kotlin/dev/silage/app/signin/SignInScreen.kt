@@ -48,7 +48,7 @@ fun SignInScreen(
         SilageField(pass, { pass = it }, "Password", Modifier.fillMaxWidth(), password = true, onDone = ::submit)
         RememberSignInControl(rememberSignIn, enabled = state != SignInState.Working) { next ->
             if (onRememberChanged(next)) { rememberSignIn = next; state = SignInState.Idle }
-            else state = SignInState.Error(org.siloserver.silo.platform.RememberedSessionStore.WRITE_ERROR)
+            else state = SignInState.Error(dev.silage.app.signin.signInStorageError())
         }
         PrimaryButton(if (state == SignInState.Working) "Signing in…" else "Sign in", enabled = state != SignInState.Working, onClick = ::submit)
         (state as? SignInState.Error)?.let { Text(it.message, color = Silage.Error.copy(red = 1f), fontSize = 18.sp, textAlign = TextAlign.Center) }

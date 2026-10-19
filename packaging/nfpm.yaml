@@ -1,4 +1,4 @@
-# .deb and .rpm from the app image that scripts/package.sh stages in dist/app.
+# .deb and .rpm; scripts/package.sh renders the app source into a staging config.
 name: silage
 arch: amd64
 platform: linux

@@ -25,12 +25,63 @@ jobs:
           curl -sSfL -o /tmp/nfpm.tgz "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
           echo "${NFPM_SHA256}  /tmp/nfpm.tgz" | sha256sum -c
           sudo tar -xzf /tmp/nfpm.tgz -C /usr/local/bin nfpm
+      - name: Install playback and test dependencies
+        run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg dbus xvfb
+      - name: Test Linux
+        run: xvfb-run -a ./gradlew --no-daemon :app:test :player:test :shared:desktopTest -PappVersion="${GITHUB_REF_NAME#v}"
       - name: Build packages
         run: scripts/package.sh "${GITHUB_REF_NAME#v}"
       - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Prepare bundled playback dependencies
+        shell: pwsh
+        run: ./scripts/prepare-windows.ps1
+      - name: Test Windows
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          & ./build-windows.cmd :app:test :player:test :shared:desktopTest --no-daemon --console=plain "-PappVersion=$version"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s scripts/tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build portable Windows EXE and ZIP
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          cmd /d /c "package-windows.cmd -PappVersion=$version <nul"
+          if ($LASTEXITCODE -ne 0) { Get-Content package-windows.log; exit $LASTEXITCODE }
+          $reported = & ./dist/Silage/silage.exe --version
+          if ($reported -ne "Silage $version") { throw "Unexpected build version: $reported" }
+          & ./dist/Silage/silage.exe --check
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled playback check failed' }
+          Copy-Item dist/Silage-Portable.exe "dist/Silage-$version-Windows-x64.exe"
+          Copy-Item dist/Silage-Windows-x64.zip "dist/Silage-$version-Windows-x64.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          compression-level: 0
+          path: |
+            dist/*.exe
+            dist/*.zip
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: windows-release-diagnostics
+          path: |
+            package-windows.log
+            **/build/reports/tests/
 
   test-deb:
     needs: build
@@ -83,6 +134,8 @@ jobs:
           cd /build
           sum=$(sha256sum "silage-$v-linux-x86_64.tar.gz" | cut -d' ' -f1)
           sed -i "s/^pkgver=.*/pkgver=$v/; s/^sha256sums=.*/sha256sums=('$sum')/" PKGBUILD
+          mkdir -p "$GITHUB_WORKSPACE/arch"
+          cp PKGBUILD "$GITHUB_WORKSPACE/arch/PKGBUILD"
           # Build from the tarball in hand (the release URL doesn't exist yet).
           sed -i 's|^source=.*|source=("silage-$pkgver-linux-x86_64.tar.gz")|' PKGBUILD
           chown -R builder /build
@@ -107,7 +160,7 @@ jobs:
       - run: appstreamcli validate --no-net packaging/dev.silage.Silage.metainfo.xml
 
   release:
-    needs: [build, test-deb, test-rpm, arch, validate]
+    needs: [build, windows, test-deb, test-rpm, arch, validate]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -118,6 +171,10 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: arch
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows
           path: dist
       - name: Publish the GitHub release
         env:
@@ -130,9 +187,9 @@ jobs:
           cp "dist/silage-${v}-1.x86_64.rpm" dist/silage.x86_64.rpm
           cp "dist/silage-${v}-linux-x86_64.tar.gz" dist/silage-linux-x86_64.tar.gz
           cp dist/silage-bin-"${v}"-*-x86_64.pkg.tar.zst dist/silage-bin-x86_64.pkg.tar.zst
-          (cd dist && sha256sum silage-bin-*.pkg.tar.zst silage_amd64.deb silage.x86_64.rpm silage-linux-x86_64.tar.gz >> SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" --title "Silage $v" --notes-file /tmp/notes.md \
-            dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/SHA256SUMS
+          (cd dist && sha256sum ./*.tar.gz ./*.deb ./*.rpm ./*.pkg.tar.zst ./*.exe ./*.zip PKGBUILD | sed 's| \./| |' > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "Silage $v" --notes-file /tmp/notes.md \
+            dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/*.exe dist/*.zip dist/PKGBUILD dist/SHA256SUMS
 
   # Releases made with GITHUB_TOKEN don't trigger other workflows, so the
   # README installer is tested here, against the release just published.
@@ -156,3 +213,26 @@ jobs:
         run: |
           silage --version
           silage --check
+
+  install-windows:
+    needs: release
+    runs-on: windows-2022
+    steps:
+      - name: Check the published portable download
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern Silage-Portable.exe --pattern SHA256SUMS --dir download
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $entry = Get-Content download/SHA256SUMS | Where-Object { $_ -match '  Silage-Portable\.exe$' }
+          if (-not $entry) { throw 'Portable EXE checksum missing' }
+          $actual = (Get-FileHash download/Silage-Portable.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne ($entry -split '\s+')[0]) { throw 'Portable EXE checksum mismatch' }
+          $check = Start-Process download/Silage-Portable.exe -ArgumentList '--check' -Wait -PassThru
+          if ($check.ExitCode -ne 0) { throw 'Published portable EXE failed its playback check' }
+          $inner = Get-ChildItem download/.silage-runtime -Recurse -Filter silage.exe | Select-Object -First 1
+          if (-not $inner) { throw 'Portable EXE did not extract its runtime' }
+          $reported = & $inner.FullName --version
+          if ($reported -ne "Silage $version") { throw "Unexpected published version: $reported" }

@@ -1,6 +1,6 @@
 # Maintainer: evman <evman311 at gmail dot com>
 pkgname=silage-bin
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="An unofficial Silo client for Linux: a fullscreen home-theater app for Silo media servers"
 arch=('x86_64')
@@ -13,7 +13,8 @@ conflicts=('silage')
 # The bundled Java runtime ships prebuilt native libraries.
 options=('!strip' '!debug')
 source=("$url/releases/download/v$pkgver/silage-$pkgver-linux-x86_64.tar.gz")
-sha256sums=('d834d452a1af99554bb4180877a9a6eae90fea594085ac787ca2ab9a744f9859')
+# The release workflow writes the exact tarball checksum in its published PKGBUILD.
+sha256sums=('@LINUX_TARBALL_SHA256@')
 
 package() {
   cd "silage-$pkgver"

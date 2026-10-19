@@ -14,7 +14,7 @@ class RememberRestartProcessTest {
         try {
             for (stage in listOf("enable", "restore", "disable", "signed-out", "enable", "logout", "signed-out",
                 "enable", "invalidate", "signed-out", "enable", "replace", "replacement")) {
-                val java = Path.of(System.getProperty("java.home"), "bin", "java.exe").toString()
+                val java = Path.of(System.getProperty("java.home"), "bin", if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java").toString()
                 val process = ProcessBuilder(java, "-cp", System.getProperty("silage.test.classpath"),
                     RememberRestartProcess::class.java.name, dir.toString(), stage).redirectErrorStream(true).start()
                 assertTrue(process.waitFor(40, TimeUnit.SECONDS), "child JVM timed out at $stage")
@@ -25,9 +25,13 @@ class RememberRestartProcessTest {
                 println("REMEMBER_RESTART $stage OK")
             }
             val file = dir.resolve("session.json")
-            val view = Files.getFileAttributeView(file, java.nio.file.attribute.AclFileAttributeView::class.java)
-            assertTrue(view.acl.filter { it.type() == java.nio.file.attribute.AclEntryType.ALLOW }.all { it.principal() == view.owner })
-            assertFalse(Files.readString(file).contains("dummy-"))
+            if (System.getProperty("os.name").startsWith("Windows")) {
+                val view = Files.getFileAttributeView(file, java.nio.file.attribute.AclFileAttributeView::class.java)
+                assertTrue(view.acl.filter { it.type() == java.nio.file.attribute.AclEntryType.ALLOW }.all { it.principal() == view.owner })
+                assertFalse(Files.readString(file).contains("dummy-"))
+            } else {
+                assertEquals(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(file))
+            }
         } finally { dir.toFile().deleteRecursively() }
     }
 }
@@ -37,7 +41,8 @@ object RememberRestartProcess {
         try {
             runBlocking {
                 val path = Path.of(args[0]).resolve("session.json")
-                val store = RememberedSessionStore(path)
+                val store: BlobStore = if (System.getProperty("os.name").startsWith("Windows")) RememberedSessionStore(path)
+                    else LinuxSessionStore(FileBlobStore(path))
                 val prefs = PersistentPreferences(store)
                 val barrier = DefaultIdentityTransitionBarrier()
                 val registry = AndroidServerRegistry(prefs, barrier)
@@ -74,7 +79,7 @@ object RememberRestartProcess {
                     "replacement" -> check(tokens.getRefreshToken() == "dummy-other-refresh")
                     else -> error("unknown stage")
                 }
-                check(store.error.value == null)
+                if (store is RememberedSessionStore) check(store.error.value == null)
             }
             println("REMEMBER_RESTART ${args[1]} OK")
             kotlin.system.exitProcess(0)

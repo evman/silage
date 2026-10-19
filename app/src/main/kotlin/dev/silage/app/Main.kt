@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.roundToInt
 import dev.silage.app.connect.ConnectPresenter
 import dev.silage.app.connect.ConnectScreen
@@ -83,28 +82,26 @@ fun main(args: Array<String>) {
     }
     // After the headless flags: this touches the windowing system.
     WmClass.set("silage")
+    val isWindows = System.getProperty("os.name").startsWith("Windows")
     mpvProblem(mpv)?.let { problem ->
         // Without a usable libmpv nothing can play: explain how to install it.
         application {
             Window(onCloseRequest = ::exitApplication, title = BuildInfo.NAME, icon = LogoIcon,
+                undecorated = isWindows, resizable = !isWindows,
                 state = rememberWindowState(placement = initialWindowPlacement())) {
+                BorderlessStartup(window, isWindows)
                 BoxWithConstraints(Modifier.fillMaxSize()) {
-                    CompositionLocalProvider(LocalDensity provides Density(constraints.maxHeight / 1080f, 1f)) { MpvMissingScreen(problem) }
+                    CompositionLocalProvider(LocalDensity provides Density(constraints.maxHeight / 1080f, 1f)) {
+                        KeyRoot(Route.Connect, onBack = { false }, onQuit = ::exitApplication) { MpvMissingScreen(problem) }
+                    }
                 }
             }
         }
         return
     }
-    // Before anything opens its files: move pre-AppData Windows folders into place.
-    val dataMoves = XdgPaths.migrateLegacyWindowsDirs()
     val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
     val crashLog = CrashLog()
-    for (move in dataMoves) when (move) {
-        is AppDirs.Migration.Moved -> System.err.println("silage: moved ${move.from} to ${move.to}")
-        is AppDirs.Migration.Failed -> crashLog.record("moving ${move.from} to ${move.to} (still using the old folder)", move.error)
-    }
-    // Windows reopens the window where it was left; Linux stays fullscreen (couch use).
-    val isWindows = System.getProperty("os.name").startsWith("Windows")
+    // Remember the monitor, but always open Windows as a borderless fullscreen window.
     val uiPrefs = koin.get<dev.silage.app.ui.UiPrefs>()
     val savedWindow = if (isWindows) restorableWindow(runCatching { uiPrefs.window }.getOrNull(), screenBounds()) else null
     val windowMemory = WindowMemory(savedWindow) { uiPrefs.window = it }
@@ -129,25 +126,20 @@ fun main(args: Array<String>) {
           },
       ) {
         val windowState = rememberWindowState(
-            placement = when {
-                savedWindow == null -> initialWindowPlacement()
-                savedWindow.maximized -> WindowPlacement.Maximized
-                else -> WindowPlacement.Floating
-            },
+            placement = initialWindowPlacement(),
             position = savedWindow?.let { WindowPosition(it.x.dp, it.y.dp) } ?: WindowPosition.PlatformDefault,
             size = savedWindow?.let { DpSize(it.width.dp, it.height.dp) } ?: DpSize(1280.dp, 800.dp),
         )
-        Window(onCloseRequest = { if (isWindows) windowMemory.save(); exitApplication() }, state = windowState, title = BuildInfo.NAME, icon = LogoIcon,
+        val closeSilage: () -> Unit = { if (isWindows) windowMemory.save(); exitApplication() }
+        Window(onCloseRequest = closeSilage, state = windowState, title = BuildInfo.NAME, icon = LogoIcon,
+            undecorated = isWindows, resizable = !isWindows,
             onPreviewKeyEvent = { e -> interfaceZoomKey(e)?.let { step -> uiPrefs.interfaceSize = step(uiPrefs.interfaceSize); true } ?: false }) {
+            BorderlessStartup(window, isWindows)
             val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
             val liveFeatures = remember { koin.get<dev.silage.app.shell.LiveFeatures>() }
+            DisposableEffect(liveFeatures) { onDispose { liveFeatures.close() } }
             LaunchedEffect(window) { liveFeatures.appInForeground = { window.isActive } }
             if (isWindows) {
-                LaunchedEffect(window) {
-                    // The native window handle exists once the window is shown.
-                    withTimeoutOrNull(2000) { while (!window.isDisplayable) delay(20) }
-                    WindowsChrome.useDarkTitleBar(window)
-                }
                 LaunchedEffect(windowState) {
                     snapshotFlow { Triple(windowState.placement, windowState.position, windowState.size) }.collect { (placement, position, size) ->
                         val bounds = (position as? WindowPosition.Absolute)
@@ -200,7 +192,7 @@ fun main(args: Array<String>) {
                                 }
                             }
                             val route by nav.route.collectAsState()
-                            KeyRoot(route, onBack = nav::back, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
+                            KeyRoot(route, onBack = nav::back, onQuit = closeSilage, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
                         }
                         if (!splashDone) SplashScreen(ready = navigator != null) { splashDone = true }
                         if (System.getProperty("os.name").startsWith("Windows")) {
@@ -216,6 +208,17 @@ fun main(args: Array<String>) {
         }
     }
       }
+}
+
+@Composable
+private fun BorderlessStartup(window: java.awt.Frame, isWindows: Boolean) {
+    val fullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
+    LaunchedEffect(window, isWindows) {
+        if (isWindows) {
+            while (!window.isShowing) delay(20)
+            fullscreen.enter()
+        }
+    }
 }
 
 private suspend fun startRoute(koin: Koin): Route {

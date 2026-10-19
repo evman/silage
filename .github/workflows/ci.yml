@@ -14,12 +14,35 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Install mpv, ffmpeg and a virtual display
-        run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg xvfb
+      - name: Install mpv, ffmpeg, D-Bus and a virtual display
+        run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg dbus xvfb
       - name: Test
         run: xvfb-run -a ./gradlew --no-daemon test :shared:desktopTest
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: test-reports
+          path: '**/build/reports/tests/'
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Prepare bundled playback dependencies
+        shell: pwsh
+        run: ./scripts/prepare-windows.ps1
+      - name: Test
+        shell: cmd
+        run: build-windows.cmd :app:test :player:test :shared:desktopTest --no-daemon --console=plain
+      - name: Test portable packaging rollback and data exclusion
+        run: python -m unittest discover -s scripts/tests -v
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: windows-test-reports
           path: '**/build/reports/tests/'

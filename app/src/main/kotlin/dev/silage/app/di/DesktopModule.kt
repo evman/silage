@@ -30,7 +30,7 @@ val desktopModule = module {
     single { org.siloserver.silo.platform.RememberedSessionStore(XdgPaths.data.resolve("session.json")) }
     single<BlobStore> {
         if (System.getProperty("os.name").startsWith("Windows")) get<org.siloserver.silo.platform.RememberedSessionStore>()
-        else SecureBlobStore.create(XdgPaths.data.resolve("session.json"))
+        else org.siloserver.silo.platform.LinuxSessionStore(SecureBlobStore.create(XdgPaths.data.resolve("session.json")))
     }
     single { dev.silage.app.signin.RememberSignInSettings(get(), get()) }
     single<SharedPreferences> { PersistentPreferences(get()) }

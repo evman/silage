@@ -16,7 +16,12 @@
       <li>High-quality upscaling of 1080p films to 4K</li>
       <li>Choose which copy of a title to play, such as 4K Dolby Vision or 1080p</li>
       <li>A sidebar of your libraries, poster rows, detail pages, search and watchlist</li>
-      <li>Fully usable with a keyboard or remote</li>
+      <li>Recommendations, calendar, shuffle, profile collections and cast pages</li>
+      <li>Requests, notification inbox and native desktop notifications</li>
+      <li>Subtitle search, downloads, AI creation and appearance controls</li>
+      <li>Autoplay, chapters, draggable seeking and desktop media keys</li>
+      <li>Per-server remembered sign-in with desktop keyring support</li>
+      <li>Fully usable with a keyboard or remote, including confirmed Escape-to-quit</li>
     </ul>
   </description>
   <launchable type="desktop-id">dev.silage.Silage.desktop</launchable>
@@ -41,6 +46,12 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.2.0" date="2026-10-18">
+      <description>
+        <p>Linux and Windows now share the full desktop feature set. Windows adds a single-file portable EXE with Java and mpv included. Linux adds native media controls and notifications, with per-server remembered sign-in on both platforms.</p>
+        <p>New browsing, requests, subtitle tools, autoplay, chapters and draggable seeking join fullscreen startup, the Silage icon, a four-second startup animation and keyboard or mouse quit confirmation.</p>
+      </description>
+    </release>
     <release version="0.1.2" date="2026-10-12">
       <description>
         <p>Home's banner is smaller and shrinks to half its height with a smooth animation once you scroll into the rows.</p>

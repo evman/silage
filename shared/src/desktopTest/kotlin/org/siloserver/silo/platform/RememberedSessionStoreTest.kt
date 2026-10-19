@@ -4,12 +4,18 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class RememberedSessionStoreTest {
+    // Exercise envelope/consent behavior on Linux too; DPAPI itself is Windows-only.
+    private fun store(path: java.nio.file.Path) = RememberedSessionStore(path,
+        if (System.getProperty("os.name").startsWith("Windows")) WindowsSessionCipher else object : SessionCipher {
+            override fun protect(bytes: ByteArray) = bytes.map { (it.toInt() xor 0x55).toByte() }.toByteArray()
+            override fun unprotect(bytes: ByteArray) = protect(bytes)
+        })
     @Test fun legacyPlaintextIsRetiredOnReadWithoutRestoringUnconsentedTokens() {
         val dir = Files.createTempDirectory("silage-legacy")
         try {
             val path = dir.resolve("session.json")
             assertTrue(FileBlobStore(path).write("""{"server_url":{"s":"http://127.0.0.1:9"},"fake.refresh_token":{"s":"dummy-legacy-secret"}}"""))
-            val prefs = PersistentPreferences(RememberedSessionStore(path))
+            val prefs = PersistentPreferences(store(path))
             assertNull(prefs.getString("fake.refresh_token", null))
             assertEquals("http://127.0.0.1:9", prefs.getString("server_url", null))
             assertFalse(Files.readString(path).contains("dummy-legacy-secret"))
@@ -18,13 +24,13 @@ class RememberedSessionStoreTest {
 
     @Test fun corruptCiphertextKeepsServerAndPreferenceButNeverRestoresAuthentication() {
         val path = Files.createTempDirectory("silage-corrupt").resolve("session.json")
-        val prefs = PersistentPreferences(RememberedSessionStore(path))
+        val prefs = PersistentPreferences(store(path))
         assertTrue(prefs.edit().putBoolean("fake.remember_sign_in", true)
             .putString("server_registry.v1", "safe-metadata")
             .putString("fake.refresh_token", "dummy-secret").commit())
         val envelope = kotlinx.serialization.json.Json.parseToJsonElement(Files.readString(path)) as kotlinx.serialization.json.JsonObject
         Files.writeString(path, kotlinx.serialization.json.JsonObject(envelope + ("protected" to kotlinx.serialization.json.JsonPrimitive("broken"))).toString())
-        val store = RememberedSessionStore(path)
+        val store = store(path)
         val restarted = PersistentPreferences(store)
         assertEquals("safe-metadata", restarted.getString("server_registry.v1", null))
         assertTrue(restarted.getBoolean("fake.remember_sign_in", false))
@@ -34,14 +40,14 @@ class RememberedSessionStoreTest {
 
     @Test fun disabledNeverPersistsTokensAndDisableKeepsLiveSession() {
         val path = Files.createTempDirectory("silage-disable").resolve("session.json")
-        val prefs = PersistentPreferences(RememberedSessionStore(path))
+        val prefs = PersistentPreferences(store(path))
         assertTrue(prefs.edit().putString("fake.refresh_token", "dummy-secret").commit())
-        assertNull(PersistentPreferences(RememberedSessionStore(path)).getString("fake.refresh_token", null))
+        assertNull(PersistentPreferences(store(path)).getString("fake.refresh_token", null))
         assertTrue(prefs.edit().putBoolean("fake.remember_sign_in", true).commit())
-        assertEquals("dummy-secret", PersistentPreferences(RememberedSessionStore(path)).getString("fake.refresh_token", null))
+        assertEquals("dummy-secret", PersistentPreferences(store(path)).getString("fake.refresh_token", null))
         assertTrue(prefs.edit().putBoolean("fake.remember_sign_in", false).commit())
         assertEquals("dummy-secret", prefs.getString("fake.refresh_token", null))
-        assertNull(PersistentPreferences(RememberedSessionStore(path)).getString("fake.refresh_token", null))
+        assertNull(PersistentPreferences(store(path)).getString("fake.refresh_token", null))
         assertFalse(Files.readString(path).contains("protected"))
     }
 
@@ -64,26 +70,27 @@ class RememberedSessionStoreTest {
 
     @Test fun serverScopesAndLogoutDoNotResurrectRetainedSecrets() {
         val path = Files.createTempDirectory("silage-logout").resolve("session.json")
-        val prefs = PersistentPreferences(RememberedSessionStore(path))
+        val prefs = PersistentPreferences(store(path))
         assertTrue(prefs.edit().putBoolean("one.remember_sign_in", true)
             .putString("one.refresh_token", "dummy-one")
             .putString("two.refresh_token", "dummy-two").commit())
-        var restart = PersistentPreferences(RememberedSessionStore(path))
+        var restart = PersistentPreferences(store(path))
         assertEquals("dummy-one", restart.getString("one.refresh_token", null))
         assertNull(restart.getString("two.refresh_token", null))
         assertTrue(prefs.edit().remove("one.refresh_token").commit())
-        restart = PersistentPreferences(RememberedSessionStore(path))
+        restart = PersistentPreferences(store(path))
         assertNull(restart.getString("one.refresh_token", null))
         assertFalse(Files.readString(path).contains("protected"))
     }
 
     @Test fun enabledSurvivesReconstructionWithRealWindowsEncryption() {
+        if (!System.getProperty("os.name").startsWith("Windows")) return
         val path = Files.createTempDirectory("silage-remember").resolve("session.json")
-        val prefs = PersistentPreferences(RememberedSessionStore(path))
+        val prefs = PersistentPreferences(store(path))
         assertTrue(prefs.edit().putBoolean("fake.remember_sign_in", true)
             .putString("fake.refresh_token", "dummy-refresh-secret-not-real").commit())
         assertFalse(Files.readString(path).contains("dummy-refresh-secret-not-real"))
-        val restarted = PersistentPreferences(RememberedSessionStore(path))
+        val restarted = PersistentPreferences(store(path))
         assertEquals("dummy-refresh-secret-not-real", restarted.getString("fake.refresh_token", null))
         assertTrue(restarted.getBoolean("fake.remember_sign_in", false))
     }

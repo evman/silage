@@ -6,7 +6,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SplashTimelineTest {
-    private val t = SplashTimeline(introMs = 1600, fadeMs = 450)
+    private val t = SplashTimeline(introMs = 1600, fadeMs = 450, minimumVisibleMs = 0)
 
     @Test fun startsInvisibleAndSoftThenBrightensByTheEndOfTheIntro() {
         val start = t.frame(0, readyAtMs = null)
@@ -46,12 +46,26 @@ class SplashTimelineTest {
         assertTrue(t.frame(1000, null).textRise > 0f, "the name drifts up into place")
     }
 
-    /** A fixed ~3.5 s splash made every launch feel slow: when the app is ready it is gone in ~1.25 s. */
-    @Test fun theDefaultSplashIsBriefWhenTheAppIsReady() {
+    @Test fun theDefaultSplashStaysFullyVisibleForFourSecondsEvenWhenReadyImmediately() {
         val d = SplashTimeline()
         assertEquals(1f, d.frame(900, readyAtMs = 100).logoAlpha, "the intro still completes")
-        assertFalse(d.frame(1000, readyAtMs = 100).finished)
-        assertTrue(d.frame(1250, readyAtMs = 100).finished)
+        for (elapsed in listOf(1250L, 3500L, 3999L, 4000L)) {
+            val frame = d.frame(elapsed, readyAtMs = 100)
+            assertFalse(frame.finished, "must stay visible at $elapsed ms")
+            assertEquals(1f, frame.screenAlpha, "must not fade before four seconds")
+        }
+        assertTrue(d.frame(4175, readyAtMs = 100).screenAlpha in 0.3f..0.7f)
+        assertFalse(d.frame(4349, readyAtMs = 100).finished)
+        assertTrue(d.frame(4350, readyAtMs = 100).finished)
+    }
+
+    @Test fun theDefaultSplashWaitsLongerThanFourSecondsWhenLoadingIsSlow() {
+        val d = SplashTimeline()
+        assertEquals(1f, d.frame(9000, readyAtMs = null).screenAlpha)
+        assertFalse(d.frame(9000, readyAtMs = null).finished)
+        assertEquals(1f, d.frame(9000, readyAtMs = 9000).screenAlpha)
+        assertFalse(d.frame(9349, readyAtMs = 9000).finished)
+        assertTrue(d.frame(9350, readyAtMs = 9000).finished)
     }
 
     @Test fun theLogoGrowsAsTheSplashFadesIntoTheApp() {

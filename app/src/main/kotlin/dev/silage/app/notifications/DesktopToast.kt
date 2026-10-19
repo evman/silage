@@ -6,19 +6,22 @@ import java.util.Timer
 import kotlin.concurrent.schedule
 
 /**
- * Windows notifications ("toasts") for new inbox items, shown through a tray
+ * Native Linux notifications, or Windows notifications shown through a tray
  * icon that exists only while a toast is up, so Silage leaves nothing in the
  * notification area. Clicking the toast calls [onClick]. Never throws.
  */
-class DesktopToast(private val onClick: () -> Unit) {
+class DesktopToast(private val onClick: () -> Unit) : AutoCloseable {
+    private val linux = if (System.getProperty("os.name").startsWith("Linux"))
+        dev.silage.app.desktop.LinuxNotifications(onClick) else null
     private var icon: TrayIcon? = null
     private var removal: java.util.TimerTask? = null
     private val timer by lazy { Timer("silage-toast", true) }
 
-    val supported: Boolean get() = runCatching { SystemTray.isSupported() }.getOrDefault(false)
+    val supported: Boolean get() = linux != null || runCatching { SystemTray.isSupported() }.getOrDefault(false)
 
     @Synchronized
     fun show(title: String, body: String) {
+        linux?.let { it.show(title, body); return }
         if (!supported) return
         runCatching {
             val tray = SystemTray.getSystemTray()
@@ -36,9 +39,16 @@ class DesktopToast(private val onClick: () -> Unit) {
 
     @Synchronized
     fun hide() {
+        linux?.let { it.hide(); return }
         val current = icon ?: return
         icon = null
         runCatching { SystemTray.getSystemTray().remove(current) }
+    }
+    override fun close() {
+        hide()
+        linux?.close()
+        removal?.cancel()
+        if (linux == null) timer.cancel()
     }
 }
 

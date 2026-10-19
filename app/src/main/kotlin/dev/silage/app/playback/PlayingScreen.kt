@@ -114,7 +114,10 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val canvas = surface?.canvas
     val detach = if (output is VideoOutput.Embedded && canvas != null) attachEmbeddedInput(canvas, hud) else ({})
     // Play/Pause, Next, Previous and Stop on the keyboard, only while this video is open.
-    val mediaKeys = WindowsMediaKeys { hud.mediaKey(it) }
+    val mediaKeys: AutoCloseable = if (System.getProperty("os.name").startsWith("Windows"))
+        WindowsMediaKeys { hud.mediaKey(it) }
+    else dev.silage.app.desktop.LinuxMediaSession(mpv.state, hud::mediaKey,
+        command = { mpv.command(*it); Unit }, property = mpv::getProperty, title = ready.meta.title)
     val port = mpv.asOpened()
     return object : OpenedPlayer by port {
         override fun close() {

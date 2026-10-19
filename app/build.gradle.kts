@@ -9,8 +9,8 @@ plugins {
 
 kotlin { jvmToolchain(21) }
 
-// The release version comes from the tag: ./gradlew ... -PappVersion=0.1.0
-val appVersion = (findProperty("appVersion") as String?) ?: "0.1.0-dev"
+// The release version comes from the tag: ./gradlew ... -PappVersion=0.2.0
+val appVersion = (findProperty("appVersion") as String?) ?: "0.2.0-dev"
 val buildInfoDir = layout.buildDirectory.dir("generated/buildinfo")
 val generateBuildInfo by tasks.registering {
     inputs.property("version", appVersion)
@@ -38,6 +38,8 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-svg:3.1.0")
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.coroutines.swing)
+    implementation("com.github.hypfvieh:dbus-java-core:5.2.2")
+    runtimeOnly("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.2.2")
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.koin.test)
@@ -54,17 +56,26 @@ tasks.test {
 compose.desktop {
     application {
         mainClass = "dev.silage.app.MainKt"
+        (findProperty("packagingJavaHome") as String?)?.let { javaHome = it }
         // WmClass sets the X11 window class to "silage" (matches the desktop entry).
         if (!System.getProperty("os.name").startsWith("Windows")) jvmArgs += listOf("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
         nativeDistributions {
             targetFormats(if (System.getProperty("os.name").startsWith("Windows")) TargetFormat.Exe else TargetFormat.AppImage)
             // From suggestRuntimeModules, plus EC crypto (HTTPS servers) and naming.
             modules("java.instrument", "java.management", "jdk.security.auth", "jdk.unsupported", "jdk.crypto.ec", "java.naming")
+            if (!System.getProperty("os.name").startsWith("Windows")) modules("jdk.net")
             packageName = "silage"
+            windows { iconFile.set(rootProject.file("packaging/windows/silage.ico")) }
             // jpackage wants a plain numeric version.
             packageVersion = appVersion.substringBefore('-')
         }
     }
+}
+
+// The plugin compares JDK versions, but two vendors can ship different native
+// launchers with the same version. Changing the packaging JDK must rebuild it.
+tasks.matching { it.name in setOf("checkRuntime", "createRuntimeImage", "createDistributable") }.configureEach {
+    inputs.property("silage.packagingJavaHome", providers.gradleProperty("packagingJavaHome").orElse("toolchain"))
 }
 
 tasks.register<JavaExec>("runOverlaySpike") {

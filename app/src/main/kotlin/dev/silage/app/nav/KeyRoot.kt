@@ -26,15 +26,17 @@ import androidx.compose.ui.platform.LocalFocusManager
 
 /**
  * Window-level keys: arrows move focus spatially, Esc/Backspace go back.
+ * At the root, Escape offers a confirmation before quitting.
  * The root takes focus on every route change (pages then claim their own),
  * so a page with nothing focusable — an empty grid, an error — never
  * swallows every key; from the root, an arrow enters the page.
  */
 @Composable
-fun KeyRoot(route: Route, onBack: () -> Boolean, onSearch: () -> Unit = {}, content: @Composable () -> Unit) {
+fun KeyRoot(route: Route, onBack: () -> Boolean, onSearch: () -> Unit = {}, onQuit: () -> Unit = {}, content: @Composable () -> Unit) {
     val focus = LocalFocusManager.current
     val self = remember { FocusRequester() }
     var rootFocused by remember { mutableStateOf(false) }
+    var confirmQuit by remember(route) { mutableStateOf(false) }
     LaunchedEffect(route) { runCatching { self.requestFocus() } }
     Box(
         Modifier.fillMaxSize()
@@ -58,9 +60,16 @@ fun KeyRoot(route: Route, onBack: () -> Boolean, onSearch: () -> Unit = {}, cont
                     Key.DirectionRight -> move(FocusDirection.Right)
                     Key.DirectionUp -> move(FocusDirection.Up)
                     Key.DirectionDown -> move(FocusDirection.Down)
-                    Key.Escape, Key.Backspace -> onBack()
+                    Key.Escape -> { if (!onBack()) confirmQuit = true; true }
+                    Key.Backspace -> onBack()
                     else -> false
                 }
             },
     ) { content() }
+    if (confirmQuit) {
+        QuitConfirmation(
+            onCancel = { confirmQuit = false },
+            onQuit = { confirmQuit = false; onQuit() },
+        )
+    }
 }

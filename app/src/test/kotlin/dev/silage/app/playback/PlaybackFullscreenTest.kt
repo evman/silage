@@ -3,9 +3,45 @@ package dev.silage.app.playback
 import dev.silage.app.playback.hud.*
 import java.awt.Rectangle
 import java.awt.Frame
+import com.sun.jna.Memory
+import com.sun.jna.Native
+import javax.swing.JFrame
+import javax.swing.SwingUtilities
 import kotlin.test.*
 
 class PlaybackFullscreenTest {
+    @Test fun windowsBorderlessStartupCoversTheMonitorAndSurvivesLeavingPlayback() {
+        if (!System.getProperty("os.name").startsWith("Windows")) return
+        SwingUtilities.invokeAndWait {
+            val frame = JFrame("Silage fullscreen test").apply {
+                isUndecorated = true
+                isResizable = false
+                setBounds(120, 140, 800, 500)
+                isVisible = true
+            }
+            try {
+                val startup = PlaybackFullscreen(frame)
+                startup.enter()
+                val api = WindowsWindowApi.instance
+                val hwnd = Native.getComponentPointer(frame)
+                val monitor = Memory(40).also { it.clear(); it.setInt(0, 40) }
+                assertTrue(api.GetMonitorInfoW(api.MonitorFromWindow(hwnd, 2), monitor))
+                fun assertFullscreen() {
+                    val rect = Memory(16)
+                    assertTrue(api.GetWindowRect(hwnd, rect))
+                    assertEquals((0..3).map { monitor.getInt(4L + it * 4) }, (0..3).map { rect.getInt(it * 4L) })
+                    assertEquals(0, api.GetWindowLongW(hwnd, -16) and 0x00CF0000, "no native window controls or frame")
+                    assertNull(frame.graphicsConfiguration.device.fullScreenWindow, "normal window, no exclusive fullscreen")
+                }
+                assertFullscreen()
+                PlaybackFullscreen(frame).apply { enter(); leave() }
+                assertFullscreen()
+            } finally {
+                frame.dispose()
+            }
+        }
+    }
+
     @Test fun restoresExactWindowStateAndDoesNotOverwriteSnapshot() {
         val original = WindowSnapshot(Rectangle(120, 140, 800, 500), Frame.MAXIMIZED_BOTH, 123)
         val state = FullscreenState()

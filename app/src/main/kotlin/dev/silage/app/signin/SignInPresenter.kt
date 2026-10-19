@@ -14,7 +14,7 @@ class SignInPresenter(private val login: suspend (username: String, password: St
         if (username.isBlank() || password.isEmpty()) return SignInState.Error("Enter your username and password.")
         val result = try { login(username.trim(), password) }
         catch (e: kotlinx.coroutines.CancellationException) { throw e }
-        catch (_: Exception) { return SignInState.Error(org.siloserver.silo.platform.RememberedSessionStore.WRITE_ERROR) }
+        catch (_: Exception) { return SignInState.Error(dev.silage.app.signin.signInStorageError()) }
         return when (val r = result) {
             is ApiResult.Success -> SignInState.SignedIn
             is ApiResult.Error -> if (r.code == 401 || r.code == 403) SignInState.Error("Wrong username or password.")

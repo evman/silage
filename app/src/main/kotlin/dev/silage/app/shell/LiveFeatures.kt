@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import org.siloserver.silo.model.feature.RequestsFeatureStore
 import org.siloserver.silo.model.notifications.NotificationRow
 import org.siloserver.silo.repository.NotificationsRepository
@@ -29,7 +30,7 @@ class LiveFeatures(
     private val notifications: NotificationsRepository,
     private val profiles: ProfileRepository,
     private val log: (String, Throwable) -> Unit = { _, _ -> },
-) {
+) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, t -> log("live features", t) })
     private var started = false
     private var realtime: Job? = null
@@ -88,6 +89,8 @@ class LiveFeatures(
         notifications.refresh()
         baseline = notifications.rows.value
     }
+
+    override fun close() { scope.cancel(); toast.close() }
 
     /** Re-reads the inbox and the Requests switch (e.g. when the inbox page opens). */
     fun refresh() {

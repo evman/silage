@@ -25,10 +25,15 @@ data class SplashFrame(
  * The startup animation, after the Grok concept: the logo fades in soft and
  * grey, brightens to white, an amber glow breathes behind it while the app
  * loads, then the splash fades away — never before the intro has played.
- * The intro is brief (about 1.25 s in all when the app is ready at once) so
- * opening Silage feels quick; the glow only keeps breathing while it loads.
+ * The logo appears promptly and its glow keeps breathing. The splash stays
+ * visible for at least four seconds, or longer if the app is still loading.
  */
-class SplashTimeline(private val introMs: Long = 900, private val fadeMs: Long = 350, private val pulseMs: Long = 2400) {
+class SplashTimeline(
+    private val introMs: Long = 900,
+    private val fadeMs: Long = 350,
+    private val pulseMs: Long = 2400,
+    private val minimumVisibleMs: Long = 4_000,
+) {
     private fun ease(x: Float) = (1 - cos(PI * x.coerceIn(0f, 1f)).toFloat()) / 2
 
     fun frame(elapsedMs: Long, readyAtMs: Long?): SplashFrame {
@@ -38,7 +43,7 @@ class SplashTimeline(private val introMs: Long = 900, private val fadeMs: Long =
         // Glow builds in the second half of the intro, then breathes.
         val breath = if (elapsedMs < introMs) 0.6f * ease((intro - 0.5f) / 0.5f)
             else 0.35f + 0.45f * (0.5f - 0.5f * cos(2 * PI * ((elapsedMs - introMs).toDouble() / pulseMs)).toFloat())
-        val outStart = readyAtMs?.let { maxOf(it, introMs) }
+        val outStart = readyAtMs?.let { maxOf(it, introMs, minimumVisibleMs) }
         val out = if (outStart == null) 0f else ((elapsedMs - outStart).toFloat() / fadeMs).coerceIn(0f, 1f)
         return SplashFrame(
             logoAlpha = fadeIn,

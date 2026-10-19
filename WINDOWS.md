@@ -1,13 +1,21 @@
 # Silage for Windows (x64)
 
 A portable Windows build of Silage, a client for a [Silo](https://siloserver.org)
-media server. This port is developed on the `windows-port` branch and is not an
-official release yet.
+media server. Linux and Windows are maintained together on `main` and released
+together, starting with Silage 0.2.0.
 
 ## Install and run
 
-Silage for Windows is portable: there is no installer and no admin rights are
-needed.
+Silage for Windows is portable: no installer, Java installation, mpv installation
+or admin rights are needed. Windows 10/11 is required.
+
+**Single EXE:** [Download Silage-Portable.exe](https://github.com/evman/silage/releases/latest/download/Silage-Portable.exe), put it in a writable folder and double-click it.
+It contains the app, Java and mpv. On first launch it automatically unpacks them
+into `.silage-runtime` beside itself; later launches reuse those files. Settings
+stay in `userdata` beside the EXE, outside the unpacked runtime. The small
+launcher uses the .NET Framework included in Windows.
+
+**[ZIP alternative](https://github.com/evman/silage/releases/latest/download/Silage-Windows-x64.zip):**
 
 1. Extract `Silage-Windows-x64.zip` anywhere you like (a folder in Documents,
    another drive, a USB stick).
@@ -17,16 +25,16 @@ Keep the whole `Silage` folder together; `silage.exe` needs the `app` and
 `runtime` folders and `libmpv-2.dll` beside it. Java and libmpv are bundled, so
 nothing else has to be installed and nothing is added to PATH.
 
-From a terminal in that folder, `silage.exe --check` confirms the bundled mpv
-loads and `silage.exe --version` prints the version.
+From a terminal, `Silage-Portable.exe --check` confirms the bundled mpv loads
+and `Silage-Portable.exe --version` prints the version. In the ZIP alternative,
+use `silage.exe` for those commands.
 
 The build is not code-signed, so Windows SmartScreen may warn the first time it
 runs ("More info" → "Run anyway").
 
 ## Where Silage keeps its files
 
-Nothing is written into the extracted folder. Settings, the sign-in and caches
-live in `%LOCALAPPDATA%\Silage`:
+Settings, saved sign-in, logs and caches live in `userdata` beside the EXE:
 
 | Folder | Contents |
 |---|---|
@@ -35,20 +43,33 @@ live in `%LOCALAPPDATA%\Silage`:
 | `State` | logs (`silage.log`, `last-playback.json`, and `playback-error.log` after a failed playback) and the playback journal |
 | `Cache` | downloaded artwork |
 
-Moving or deleting the extracted `Silage` folder doesn't affect them. To reset
-Silage completely, close it and delete `%LOCALAPPDATA%\Silage`. Settings →
-About shows the log folder; include those logs when reporting a problem.
+For the single EXE, move the EXE and `userdata` together to take settings with
+you. `.silage-runtime` can be deleted while the app is closed; it will be
+recreated on the next launch. A new release EXE can replace the old one while
+keeping `userdata`. For the ZIP build, move or copy the whole `Silage` folder.
+Choose a writable folder, rather than Program Files: Silage does not fall back
+to AppData.
+To reset Silage, close it and delete `userdata`. Deleting the entire `Silage`
+folder (or the EXE, `userdata` and `.silage-runtime`) removes the app and its saved data.
+Settings → About shows the log folder; include those logs when reporting a problem.
 
-Older test builds kept these files in `.config`, `.local` and `.cache` folders
-in your user profile; the first launch moves them into `%LOCALAPPDATA%\Silage`.
+To keep settings from an earlier build, close Silage and copy the contents of
+`%LOCALAPPDATA%\Silage` (the `Config`, `Data`, `State` and `Cache` folders) into
+`userdata` beside the EXE before launching it. Very early builds used
+`%USERPROFILE%\.config\silage`, `.local\share\silage`, `.local\state\silage`
+and `.cache\silage`; copy their contents into `userdata\Config`, `Data`,
+`State` and `Cache`, respectively. Existing profile folders are left alone;
+a fresh portable copy never imports settings automatically.
 
 **Remember me** (on the sign-in screen and in Settings → Account) is off by
 default. When on, the session is encrypted with Windows DPAPI for your Windows
 user account; your password is never stored. A copy of the folder on another
-PC or Windows account starts signed out.
+PC or Windows account requires signing in again; interface settings still travel.
 
 ## What works
 
+- The animated startup logo stays visible for at least four seconds, and
+  longer when the app is still loading, before fading into the interface.
 - Connect, sign in, profiles (with PINs; with a single profile Silage skips
   "Who's watching?" and only asks for its PIN if it has one), Home,
   libraries, search and title pages, with resume and choice of version.
@@ -77,7 +98,12 @@ PC or Windows account starts signed out.
   the inbox (new episodes, fulfilled requests). While Silage is in the
   background, new ones also pop up as Windows notifications; clicking one
   brings Silage forward on the inbox.
-- Dark title bar, and the window reopens where it was left.
+- Opens as a borderless fullscreen window: no title bar, window buttons or taskbar
+  over the app. Escape goes back through pages, then offers **Quit Silage?** when
+  there is no previous page. **Cancel** is focused first; use arrows or Tab to
+  choose, Enter/Space to activate, or click either button. Escape cancels the
+  dialog. Alt+Tab still switches apps and Alt+F4 closes Silage. The Silage
+  icon is embedded in both the portable EXE and the app launcher.
 
 ## Controls
 
@@ -146,19 +172,36 @@ holding isn't available to Silage.
 Windows x64. The build uses a portable JDK and the mpv DLL from two folders
 that are not in git:
 
-- `toolchains\jdk-*`: unpack a Microsoft OpenJDK 21 ZIP here.
+- `toolchains\jdk-*`: unpack a JDK 21 ZIP here (Microsoft OpenJDK or Temurin).
 - `native\`: `libmpv-2.dll` from the mpv development archive, with
   `LICENSE-mpv-GPL.txt` and `Copyright-mpv.txt`.
 
-Download links and checksums are under *Download provenance* below.
+Download links and checksums are under *Download provenance* below. To prepare
+mpv automatically, run `powershell -ExecutionPolicy Bypass -File scripts\prepare-windows.ps1`.
+It verifies the archive, DLL and license hashes. If `JAVA_HOME` points to JDK 21,
+it also links that JDK under `toolchains` (otherwise unpack a portable JDK there).
+7-Zip is needed for this preparation step. Released apps need none of these tools.
 
 | Script | What it does |
 |---|---|
 | `test-windows.cmd` | runs the app, player and shared test suites; output in `test-windows.log` |
 | `build-windows.cmd <tasks>` | runs any Gradle task with the portable JDK, e.g. `build-windows.cmd :app:run` |
-| `package-windows.cmd` | builds `dist\Silage` and `dist\Silage-Windows-x64.zip`, checks the bundled mpv loads, and keeps the previous build in `dist\backups` |
+| `package-windows.cmd -PappVersion=0.2.0` | builds `dist\Silage-Portable.exe`, plus the folder and ZIP alternatives, checks bundled mpv, and keeps the previous build in `dist\backups` |
 
-`build-windows.py` and `package-windows.py` do the same with Python.
+`build-windows.py` and `package-windows.py -PappVersion=0.2.0` do the same with Python. The version flag is forwarded to Gradle, so the app and release metadata agree.
+Both packaging scripts preserve `dist\Silage\userdata` when rebuilding and
+back up the previous build. Release ZIPs exclude personal data. When updating
+an extracted app, close it and replace the app files while keeping `userdata`.
+
+The single EXE launcher is compiled using Windows' built-in .NET Framework C#
+compiler; no separate SDK is required to package it. It embeds the clean ZIP,
+unpacks a versioned runtime cache on first launch, and passes the outer EXE's
+directory to the app through `SILAGE_PORTABLE_HOME`.
+
+When running from source (`:app:run`), Windows uses `userdata` in the development
+working directory. Packaged builds always use the executable's directory,
+regardless of the terminal directory or shortcut's *Start in* setting. Explicit
+`XDG_*_HOME` environment overrides remain available for isolated developer tests.
 
 Optional native playback tests run only when these variables point at test
 clips you make with ffmpeg (paths relative to the repository are fine):
@@ -167,16 +210,26 @@ clips you make with ffmpeg (paths relative to the repository are fine):
   `ffmpeg -f lavfi -i testsrc=size=640x360:rate=24 -f lavfi -i sine -t 20 -c:v libx264 -c:a aac smoke.mp4`
 - `SILAGE_AUDIO_SMOKE_CLIP`: a video with three audio tracks, for the audio menu.
 
-## How the port works
+## Release automation
+
+Pushing a version tag from `main` runs the Linux and Windows build/test jobs.
+The Windows job prepares checksum-pinned mpv dependencies and publishes the
+single EXE and clean ZIP, with versioned copies and SHA256 checksums. A separate
+Windows job downloads the published EXE and verifies extraction and playback.
+The build remains unsigned; this release does not add a code-signing certificate.
+
+## How the Windows build works
 
 - jpackage app image with a bundled Java 21 runtime; libmpv is loaded through
   JNA as `libmpv-2.dll`, with the C runtime's `LC_NUMERIC` set for mpv.
 - Video renders into the window's own native handle (HWND) with mpv's
   `gpu-next` on Direct3D 11 and `hwdec=auto-safe`; Wayland/VA-API options are
   Linux-only.
-- The window starts maximized rather than in AWT exclusive fullscreen (which
-  minimizes when focus leaves). Playback fullscreen is borderless on the
-  window's current monitor and restores the previous size and position.
+- The window starts borderless at the full bounds of its monitor, using a normal
+  Win32 window rather than AWT exclusive fullscreen (which minimizes when focus
+  leaves). Existing saved window bounds only choose the monitor; they cannot
+  restore a decorated or taskbar-sized window. Playback fullscreen restores this
+  borderless app window when leaving playback.
 - Session and preference files are written atomically with an owner-only NTFS
   ACL; the remembered session is DPAPI-encrypted (current user) and fails
   closed if it can't be decrypted.

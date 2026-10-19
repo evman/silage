@@ -5,8 +5,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class WindowPlacementTest {
-    @Test fun windowsAvoidsExclusiveFullscreenWhichMinimizesOnFocusLoss() {
-        assertEquals(WindowPlacement.Maximized, initialWindowPlacement("Windows 11"))
+    @Test fun windowsUsesNormalWindowPlacementForBorderlessFullscreen() {
+        assertEquals(WindowPlacement.Floating, initialWindowPlacement("Windows 11"))
         assertEquals(WindowPlacement.Fullscreen, initialWindowPlacement("Linux"))
     }
 }

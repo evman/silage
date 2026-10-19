@@ -262,7 +262,7 @@ private fun AccountSection(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServ
         Heading("Account")
         dev.silage.app.signin.RememberSignInControl(remembered) { next ->
             if (rememberedSettings.setEnabled(next)) { remembered = next; saveError = null }
-            else saveError = org.siloserver.silo.platform.RememberedSessionStore.WRITE_ERROR
+            else saveError = dev.silage.app.signin.signInStorageError()
         }
         saveError?.let { Text(it, color = Silage.Error, fontSize = 18.sp) }
         Pill("Switch profile", onClick = onSwitchProfile)
