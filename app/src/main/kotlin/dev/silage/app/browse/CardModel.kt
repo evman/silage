@@ -22,6 +22,11 @@ data class CardModel(
     val openTarget: String,
     /** The catalog type (movie, series, episode…), for the right-click menu; null for collections and requests. */
     val kind: String? = null,
+    /** The Home row it sits in (continue_watching, next_up…), for "Remove from Continue Watching". */
+    val homeRow: String? = null,
+    /** The anchors a Home dismissal needs: when the progress was saved, and the episode's series. */
+    val progressUpdatedAt: String? = null,
+    val seriesId: String? = null,
 )
 
 fun isProgressRow(sectionType: String): Boolean =
@@ -68,7 +73,7 @@ fun SectionItem.toCard(landscape: Boolean): CardModel = card(
     contentId, type, title, seriesTitle, seasonNumber, episodeNumber, year, runtime, contentRating, overview,
     positionSeconds, durationSeconds, posterUrl, posterThumbhash, backdropUrl, backdropThumbhash, logoUrl,
     userState?.played == true, landscape,
-)
+).copy(progressUpdatedAt = progressUpdatedAt, seriesId = seriesId)
 
 fun BrowseItem.toCard(): CardModel = card(
     contentId, type, title, seriesTitle, seasonNumber, episodeNumber, year, runtime, contentRating, overview,

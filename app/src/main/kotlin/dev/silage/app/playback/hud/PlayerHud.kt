@@ -60,6 +60,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val infoRows: List<Pair<String, String>> = emptyList(),
     /** Find / download / AI subtitles; null hides them. */
     private val subtitleTools: SubtitleTools? = null,
+    /** The runtime to show instead of mpv's duration (a converted stream's grows as it's produced). */
+    private val knownDuration: Double? = null,
 ) : AutoCloseable {
     private val ui = mutableStateOf(HudUi(meta = meta, hasSubtitleTools = subtitleTools != null))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
@@ -302,10 +304,14 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     }
 
     /** A press, release or move as fractions (0..1) of the video surface, so the seek bar can be dragged. */
-    fun pointerEvent(fx: Float, fy: Float, type: PointerEventType) {
+    fun pointerEvent(fx: Float, fy: Float, type: PointerEventType, buttonHeld: Boolean = type == PointerEventType.Press) {
         inbox += {
             val b = bitmap
-            if (b != null) pointerNow(type, fx * b.width, fy * b.height)
+            if (b != null) {
+                // A release that never arrived (the button was let go elsewhere) must not leave a drag running.
+                if (type == PointerEventType.Move && !buttonHeld && primaryDown) pointerNow(PointerEventType.Release, fx * b.width, fy * b.height)
+                pointerNow(type, fx * b.width, fy * b.height)
+            }
         }
     }
 
@@ -420,7 +426,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         // Quantized so a static HUD doesn't redraw every frame.
         val next = ui.value.copy(
             position = if (visible) (s.positionSeconds * 4).toLong() / 4.0 else ui.value.position,
-            duration = s.durationSeconds,
+            duration = knownDuration ?: s.durationSeconds,
             bufferedTo = if (visible) mpv.getProperty("demuxer-cache-time")?.toDoubleOrNull() ?: 0.0 else ui.value.bufferedTo,
             paused = s.paused,
             buffering = s.buffering,

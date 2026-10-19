@@ -12,6 +12,10 @@ import org.siloserver.silo.model.playback.DeliverySubtitleCapabilities
 import org.siloserver.silo.model.playback.NATIVE_EMBEDDED_SUBTITLE_CODECS
 import org.siloserver.silo.model.playback.NATIVE_HLS_PLAYBACK_V1_FEATURE
 import org.siloserver.silo.model.playback.NativeEmbeddedSubtitleCapability
+import org.siloserver.silo.model.playback.CLIENT_DV7_TO_HDR10
+import org.siloserver.silo.model.playback.CLIENT_DV_TRANSFORM_RECIPE_VERSION
+import org.siloserver.silo.model.playback.PlaybackTransformationExecutor
+import org.siloserver.silo.model.playback.PlaybackTransformationV3
 
 /**
  * What mpv/FFmpeg can play on a modern Linux PC. Plan 3 replaces these static
@@ -71,6 +75,20 @@ object DesktopCapabilities {
             containers = originalContainers,
             videoCodecs = videoCodecs,
             audioDecodeCodecs = audioCodecs,
+            // The HDR claims per delivery, where the v3 planner reads them.
+            hdrDetails = codecs.hdrDetails,
+            // Dolby Vision profile 7 (UHD Blu-ray remuxes): FFmpeg decodes the
+            // HDR10 base layer and drops the enhancement layer as it plays the
+            // original file. Without this the server rewrote the video and
+            // remuxed it over HLS (DTS converted to AAC) to do the same.
+            transformations = listOf(
+                PlaybackTransformationV3(
+                    name = CLIENT_DV7_TO_HDR10,
+                    executor = PlaybackTransformationExecutor.CLIENT,
+                    recipeVersion = CLIENT_DV_TRANSFORM_RECIPE_VERSION,
+                    validatedClaims = listOf("hdr10_base_layer_preserved", "enhancement_layer_discarded"),
+                ),
+            ),
             subtitles = mpvSubtitles,
             features = listOf("track_switching", "audio_delay", "subtitle_delay", "buffer_reporting"),
         ),

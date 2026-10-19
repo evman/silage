@@ -57,6 +57,8 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
+import kotlin.math.abs
+import androidx.compose.runtime.rememberUpdatedState
 import dev.silage.app.playback.PlaybackMeta
 import dev.silage.app.playback.VideoSettings
 import dev.silage.app.playback.VideoControls
@@ -213,9 +215,24 @@ private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, focu
     var widthPx by remember { mutableIntStateOf(1) }
     var hoverX by remember { mutableStateOf<Float?>(null) }
     var dragFrac by remember { mutableStateOf<Float?>(null) }
+    // Where a click or drag sent playback: the thumb waits there until the
+    // player reports it (a network seek takes a moment) instead of jumping
+    // back to the old position and forward again.
+    var pending by remember { mutableStateOf<Pair<Double, Long>?>(null) }
+    val waiting = pending?.takeIf { (target, at) -> abs(position - target) >= 3.0 && System.currentTimeMillis() - at <= 8_000 }
+    // The gesture handlers outlive recompositions: they read the latest values.
+    val currentDuration by rememberUpdatedState(duration)
+    val currentSeek by rememberUpdatedState(onSeek)
     fun fracAt(x: Float) = (x / widthPx).coerceIn(0f, 1f)
     fun frac(v: Double) = if (duration > 0) (v / duration).coerceIn(0.0, 1.0).toFloat() else 0f
-    val shown = dragFrac ?: frac(position)
+    fun seekTo(f: Float) {
+        val d = currentDuration
+        if (d <= 0) return
+        val target = d * f
+        pending = target to System.currentTimeMillis()
+        currentSeek(target)
+    }
+    val shown = dragFrac ?: waiting?.let { frac(it.first) } ?: frac(position)
     val active = hoverX != null || dragFrac != null || focused
     val barHeight by animateDpAsState(if (active) 8.dp else 5.dp, tween(120))
     val thumb by animateDpAsState(if (dragFrac != null) 24.dp else if (active) 20.dp else 14.dp, tween(120))
@@ -230,11 +247,11 @@ private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, focu
                     }
                 }
             }
-            .pointerInput(duration) { detectTapGestures { o -> if (duration > 0) onSeek(duration * fracAt(o.x)) } }
-            .pointerInput(duration) {
+            .pointerInput(Unit) { detectTapGestures { o -> seekTo(fracAt(o.x)) } }
+            .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = { o -> dragFrac = fracAt(o.x) },
-                    onDragEnd = { dragFrac?.let { if (duration > 0) onSeek(duration * it) }; dragFrac = null },
+                    onDragEnd = { dragFrac?.let { seekTo(it) }; dragFrac = null },
                     onDragCancel = { dragFrac = null },
                 ) { change, _ -> change.consume(); dragFrac = fracAt(change.position.x) }
             },

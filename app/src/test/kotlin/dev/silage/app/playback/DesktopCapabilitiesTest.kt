@@ -48,4 +48,13 @@ class DesktopCapabilitiesTest {
         assertTrue(hdr != null && hdr.hdr10 && hdr.hlg && hdr.hdr10Plus, "hdr=$hdr")
         assertTrue(hdr!!.dolbyVisionProfiles.containsAll(listOf(5, 7, 8)), "dv=${hdr.dolbyVisionProfiles}")
     }
+
+    /** UHD Blu-ray remuxes (Dolby Vision 7) play as the original file, the player keeping the HDR10 base layer. */
+    @Test fun dolbyVision7IsHandledByThePlayer() {
+        val original = deliveries.getValue(DELIVERY_CLASS_ORIGINAL_HTTP)
+        val dv7 = original.transformations.single()
+        assertEquals(org.siloserver.silo.model.playback.CLIENT_DV7_TO_HDR10, dv7.name)
+        assertEquals(org.siloserver.silo.model.playback.PlaybackTransformationExecutor.CLIENT, dv7.executor)
+        assertTrue(original.hdrDetails?.dolbyVisionProfiles?.contains(7) == true)
+    }
 }

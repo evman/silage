@@ -23,7 +23,8 @@ fun attachEmbeddedInput(canvas: Canvas, hud: PlayerHud): () -> Unit {
     val mouse = object : MouseAdapter() {
         private fun at(e: MouseEvent, type: androidx.compose.ui.input.pointer.PointerEventType) {
             val c = e.component
-            if (c.width > 0 && c.height > 0) hud.pointerEvent(e.x.toFloat() / c.width, e.y.toFloat() / c.height, type)
+            val held = (e.modifiersEx and MouseEvent.BUTTON1_DOWN_MASK) != 0
+            if (c.width > 0 && c.height > 0) hud.pointerEvent(e.x.toFloat() / c.width, e.y.toFloat() / c.height, type, held)
         }
         override fun mouseMoved(e: MouseEvent) = at(e, androidx.compose.ui.input.pointer.PointerEventType.Move)
         override fun mouseDragged(e: MouseEvent) = at(e, androidx.compose.ui.input.pointer.PointerEventType.Move)

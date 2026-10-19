@@ -44,7 +44,7 @@ fun AppShell(nav: AppNavigator, koin: Koin, current: Route, content: @Composable
     val scope = rememberCoroutineScope()
     val menu = remember(current) {
         dev.silage.app.browse.CardMenu(
-            play = { nav.go(Route.Playing(it)) }, open = { nav.go(Route.Detail(it)) },
+            play = { nav.go(Route.Playing(it)) }, playFromStart = { nav.go(Route.Playing(it, fromStart = true)) }, open = { nav.go(Route.Detail(it)) },
             actions = dev.silage.app.detail.ItemActions(koin.get(), koin.get(), koin.get()), scope = scope,
             notify = { notice = it }, onWatchlistPage = current == Route.Watchlist,
         )

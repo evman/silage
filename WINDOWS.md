@@ -98,8 +98,9 @@ With the mouse:
 
 - Rows of posters show ‹ › buttons at their edges while the pointer is over
   them, and long pages have a scrollbar.
-- Right-click a poster for Play, Open, Add to / Remove from watchlist and
-  Mark as watched / unwatched.
+- Right-click a poster for Play (Resume), Play from beginning, Open, Add to /
+  Remove from watchlist, Mark as watched / unwatched and Reset progress; on
+  Home also Remove from Continue Watching (or Next Up).
 - The mouse's Back button goes back (except while playing).
 - In the player, drag the dot on the seek bar (or click anywhere on it); the
   time under the pointer shows above the bar. Double-click the picture to

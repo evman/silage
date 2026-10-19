@@ -48,7 +48,20 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
     // Owned by this visit's back-stack entry (cleared when it's popped); it loads on creation.
     val vm = rememberEntryViewModel { koin.get<HomeViewModel>() }
     val state by vm.uiState.collectAsState()
-    SectionRowsScreen(state.sections, state.isLoading, state.error, onRetry = { vm.refresh() }, emptyText = "Nothing on Home yet", onOpen = onOpen, onPlay = onPlay)
+    // Home's right-click menu can also remove a card from Continue Watching / Next Up.
+    val base = dev.silage.app.browse.LocalCardMenu.current
+    val menu = remember(base, vm) {
+        base?.forHome(
+            dismiss = { card ->
+                if (card.homeRow == "next_up" || card.homeRow == "up_next") card.seriesId?.let { vm.dismissNextUp(card.id, it) }
+                else card.progressUpdatedAt?.let { vm.dismissContinueWatching(card.id, it) }
+            },
+            changed = { vm.refresh() },
+        )
+    }
+    androidx.compose.runtime.CompositionLocalProvider(dev.silage.app.browse.LocalCardMenu provides menu) {
+        SectionRowsScreen(state.sections, state.isLoading, state.error, onRetry = { vm.refresh() }, emptyText = "Nothing on Home yet", onOpen = onOpen, onPlay = onPlay)
+    }
 }
 
 /** For You: the server's personal recommendation rows, laid out like Home. */
@@ -74,7 +87,7 @@ fun SectionRowsScreen(
     val rows = remember(sections) {
         sections.filter { it.items.isNotEmpty() }.map { section ->
             val progress = isProgressRow(section.sectionType)
-            Triple(section, progress, section.items.map { it.toCard(landscape = progress) })
+            Triple(section, progress, section.items.map { it.toCard(landscape = progress).copy(homeRow = section.sectionType) })
         }
     }
     // The focused card. Only the marquee reads it, so moving between cards

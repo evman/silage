@@ -94,6 +94,12 @@ sealed interface LaunchResult {
          * them fresh while it plays.
          */
         val needsMediaAuth: Boolean = false,
+        /**
+         * The title's runtime from the plan. A converted (HLS) stream's own
+         * duration is only what the server has produced so far, so the seek
+         * bar would shrink and jump as it grows.
+         */
+        val sourceDurationSeconds: Double? = null,
     ) : LaunchResult {
         fun sourcePositionSeconds(playerSeconds: Double): Double = playerSeconds + timelineOffsetSeconds
     }
@@ -191,6 +197,7 @@ class PlaybackLauncher(
             selectedAudioOrdinal = plan.selectedTracks.audio?.index ?: audioTrackIndex ?: chosen.effectiveAudioTrackIndex,
             fileId = playFileId, timelineOffsetSeconds = plan.timeline.timelineOffsetSeconds,
             needsMediaAuth = needsMediaAuth,
+            sourceDurationSeconds = plan.source.durationSeconds?.takeIf { it > 0 },
             versionLabel = listOf(chosen.toOption().short, if (direct) "original file" else "converted by the server").joinToString(" · "),
         )
     }
