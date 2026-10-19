@@ -36,6 +36,7 @@ class PlaybackSession(
     private val openPlayer: (LaunchResult.Ready) -> OpenedPlayer,
     private val progress: suspend (sessionId: String, position: Double, paused: Boolean) -> Unit,
     private val stopSession: suspend (sessionId: String) -> Unit,
+    private val beforeClose: suspend (PlayOutcome) -> Unit = {},
 ) {
     suspend fun play(contentId: String): PlayOutcome {
         val ready = when (val r = launch(contentId)) {
@@ -53,17 +54,19 @@ class PlaybackSession(
                 player,
                 progress = progress,
                 stop = { sessionId -> player.close(); stopSession(sessionId) },
-            ).run(ready)
-            return when {
-                end is PlayerEvent.Ended && end.reason == EndReason.ERROR -> {
-                    PlaybackLog.recordFailure(end.error, end.log)
-                    PlayOutcome.Failed("Playback failed: ${end.error ?: "unknown error"}")
-                }
-                end is PlayerEvent.Ended && end.reason == EndReason.EOF -> PlayOutcome.Completed
-                else -> PlayOutcome.Finished
+            ).run(ready) {
+                if (it is PlayerEvent.Ended && it.reason == EndReason.ERROR) PlaybackLog.recordFailure(it.error, it.log)
+                beforeClose(outcome(it))
             }
+            return outcome(end)
         } finally {
             player.close()
         }
+    }
+
+    private fun outcome(end: PlayerEvent): PlayOutcome = when {
+        end is PlayerEvent.Ended && end.reason == EndReason.ERROR -> PlayOutcome.Failed("Playback failed: ${end.error ?: "unknown error"}")
+        end is PlayerEvent.Ended && end.reason == EndReason.EOF -> PlayOutcome.Completed
+        else -> PlayOutcome.Finished
     }
 }

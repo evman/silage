@@ -23,7 +23,7 @@ class VideoHudTest {
         }
         setContent { HudContent(ui, actions) }
         onNodeWithContentDescription("Enter fullscreen (F)").performClick()
-        onNodeWithContentDescription("Exit fullscreen (F / Escape)").assertExists()
+        onNodeWithContentDescription("Exit fullscreen (F)").assertExists()
         onNodeWithContentDescription("Video settings").performClick()
         onNodeWithContentDescription("Increase Zoom").performClick()
         runOnIdle { assertEquals(0.1, ui.video.zoom) }

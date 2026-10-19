@@ -90,16 +90,22 @@ object KwinOutputs {
         fun origin(o: JsonObject) = o["position"]!!.jsonObject.let { it.int("x") to it.int("y") }
         val setup = setups.firstOrNull { s -> s.filter { it.bool("enabled") }.map(::origin).toSet() == screenOrigins }
             ?: setups.last()
-        setup.filter { it.bool("enabled") }.map { entry ->
+        setup.filter { it.bool("enabled") }.mapNotNull { entry ->
             val out = outputs[entry.int("outputIndex")]
-            val mode = out["mode"]!!.jsonObject
+            val mode = out["mode"]?.jsonObject ?: return@mapNotNull null
+            val cvt = mode["cvt"]?.jsonObject
+            val width = mode["width"]?.jsonPrimitive?.intOrNull
+                ?: cvt?.get("hdisplay")?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val height = mode["height"]?.jsonPrimitive?.intOrNull
+                ?: cvt?.get("vdisplay")?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            if (width <= 0 || height <= 0) return@mapNotNull null
             val scale = out["scale"]?.jsonPrimitive?.doubleOrNull?.takeIf { it > 0 } ?: 1.0
             val (x, y) = origin(entry)
             Output(
                 name = out["connectorName"]!!.jsonPrimitive.content,
                 x = x, y = y,
-                width = (mode.int("width") / scale).roundToInt(),
-                height = (mode.int("height") / scale).roundToInt(),
+                width = (width / scale).roundToInt(),
+                height = (height / scale).roundToInt(),
                 hdr = out.bool("highDynamicRange"),
             )
         }

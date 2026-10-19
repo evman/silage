@@ -14,6 +14,12 @@ fi
 ./gradlew --no-daemon -q :app:createDistributable -PappVersion="$version" "${packaging_args[@]}"
 app=$(realpath app/build/compose/binaries/main/app/silage)
 test -x "$app/bin/silage"
+python3 scripts/dv-helper/bundle_helper.py --image "$app"
+if [[ -n "${SILAGE_LINUX_DV_RUNTIME:-}" ]]; then
+  python3 scripts/dv-helper/package_runtime.py --runtime "$SILAGE_LINUX_DV_RUNTIME" --image "$app"
+elif [[ -n "${SILAGE_LINUX_DV_BUNDLE:-}" ]]; then
+  python3 scripts/dv-helper/release_runtime.py --bundle "$SILAGE_LINUX_DV_BUNDLE" --image "$app"
+fi
 
 mkdir -p dist
 stage=$(mktemp -d dist/.linux-package.XXXXXX)

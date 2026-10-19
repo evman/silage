@@ -199,7 +199,7 @@ private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
                 UtilityButton(Icons.Outlined.Info, active = ui.menu == HudMenu.Info, focused = ui.focus == HudFocus.Info) { act.openMenu(HudMenu.Info) }
                 UtilityButton(Icons.Outlined.Tune, label = "Video settings", caption = "Video", active = ui.menu == HudMenu.Video, focused = ui.focus == HudFocus.Video) { act.openMenu(HudMenu.Video) }
                 UtilityButton(if (ui.fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
-                    label = if (ui.fullscreen) "Exit fullscreen (F / Escape)" else "Enter fullscreen (F)", caption = "Fullscreen", focused = ui.focus == HudFocus.Fullscreen, onClick = act::fullscreen)
+                    label = if (ui.fullscreen) "Exit fullscreen (F)" else "Enter fullscreen (F)", caption = "Fullscreen", focused = ui.focus == HudFocus.Fullscreen, onClick = act::fullscreen)
             }
         }
     }

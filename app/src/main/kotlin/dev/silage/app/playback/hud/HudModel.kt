@@ -1,5 +1,7 @@
 package dev.silage.app.playback.hud
 
+import dev.silage.app.playback.experimentalDvRenderPasses
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -155,7 +157,6 @@ sealed interface HudEffect {
     data object Exit : HudEffect
     data object TogglePause : HudEffect
     data object ToggleFullscreen : HudEffect
-    data object LeaveFullscreen : HudEffect
     data class AdjustVideo(val index: Int, val step: Int) : HudEffect
     data class SeekBy(val seconds: Double) : HudEffect
     data class Activate(val control: HudFocus) : HudEffect
@@ -182,7 +183,8 @@ data class HudNav(
 
     fun on(key: HudKey): Pair<HudNav, HudEffect> {
         if (key == HudKey.Fullscreen) return copy(visible = true) to HudEffect.ToggleFullscreen
-        if (key == HudKey.Escape) return if (fullscreen) this to HudEffect.LeaveFullscreen else on(HudKey.Back)
+        if (key == HudKey.Escape) return if (menu != HudMenu.None) copy(menu = HudMenu.None) to HudEffect.None
+            else this to HudEffect.Exit
         if (menu == HudMenu.Video && key in listOf(HudKey.Left, HudKey.Right, HudKey.Enter))
             return this to HudEffect.AdjustVideo(menuIndex, if (key == HudKey.Left) -1 else 1)
         if (key == HudKey.PlayPause) return copy(visible = true) to HudEffect.TogglePause
@@ -264,10 +266,25 @@ object InfoRows {
         val gamma = prop("video-params/gamma")
         val hdr = gamma == "pq" || gamma == "hlg"
         add("Dynamic range" to when (gamma) {
-            "pq" -> "HDR10 (PQ${prop("video-params/primaries")?.let { ", " + it.uppercase() } ?: ""})"
+            // PQ is also used by Dolby Vision: transfer characteristics alone cannot identify HDR10.
+            "pq" -> "HDR (PQ${prop("video-params/primaries")?.let { ", " + it.uppercase() } ?: ""})"
             "hlg" -> "HLG"
             else -> "SDR"
         })
+        prop("current-tracks/video/dolby-vision-profile")?.toIntOrNull()?.takeIf { it > 0 }?.let { profile ->
+            add("Source format" to "Dolby Vision (Profile $profile)")
+            if (profile == 7) {
+                val residual = prop("video-out-params/dolby-vision-residual")
+                val active = experimentalDvRenderPasses(prop).any { "enhancement layer" in it }
+                add("Enhancement layer" to when {
+                    residual == "not-required" -> "MEL · no extra picture layer required"
+                    residual == "required" && active -> "FEL · GPU processing active"
+                    residual == "required" -> "FEL · not active"
+                    active -> "GPU processing active"
+                    else -> "Not active"
+                })
+            }
+        }
         val target = prop("video-target-params/gamma")
         add("Display" to when {
             target == "pq" || target == "hlg" -> "HDR passthrough"

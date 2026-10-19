@@ -131,11 +131,16 @@ fun main(args: Array<String>) {
             size = savedWindow?.let { DpSize(it.width.dp, it.height.dp) } ?: DpSize(1280.dp, 800.dp),
         )
         val closeSilage: () -> Unit = { if (isWindows) windowMemory.save(); exitApplication() }
+        var splashDone by remember { mutableStateOf(false) }
         Window(onCloseRequest = closeSilage, state = windowState, title = BuildInfo.NAME, icon = LogoIcon,
             undecorated = isWindows, resizable = !isWindows,
-            onPreviewKeyEvent = { e -> interfaceZoomKey(e)?.let { step -> uiPrefs.interfaceSize = step(uiPrefs.interfaceSize); true } ?: false }) {
+            onPreviewKeyEvent = { e -> !splashDone || (interfaceZoomKey(e)?.let { step -> uiPrefs.interfaceSize = step(uiPrefs.interfaceSize); true } ?: false) }) {
             BorderlessStartup(window, isWindows)
             val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
+            val dvAuthorization = remember {
+                if (dev.silage.app.playback.dvHelperRequested(uiPrefs.experimentalDolbyVision)) dev.silage.app.playback.DvHelperAuthorization() else null
+            }
+            DisposableEffect(dvAuthorization) { onDispose { dvAuthorization?.close() } }
             val liveFeatures = remember { koin.get<dev.silage.app.shell.LiveFeatures>() }
             DisposableEffect(liveFeatures) { onDispose { liveFeatures.close() } }
             LaunchedEffect(window) { liveFeatures.appInForeground = { window.isActive } }
@@ -165,15 +170,16 @@ fun main(args: Array<String>) {
                         LocalDensity provides Density(scale, fontScale = 1f),
                         dev.silage.app.playback.LocalWindowDensity provides windowDensity,
                         dev.silage.app.playback.LocalPlaybackFullscreen provides playbackFullscreen,
+                        dev.silage.app.playback.LocalDvHelperAuthorization provides dvAuthorization,
                         // Right-click menus (cards, the search box) in the app's dark style.
                         androidx.compose.foundation.LocalContextMenuRepresentation provides androidx.compose.foundation.DarkDefaultContextMenuRepresentation,
                     ) {
                         // The window opens on the startup animation while the start
                         // route (server, sign-in, profile) resolves underneath.
                         var navigator by remember { mutableStateOf<AppNavigator?>(null) }
-                        var splashDone by remember { mutableStateOf(false) }
                         LaunchedEffect(Unit) { navigator = AppNavigator(withContext(Dispatchers.IO) { startRoute(koin) }) }
-                        navigator?.let { nav ->
+                        // Native canvases and initial page focus must not bypass the intro.
+                        navigator?.takeIf { splashDone }?.let { nav ->
                             // The mouse's Back button goes back, as in Explorer and browsers (not while playing).
                             DisposableEffect(nav) {
                                 val listener = java.awt.event.AWTEventListener { e ->

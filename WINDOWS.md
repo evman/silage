@@ -111,7 +111,8 @@ PC or Windows account requires signing in again; interface settings still travel
 |---|---|---|
 | Arrows | move around | ←/→ skip 10 s (bar hidden); move between controls (bar shown) |
 | Enter | open / select | show the bar / press the focused control |
-| Esc, Backspace | back | leave fullscreen, close a menu, hide the bar, then leave |
+| Esc | back | close an open menu; otherwise leave the player |
+| Backspace | back | close a menu, hide the bar, then leave |
 | Alt+← | back | — |
 | Space | — | play / pause |
 | F | — | fullscreen |
@@ -160,9 +161,11 @@ holding isn't available to Silage.
 - The interface is laid out for a 1080p screen and scales with the window
   height, so small windows have small text (Settings → Interface → Size
   makes it bigger or smaller).
-- Dolby Vision plays from its HDR10 base layer with the Dolby Vision
-  metadata applied by mpv (profiles 5, 7 and 8, including UHD Blu-ray
-  remuxes); the profile 7 enhancement layer is ignored.
+- Dolby Vision source decoding depends on the bundled Windows mpv renderer.
+  Profile 5 has no HDR10 base-layer fallback; mpv processes its Dolby color
+  representation and tone-maps to SDR. Profile 7 playback ignores the enhancement
+  layer in this Windows runtime. The experimental Linux renderer/helper does not
+  add Windows DV output.
 - Mostly tested on a single monitor; multi-monitor and mixed-DPI setups have
   had less testing.
 - Watch Together, TV sign-in and offline downloads are not available yet.
@@ -187,9 +190,9 @@ it also links that JDK under `toolchains` (otherwise unpack a portable JDK there
 |---|---|
 | `test-windows.cmd` | runs the app, player and shared test suites; output in `test-windows.log` |
 | `build-windows.cmd <tasks>` | runs any Gradle task with the portable JDK, e.g. `build-windows.cmd :app:run` |
-| `package-windows.cmd -PappVersion=0.2.0` | builds `dist\Silage-Portable.exe`, plus the folder and ZIP alternatives, checks bundled mpv, and keeps the previous build in `dist\backups` |
+| `package-windows.cmd -PappVersion=0.3.0` | builds `dist\Silage-Portable.exe`, plus the folder and ZIP alternatives, checks bundled mpv, and keeps the previous build in `dist\backups` |
 
-`build-windows.py` and `package-windows.py -PappVersion=0.2.0` do the same with Python. The version flag is forwarded to Gradle, so the app and release metadata agree.
+`build-windows.py` and `package-windows.py -PappVersion=0.3.0` do the same with Python. The version flag is forwarded to Gradle, so the app and release metadata agree.
 Both packaging scripts preserve `dist\Silage\userdata` when rebuilding and
 back up the previous build. Release ZIPs exclude personal data. When updating
 an extracted app, close it and replace the app files while keeping `userdata`.

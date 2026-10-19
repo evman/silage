@@ -30,11 +30,20 @@ contents:
     type: tree
   - src: LICENSE
     dst: /usr/share/licenses/silage/LICENSE
+  - src: build/dv-helper/stage/usr/libexec/silage-dv-helper/
+    dst: /usr/libexec/silage-dv-helper
+    type: tree
+  - src: scripts/dv-helper/dev.silage.dv-helper.policy
+    dst: /usr/share/polkit-1/actions/dev.silage.dv-helper.policy
 overrides:
   deb:
     # Ubuntu 24.04+ / Debian 13; earlier releases ship libmpv1 (mpv < 0.37).
     depends:
       - libmpv2 (>= 0.37)
+      - python3
+      - pkexec
+      - intel-gpu-tools
+      - libdrm2
       # Linked by the bundled Java runtime and Skia (present on any desktop).
       - libx11-6
       - libxext6
@@ -47,6 +56,9 @@ overrides:
     # Fedora 40+ (mpv-libs from Fedora or RPM Fusion).
     depends:
       - mpv-libs >= 0.37
+      - python3
+      - polkit
+      - igt-gpu-tools
       - libX11
       - libXext
       - libXrender

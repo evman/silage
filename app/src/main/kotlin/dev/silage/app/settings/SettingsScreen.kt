@@ -158,6 +158,7 @@ private fun VideoSection(koin: Koin) {
     val prefs = remember { koin.get<UiPrefs>() }
     val version by prefs.changes.collectAsState()
     val mode = remember(version) { prefs.hdrMode }
+    val experimentalDv = remember(version) { prefs.experimentalDolbyVision }
     val autoplay = remember(version) { prefs.autoplayNext }
     val skipIntro = remember(version) { prefs.autoSkipIntro }
     val preferredVersion = remember(version) { prefs.preferredVersion }
@@ -169,6 +170,14 @@ private fun VideoSection(koin: Koin) {
             Pill("Never", selected = mode == "off") { prefs.hdrMode = "off" }
         }
         Spacer(Modifier.height(40.dp))
+        if (System.getProperty("os.name").startsWith("Linux")) {
+            Heading("Experimental Dolby Vision", "Display signaling for Intel Arc A380 and ASUS PG32UCDM over DisplayPort. Authorizes only the bundled helper at startup. Restart Silage after changing this setting. Full Dolby color accuracy is not verified.")
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Pill("Disabled", selected = !experimentalDv) { prefs.experimentalDolbyVision = false }
+                Pill("Enabled", selected = experimentalDv) { prefs.experimentalDolbyVision = true }
+            }
+            Spacer(Modifier.height(40.dp))
+        }
         Heading("Next episode", "When an episode ends, play the next one after a $UpNextCountdownSeconds-second countdown.")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Pill("Automatically", selected = autoplay) { prefs.autoplayNext = true }

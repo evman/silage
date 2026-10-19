@@ -9,8 +9,8 @@ plugins {
 
 kotlin { jvmToolchain(21) }
 
-// The release version comes from the tag: ./gradlew ... -PappVersion=0.2.0
-val appVersion = (findProperty("appVersion") as String?) ?: "0.2.0-dev"
+// The release version comes from the tag: ./gradlew ... -PappVersion=0.3.0
+val appVersion = (findProperty("appVersion") as String?) ?: "0.3.0-dev"
 val buildInfoDir = layout.buildDirectory.dir("generated/buildinfo")
 val generateBuildInfo by tasks.registering {
     inputs.property("version", appVersion)

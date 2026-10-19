@@ -28,6 +28,7 @@ import dev.silage.app.playback.hud.PlayerHud
 import java.awt.Canvas
 import java.awt.GraphicsEnvironment
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.network.apiv2.WatchDetailV2Api
@@ -62,6 +63,7 @@ private fun outputUnder(canvas: Canvas): Output? = runCatching {
 
 private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, paused: Boolean = false,
     fullscreen: PlaybackFullscreen? = null, video: VideoSession = VideoSession(),
+    dvAuthorization: DvHelperAuthorization? = null,
     hasNextEpisode: () -> Boolean = { false }, onNextEpisode: (() -> Unit)? = null,
     subtitleTools: ((MpvPlayer) -> dev.silage.app.playback.hud.SubtitleTools)? = null,
     onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
@@ -69,12 +71,19 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
     val mpv = MpvPlayer(playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1") +
         koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle.mpvOptions())
+    val dvBackend = System.getenv("SILAGE_EXPERIMENTAL_DV")
+    val helperRequested = dvAuthorization != null
+    val helper = AtomicReference<ExperimentalDvHelper?>()
     val sourceSwitch = !ready.direct && ready.sourceAudio.isNotEmpty()
     val hud = try { PlayerHud(mpv, ready.meta,
         fullscreenWindow = if (output is VideoOutput.Embedded) fullscreen else null,
         videoSession = video,
         autoSkipIntro = koin.get<dev.silage.app.ui.UiPrefs>().autoSkipIntro,
         infoRows = listOfNotNull(ready.versionLabel?.let { "Version" to it }),
+        liveInfoRows = {
+            if (helperRequested) listOf("DV helper" to (helper.get()?.description() ?: "Requires native HDR on a known monitor"))
+            else emptyList()
+        },
         subtitleTools = subtitleTools?.invoke(mpv),
         // On the player's clock, which starts at the plan's timeline offset.
         knownDuration = ready.sourceDurationSeconds?.let { it - ready.timelineOffsetSeconds }?.takeIf { it > 0 },
@@ -119,8 +128,20 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     else dev.silage.app.desktop.LinuxMediaSession(mpv.state, hud::mediaKey,
         command = { mpv.command(*it); Unit }, property = mpv::getProperty, title = ready.meta.title)
     val port = mpv.asOpened()
+    val experimentalDv: AutoCloseable? = if (helperRequested ||
+        (System.getProperty("os.name").startsWith("Linux") && dvBackend == "compositor")) {
+        (output as? VideoOutput.OwnWindow)?.screen?.let { screen ->
+            if (dvBackend == "compositor") ExperimentalDvSession(screen, mpv.state, mpv::getProperty)
+            else dvAuthorization?.let { owner ->
+                ExperimentalDvHelper(screen, mpv.state, mpv::getProperty, authorization = owner).also { helper.set(it) }
+            }
+        }
+    } else null
+    val closed = java.util.concurrent.atomic.AtomicBoolean(false)
     return object : OpenedPlayer by port {
         override fun close() {
+            if (!closed.compareAndSet(false, true)) return
+            experimentalDv?.close()
             subtitles.cancel()
             authRefresh?.cancel()
             detach()
@@ -137,6 +158,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
     shuffleId: String? = null,
     onPlayNext: (contentId: String, shuffleId: String?) -> Unit = { _, _ -> }) {
     val fullscreen = LocalPlaybackFullscreen.current
+    val dvAuthorization = LocalDvHelperAuthorization.current
     val video = remember(contentId) { VideoSession() }
     DisposableEffect(fullscreen, contentId) { onDispose { fullscreen?.leave() } }
     var error by remember { mutableStateOf<String?>(null) }
@@ -186,6 +208,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         // Read the shuffle while this item plays, so its post-roll knows the next pick.
         shuffle?.let { s -> launch { s.refresh() } }
         while (true) {
+            var handedBack = false
             val session = PlaybackSession(
                 launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position, storedSubtitle) },
                 openPlayer = { ready ->
@@ -214,7 +237,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
                             },
                         )
                     } }
-                    openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video, subtitleTools = tools,
+                    openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video, dvAuthorization, subtitleTools = tools,
                         hasNextEpisode = { nextEpisode.get() != null },
                         onNextEpisode = if (shuffle == null && ready.meta.seriesId != null) ({ nextRequested.set(true) }) else null,
                     ) { ordinal, position, paused ->
@@ -223,8 +246,21 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
                 },
                 progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
                 stopSession = { s -> playback.stopPlayback(s) },
+                beforeClose = { outcome ->
+                    if (outcome == PlayOutcome.Finished && change.get() == null && !nextRequested.get() && shuffle == null) {
+                        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                            handedBack = true
+                            fullscreen?.leave()
+                            onDone()
+                            // Render the destination underneath the native HDR window before
+                            // destroying it. Server cleanup continues after the handoff.
+                            withFrameNanos { }
+                        }
+                    }
+                },
             )
             val outcome = withContext(Dispatchers.IO) { session.play(contentId) }
+            if (handedBack) break
             requested = change.getAndSet(null)
             requested?.storedSubtitle?.let { storedSubtitle = it }
             if (outcome is PlayOutcome.Failed) { fullscreen?.leave(); error = outcome.message; break }

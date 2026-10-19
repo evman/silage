@@ -34,6 +34,18 @@ regression tests run on either platform:
 python -m unittest discover -s scripts/tests -v
 ```
 
+Linux helper/bootstrap and lab regressions run without privileged hardware access:
+
+```sh
+python3 -m unittest discover -s scripts/dv-helper -v
+python3 -m unittest discover -s scripts/dv-lab -v
+bash scripts/dv-helper/install.sh --stage
+```
+
+Only explicitly enabled native hardware tests write display signaling. Never run
+the application, mpv or FFmpeg as root. See [the DV guide](DOLBY_VISION.md) and
+[runtime build instructions](scripts/dv-helper/BUILDING-RUNTIME.md).
+
 Keep server features in shared code and adapt desktop services where needed.
 Preserve Linux Wayland/HDR output and Windows D3D11 playback, and never commit
 credentials, personal settings, extracted runtimes or dependency binaries.
@@ -44,6 +56,8 @@ Update README, [LINUX.md](LINUX.md), [WINDOWS.md](WINDOWS.md), AppStream release
 metadata and `packaging/release-notes.md` before tagging a release. Set
 `-PappVersion=<version>` when packaging locally so the version shown in About
 matches the filenames.
+Update [CHANGELOG.md](CHANGELOG.md), the DV setup/limitations and runtime source
+information when changing those components.
 
 A `v<version>` tag on `main` runs `.github/workflows/release.yml`. It tests Linux
 and Windows, builds the Linux tarball/DEB/RPM/Arch package and Windows portable
@@ -52,6 +66,15 @@ versioned artifacts, stable download filenames, SHA256SUMS and a checksum-pinned
 Arch PKGBUILD. Post-publication jobs verify the documented Linux installer and
 the Windows single-file download. Keep the repository's Arch PKGBUILD checksum
 in sync with the published tarball after the build completes.
+
+The release workflow first builds/tests the pinned private playback runtime in
+Arch Linux. Its verified libraries and licenses are included in each Linux app
+image, along with the helper and portable setup. System packages also install
+the fixed root-owned helper and polkit policy. Incompatible runtime dependencies
+fall back to distro libmpv. Publish the generated corresponding-source tarball
+and retain all library/source hashes and license files. Source archives include
+vendored runtime submodules and the applied Silage patch; no private media or
+authentication data belongs in an artifact.
 
 A local build alone does not publish a release. Historical releases keep their
 original artifacts and version-specific notes.

@@ -14,6 +14,7 @@ private data class UiPrefsFile(
     val sidebar: List<SidebarLibraryPref> = emptyList(),
     /** auto (detect the monitor's HDR), on, or off. */
     val hdrMode: String = "auto",
+    val experimentalDolbyVision: Boolean = false,
     /** Where the main window was left (Windows). */
     val window: dev.silage.app.SavedWindow? = null,
     /** Play the next episode after the "Up next" countdown. */
@@ -61,6 +62,10 @@ class UiPrefs(private val path: Path) {
     var hdrMode: String
         get() = read().hdrMode
         set(value) = write { it.copy(hdrMode = value) }
+
+    var experimentalDolbyVision: Boolean
+        get() = read().experimentalDolbyVision
+        set(value) = write { it.copy(experimentalDolbyVision = value) }
 
     var window: dev.silage.app.SavedWindow?
         get() = read().window

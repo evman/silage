@@ -11,7 +11,24 @@ env:
   NFPM_SHA256: '0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783'
 
 jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install private renderer build dependencies
+        run: pacman -Syu --noconfirm --needed base-devel git meson ninja python pkgconf mpv shaderc vulkan-headers vulkan-icd-loader vulkan-swrast wayland-protocols libpipewire luajit patchelf
+      - name: Build and test the pinned renderer
+        run: bash scripts/dv-helper/build_runtime.sh
+      - name: Export libraries, licenses and corresponding sources
+        run: python3 scripts/dv-helper/release_runtime.py --runtime build/dv-runtime/install --export build/release-runtime
+      - uses: actions/upload-artifact@v7
+        with:
+          name: playback-runtime
+          path: build/release-runtime/
+
   build:
+    needs: runtime
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -20,17 +37,30 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: playback-runtime
+          path: build/release-runtime
       - name: Install nfpm
         run: |
           curl -sSfL -o /tmp/nfpm.tgz "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
           echo "${NFPM_SHA256}  /tmp/nfpm.tgz" | sha256sum -c
           sudo tar -xzf /tmp/nfpm.tgz -C /usr/local/bin nfpm
       - name: Install playback and test dependencies
-        run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg dbus xvfb
+        run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg dbus xvfb libdrm-dev pkg-config
+      - name: Test helper lifecycle and packaging
+        run: |
+          python3 -m unittest discover -s scripts/dv-helper -v
+          python3 -m unittest discover -s scripts/dv-lab -v
+          python3 -m unittest discover -s scripts/tests -v
       - name: Test Linux
         run: xvfb-run -a ./gradlew --no-daemon :app:test :player:test :shared:desktopTest -PappVersion="${GITHUB_REF_NAME#v}"
       - name: Build packages
+        env:
+          SILAGE_LINUX_DV_BUNDLE: build/release-runtime
         run: scripts/package.sh "${GITHUB_REF_NAME#v}"
+      - name: Include corresponding playback sources
+        run: cp build/release-runtime/silage-playback-runtime-sources.tar.gz dist/
       - uses: actions/upload-artifact@v7
         with:
           name: dist
@@ -101,6 +131,8 @@ jobs:
         run: |
           silage --version
           silage --check
+          /usr/libexec/silage-dv-helper/silage-dv-helper --version
+          test "$(stat -c '%u:%a' /usr/libexec/silage-dv-helper/silage-dv-helper)" = '0:755'
 
   test-rpm:
     needs: build
@@ -117,6 +149,8 @@ jobs:
         run: |
           silage --version
           silage --check
+          /usr/libexec/silage-dv-helper/silage-dv-helper --version
+          test "$(stat -c '%u:%a' /usr/libexec/silage-dv-helper/silage-dv-helper)" = '0:755'
 
   arch:
     needs: build
@@ -149,6 +183,8 @@ jobs:
           pacman -U --noconfirm arch/silage-bin-*.pkg.tar.zst
           silage --version
           silage --check
+          /usr/libexec/silage-dv-helper/silage-dv-helper --version
+          test "$(stat -c '%u:%a' /usr/libexec/silage-dv-helper/silage-dv-helper)" = '0:755'
       - uses: actions/upload-artifact@v7
         with:
           name: arch

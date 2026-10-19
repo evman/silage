@@ -2,6 +2,7 @@ package dev.silage.app.detail
 
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.animation.animateContentSize
 import androidx.compose.material.icons.filled.Bookmark
@@ -144,6 +145,7 @@ private fun DetailContent(
     // The copy to play (in practice, which library): last played, else best.
     // For a series, the kind picked (e.g. "4K · HDR") carries to other episodes.
     var preferredShort by rememberSaveable(contentId) { mutableStateOf<String?>(null) }
+    var preferredFileId by rememberSaveable(contentId) { mutableStateOf<Int?>(null) }
     var picking by remember { mutableStateOf(System.getenv("SILAGE_DEV_OPEN_VERSIONS") == "1") }
     val next = if (m.isSeries) nextEpisode(episodes) else null
     val options = remember(item, next) {
@@ -152,8 +154,8 @@ private fun DetailContent(
     val lastFile = if (m.isSeries) next?.userData?.lastFileId else item.userData?.lastFileId
     // The copy last played wins only under Settings → Video → Preferred version: Last played.
     val preferLast = remember { koin.get<dev.silage.app.ui.UiPrefs>().preferredVersion == "last" }
-    val selected = chooseVersion(options, preferredShort, lastFile.takeIf { preferLast })
-    fun episodeFile(e: EpisodeListItem): Int? = chooseVersion(e.files.map { it.toOption() }, preferredShort, e.userData?.lastFileId?.takeIf { preferLast })?.fileId
+    val selected = chooseVersion(options, preferredShort, lastFile.takeIf { preferLast }, preferredFileId)
+    fun episodeFile(e: EpisodeListItem): Int? = chooseVersion(e.files.map { it.toOption() }, preferredShort, e.userData?.lastFileId?.takeIf { preferLast }, preferredFileId)?.fileId
     // A series' Play button appears once its episodes load; focus it then, once per visit
     // (picking another season keeps focus on the season pills).
     val playFocus = rememberInitialFocus(!m.isSeries || next != null)
@@ -185,7 +187,7 @@ private fun DetailContent(
                             ActionButton(Icons.Filled.PlayArrow, m.playLabel, Modifier.focusRequester(playFocus)) { onPlay(contentId, false, selected?.fileId) }
                             if (m.canPlayFromStart) ActionButton(Icons.Filled.Replay, "Play from beginning") { onPlay(contentId, true, selected?.fileId) }
                         }
-                        if (options.size > 1 && selected != null) ActionButton(Icons.Outlined.Layers, selected.short) { picking = true }
+                        if (options.size > 1 && selected != null) ActionButton(Icons.Outlined.Layers, "Versions (${options.size})") { picking = true }
                         shuffle?.let { start -> ActionButton(Icons.Filled.Shuffle, "Shuffle", onClick = start) }
                         watchlist.value?.let { on ->
                             ToggleChip(if (on) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, if (on) "On your watchlist" else "Add to watchlist", on) { scope.launch { watchlist.toggle() } }
@@ -196,6 +198,9 @@ private fun DetailContent(
                         watched.value?.let { on ->
                             ToggleChip(if (on) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle, if (on) "Watched" else "Mark as watched", on) { scope.launch { watched.toggle() } }
                         }
+                    }
+                    if (options.size == 1 && selected != null) {
+                        Text("Available version: ${selected.detail}", color = Silage.Text3, fontSize = 16.sp)
                     }
                     if (watchlist.failed || favorite.failed || watched.failed) {
                         Text("Couldn't save that change on the server. Try again.", color = Silage.Error, fontSize = 17.sp)
@@ -225,8 +230,10 @@ private fun DetailContent(
                 }
             }
         }
-        if (picking && selected != null) {
-            VersionPicker(options, selected.fileId, onPick = { preferredShort = it.short; picking = false }, onDismiss = { picking = false })
+        if (selected != null) {
+            VersionPicker(options, selected.fileId, onPick = {
+                preferredFileId = it.fileId; preferredShort = it.short; picking = false
+            }, onDismiss = { picking = false }, visible = picking, returnFocus = playFocus)
         }
     }
 }
@@ -332,7 +339,14 @@ private fun CastView(c: CastCard, onOpen: (() -> Unit)?) {
 
 /** The list of copies to choose from, over a dim scrim; Esc or Back closes it. */
 @Composable
-private fun VersionPicker(options: List<VersionOption>, selectedId: Int, onPick: (VersionOption) -> Unit, onDismiss: () -> Unit) {
+internal fun VersionPicker(options: List<VersionOption>, selectedId: Int, onPick: (VersionOption) -> Unit, onDismiss: () -> Unit,
+    visible: Boolean, returnFocus: FocusRequester) {
+    var opened by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        if (visible) opened = true
+        else if (opened) { returnFocus.requestFocus(); opened = false }
+    }
+    if (!visible) return
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     Box(
@@ -341,6 +355,9 @@ private fun VersionPicker(options: List<VersionOption>, selectedId: Int, onPick:
         },
         contentAlignment = Alignment.Center,
     ) {
+        Box(Modifier.fillMaxSize().pointerInput(Unit) {
+            awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+        })
         Column(
             Modifier.width(820.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xF2171717))
                 .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)).padding(vertical = 14.dp),

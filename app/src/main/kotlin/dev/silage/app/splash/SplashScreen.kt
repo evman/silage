@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.pointer.pointerInput
 import dev.silage.app.ui.SilageLogo
 
 /**
@@ -50,7 +51,9 @@ fun SplashScreen(ready: Boolean, onFinished: () -> Unit) {
         onFinished()
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().graphicsLayer { alpha = frame.screenAlpha }.background(Color.Black)) {
+    BoxWithConstraints(Modifier.fillMaxSize().pointerInput(Unit) {
+        awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+    }.graphicsLayer { alpha = frame.screenAlpha }.background(Color.Black)) {
         // The layers are drawn in a box larger than the logo so the glows have room to spread.
         val box = maxHeight * 0.72f
         // Logo and name are centered as a group: the logo sits a little above center.

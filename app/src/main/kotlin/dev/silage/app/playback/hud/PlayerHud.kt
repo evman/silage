@@ -23,11 +23,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.ImageInfo
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Draws [HudContent] off-screen and shows it over the video with mpv's
@@ -58,6 +63,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val onNextEpisode: (() -> Unit)? = null,
     /** Rows shown first in Playback Info (which copy is playing). */
     private val infoRows: List<Pair<String, String>> = emptyList(),
+    /** Live optional output status, refreshed with Playback Info. */
+    private val liveInfoRows: () -> List<Pair<String, String>> = { emptyList() },
     /** Find / download / AI subtitles; null hides them. */
     private val subtitleTools: SubtitleTools? = null,
     /** The runtime to show instead of mpv's duration (a converted stream's grows as it's produced). */
@@ -66,6 +73,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val ui = mutableStateOf(HudUi(meta = meta, hasSubtitleTools = subtitleTools != null))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
     private val inbox = ConcurrentLinkedQueue<() -> Unit>()
+    private val nativeMouseMoved = AtomicBoolean(false)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     @Volatile private var running = true
 
@@ -220,7 +228,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         // In mpv's own window (HDR) mpv has the keyboard and mouse; these
         // bindings forward them. Embedded, input arrives through [key]/[pointer].
         mpv.command("keybind", "MOUSE_MOVE", "script-message silage-mouse")
-        mpv.command("keybind", "MBTN_LEFT", "script-message silage-click")
+        // script-binding forwards down/up separately, including while dragging.
+        mpv.command("keybind", "MBTN_LEFT", "script-binding silage-pointer")
         HudKey.MPV_KEYS.forEach { mpv.command("keybind", it, "script-message silage-key $it") }
         subtitleTools?.let { tools ->
             scope.launch {
@@ -231,8 +240,17 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         scope.launch {
             mpv.events.filterIsInstance<PlayerEvent.ClientMessage>().collect { m ->
                 when (m.args.firstOrNull()) {
-                    "silage-mouse" -> mousePos()?.let { pointer(PointerEventType.Move, it.x, it.y) }
-                    "silage-click" -> mousePos()?.let { click(it.x, it.y) }
+                    // High polling-rate mice must not queue property reads for every sample.
+                    "silage-mouse" -> nativeMouseMoved.set(true)
+                    "key-binding" -> if (m.args.getOrNull(1) == "silage-pointer") {
+                        mousePos()?.let { p ->
+                            when (m.args.getOrNull(2)?.firstOrNull()) {
+                                'd' -> pointer(PointerEventType.Press, p.x, p.y)
+                                'u' -> pointer(PointerEventType.Release, p.x, p.y)
+                                'p' -> click(p.x, p.y)
+                            }
+                        }
+                    }
                     "silage-key" -> m.args.getOrNull(1)?.let(HudKey::ofMpv)?.let(::key)
                 }
             }
@@ -255,7 +273,6 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                 HudEffect.Exit -> actions.exit()
                 HudEffect.TogglePause -> actions.togglePause()
                 HudEffect.ToggleFullscreen -> actions.fullscreen()
-                HudEffect.LeaveFullscreen -> if (fullscreenWindow != null) fullscreenWindow.leave() else mpv.setProperty("fullscreen", "no")
                 is HudEffect.AdjustVideo -> actions.video(effect.index, effect.step)
                 is HudEffect.SeekBy -> actions.seekBy(effect.seconds)
                 is HudEffect.SelectRow -> selectRow(effect.menu, effect.index)
@@ -368,8 +385,9 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     }
 
     private fun mousePos(): Offset? {
-        val x = mpv.getProperty("mouse-pos/x")?.toFloatOrNull() ?: return null
-        val y = mpv.getProperty("mouse-pos/y")?.toFloatOrNull() ?: return null
+        val pos = runCatching { Json.parseToJsonElement(mpv.getProperty("mouse-pos") ?: return null).jsonObject }.getOrNull() ?: return null
+        val x = pos["x"]?.jsonPrimitive?.floatOrNull ?: return null
+        val y = pos["y"]?.jsonPrimitive?.floatOrNull ?: return null
         val b = bitmap ?: return Offset(x, y)
         return if (osdW > 0 && osdH > 0) Offset(x * b.width / osdW, y * b.height / osdH) else Offset(x, y)
     }
@@ -398,6 +416,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         if (w <= 0 || h <= 0) return
         ensureScene(w, h)
         while (true) inbox.poll()?.invoke() ?: break
+        if (nativeMouseMoved.getAndSet(false)) mousePos()?.let { pointerNow(PointerEventType.Move, it.x, it.y) }
 
         val s = mpv.state.value
         val now = System.currentTimeMillis()
@@ -419,7 +438,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         val visible = nav.visible
         val info = if (nav.menu == HudMenu.Info && now - lastInfoAt > 1_000) {
             lastInfoAt = now
-            infoRows + InfoRows.build(mpv::getProperty)
+            infoRows + InfoRows.build(mpv::getProperty) + liveInfoRows()
         } else {
             ui.value.info
         }

@@ -1,0 +1,84 @@
+diff --git a/filters/f_enhancement_pair.c b/filters/f_enhancement_pair.c
+index 7b74d10..7514a6a 100644
+--- a/filters/f_enhancement_pair.c
++++ b/filters/f_enhancement_pair.c
+@@ -106,6 +106,7 @@ static void inherit_dovi_from_el(struct mp_image *bl, struct mp_image *el)
+     if (!bl->dovi)
+         return;
+     bl->params.repr.dovi = (void *)bl->dovi->data;
++    bl->params.dovi_residual = el->params.dovi_residual;
+     bl->params.repr.sys = el->params.repr.sys;
+     bl->params.color.primaries = el->params.color.primaries;
+     bl->params.color.transfer = el->params.color.transfer;
+diff --git a/player/command.c b/player/command.c
+index cc8ce69..efd59c3 100644
+--- a/player/command.c
++++ b/player/command.c
+@@ -2588,6 +2588,11 @@ static int property_imgparams(const struct mp_image_params *p, int action, void
+         {"sar-name",        SUB_PROP_STR(sar_name), .unavailable = !sar_name},
+         {"colormatrix",
+             SUB_PROP_STR(m_opt_choice_str(pl_csp_names, p->repr.sys))},
++        {"dolby-vision-residual",
++            SUB_PROP_STR(p->dovi_residual == MP_DOVI_RESIDUAL_REQUIRED
++                ? "required" : "not-required"),
++            .unavailable = p->repr.sys != PL_COLOR_SYSTEM_DOLBYVISION ||
++                           p->dovi_residual == MP_DOVI_RESIDUAL_UNKNOWN},
+         {"colorlevels",
+             SUB_PROP_STR(m_opt_choice_str(pl_csp_levels_names, p->repr.levels))},
+         {"primaries",
+diff --git a/video/mp_image.c b/video/mp_image.c
+index 4f29093..3660eb4 100644
+--- a/video/mp_image.c
++++ b/video/mp_image.c
+@@ -903,6 +903,7 @@ void mp_image_params_update_dynamic(struct mp_image_params *dst,
+                                     bool has_peak_detect_values)
+ {
+     dst->repr.dovi = src->repr.dovi;
++    dst->dovi_residual = src->dovi_residual;
+     // Don't overwrite peak-detected HDR metadata if available.
+     struct pl_hdr_metadata *hdr = &dst->color.hdr;
+     const struct pl_hdr_metadata prev = *hdr;
+@@ -1213,6 +1214,16 @@ struct mp_image *mp_image_from_av_frame(struct AVFrame *src)
+             MP_HANDLE_OOM(dovi);
+             pl_map_avdovi_metadata(&dst->params.color, &dst->params.repr,
+                                    (void *)dst->dovi->data, metadata);
++#if PL_API_VER >= 366
++            const AVDOVIRpuDataHeader *residual_header = av_dovi_get_header(metadata);
++            const AVDOVIDataMapping *residual_mapping = av_dovi_get_mapping(metadata);
++            if (residual_header->disable_residual_flag) {
++                dst->params.dovi_residual = MP_DOVI_RESIDUAL_NOT_REQUIRED;
++            } else if (residual_mapping->nlq_method_idc == AV_DOVI_NLQ_LINEAR_DZ) {
++                dst->params.dovi_residual = dst->params.repr.dovi->nlq_active
++                    ? MP_DOVI_RESIDUAL_REQUIRED : MP_DOVI_RESIDUAL_NOT_REQUIRED;
++            }
++#endif
+         }
+ #endif
+     }
+diff --git a/video/mp_image.h b/video/mp_image.h
+index f5c1562..a73b57f 100644
+--- a/video/mp_image.h
++++ b/video/mp_image.h
+@@ -38,6 +38,12 @@
+ #define MP_IMGFIELD_REPEAT_FIRST 0x04
+ #define MP_IMGFIELD_INTERLACED 0x20
+ 
++enum mp_dovi_residual {
++    MP_DOVI_RESIDUAL_UNKNOWN,
++    MP_DOVI_RESIDUAL_NOT_REQUIRED,
++    MP_DOVI_RESIDUAL_REQUIRED,
++};
++
+ // Describes image parameters that usually stay constant.
+ // New fields can be added in the future. Code changing the parameters should
+ // usually copy the whole struct, so that fields added later will be preserved.
+@@ -50,6 +56,9 @@ struct mp_image_params {
+     bool force_window;          // fake image created by handle_force_window
+     struct pl_color_space color;
+     struct pl_color_repr repr;
++    // Copy this scalar while metadata is owned by the frame; property readers
++    // must not dereference repr.dovi after the frame's reference is released.
++    enum mp_dovi_residual dovi_residual;
+     // Original values before Dolby Vision metadata mapping
+     enum pl_color_primaries primaries_orig;
+     enum pl_color_transfer transfer_orig;

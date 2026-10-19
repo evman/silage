@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD polkit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+<policyconfig>
+  <vendor>Silage</vendor>
+  <action id="dev.silage.dv-helper.signal">
+    <description>Enable experimental Dolby Vision display signaling</description>
+    <message>Administrator authorization is required for Silage's experimental Dolby Vision display helper.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/silage-dv-helper/silage-dv-helper</annotate>
+  </action>
+</policyconfig>

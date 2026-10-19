@@ -1,0 +1,754 @@
+diff --git a/autotests/CMakeLists.txt b/autotests/CMakeLists.txt
+index 714e288..0d6be7c 100644
+--- a/autotests/CMakeLists.txt
++++ b/autotests/CMakeLists.txt
+@@ -4,6 +4,7 @@ add_subdirectory(effect)
+ add_subdirectory(integration)
+ add_subdirectory(libinput)
+ add_subdirectory(wayland)
++add_subdirectory(experimentalhdr)
+ # drm autotests are broken on FreeBSD for yet unknown reasons
+ # As the test isn't doing anything platform specific, only run it on Linux
+ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
+diff --git a/autotests/drm/CMakeLists.txt b/autotests/drm/CMakeLists.txt
+index 8cacc50..9446b82 100644
+--- a/autotests/drm/CMakeLists.txt
++++ b/autotests/drm/CMakeLists.txt
+@@ -22,6 +22,8 @@ set(mockDRM_SRCS
+     ../../src/backends/drm/drm_property.cpp
+     ../../src/backends/drm/drm_virtual_egl_layer.cpp
+     ../../src/backends/drm/drm_virtual_output.cpp
++    ../../src/backends/drm/experimental_hdr_control.cpp
++    ../../src/backends/drm/experimental_hdr_sessions.cpp
+     ../../src/wayland/drmlease_v1.cpp
+ )
+ 
+diff --git a/autotests/experimentalhdr/CMakeLists.txt b/autotests/experimentalhdr/CMakeLists.txt
+new file mode 100644
+index 0000000..4de4f63
+--- /dev/null
++++ b/autotests/experimentalhdr/CMakeLists.txt
+@@ -0,0 +1,17 @@
++cmake_minimum_required(VERSION 3.24)
++if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
++    project(ExperimentalHdrTests LANGUAGES CXX)
++    enable_testing()
++endif()
++set(CMAKE_AUTOMOC ON)
++find_package(Qt6 REQUIRED COMPONENTS Core Test)
++add_executable(testExperimentalHdr
++    test_experimental_hdr.cpp
++    ../../src/backends/drm/experimental_hdr_sessions.cpp
++    ../../src/backends/drm/experimental_hdr_sessions.h
++)
++target_compile_features(testExperimentalHdr PRIVATE cxx_std_23)
++target_compile_options(testExperimentalHdr PRIVATE -Wall -Wextra)
++target_include_directories(testExperimentalHdr PRIVATE ../../src/backends/drm)
++target_link_libraries(testExperimentalHdr Qt6::Core Qt6::Test)
++add_test(NAME experimental-hdr-sessions COMMAND testExperimentalHdr)
+diff --git a/autotests/experimentalhdr/test_experimental_hdr.cpp b/autotests/experimentalhdr/test_experimental_hdr.cpp
+new file mode 100644
+index 0000000..0968bb1
+--- /dev/null
++++ b/autotests/experimentalhdr/test_experimental_hdr.cpp
+@@ -0,0 +1,157 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#include "experimental_hdr_sessions.h"
++#include "experimental_hdr_profile.h"
++#include <QSignalSpy>
++#include <QTest>
++
++using namespace KWin;
++
++class TestExperimentalHdr : public QObject
++{
++    Q_OBJECT
++private Q_SLOTS:
++    void ownershipAndBusyOutput()
++    {
++        QHash<QString, bool> applied;
++        ExperimentalHdrSessions sessions([&](const QString &output, bool enabled) {
++            applied[output] = enabled;
++            return true;
++        });
++        const auto token = sessions.acquire(QStringLiteral(":1.1"), QStringLiteral("DP-3"));
++        QVERIFY(!token.isEmpty());
++        QVERIFY(applied.value(QStringLiteral("DP-3")));
++        QVERIFY(sessions.acquire(QStringLiteral(":1.2"), QStringLiteral("DP-3")).isEmpty());
++        QVERIFY(!sessions.renew(QStringLiteral(":1.2"), token));
++        QVERIFY(!sessions.release(QStringLiteral(":1.2"), token));
++        QVERIFY(applied.value(QStringLiteral("DP-3")));
++        QVERIFY(sessions.release(QStringLiteral(":1.1"), token));
++        QVERIFY(!applied.value(QStringLiteral("DP-3")));
++    }
++
++    void unsupportedOutputDoesNotGetSession()
++    {
++        ExperimentalHdrSessions sessions([](const QString &, bool) { return false; });
++        QVERIFY(sessions.acquire(QStringLiteral(":1.1"), QStringLiteral("DP-3")).isEmpty());
++        QVERIFY(!sessions.renew(QStringLiteral(":1.1"), QStringLiteral("missing")));
++    }
++
++    void expiryRestoresOutput()
++    {
++        bool applied = false;
++        ExperimentalHdrSessions sessions([&](const QString &, bool enabled) {
++            applied = enabled;
++            return true;
++        }, nullptr, 40);
++        const auto token = sessions.acquire(QStringLiteral(":1.1"), QStringLiteral("DP-3"));
++        QVERIFY(applied);
++        QTRY_VERIFY_WITH_TIMEOUT(!applied, 500);
++        QVERIFY(!sessions.renew(QStringLiteral(":1.1"), token));
++    }
++
++    void heartbeatAndLateRenewal()
++    {
++        bool applied = false;
++        ExperimentalHdrSessions sessions([&](const QString &, bool enabled) {
++            applied = enabled;
++            return true;
++        }, nullptr, 120);
++        const auto token = sessions.acquire(QStringLiteral(":1.1"), QStringLiteral("DP-3"));
++        QTest::qWait(60);
++        QVERIFY(sessions.renew(QStringLiteral(":1.1"), token));
++        QTest::qWait(80);
++        QVERIFY(applied);
++        // Even if the timer couldn't run, an expired deadline cannot be renewed.
++        QTest::qSleep(60);
++        QVERIFY(!sessions.renew(QStringLiteral(":1.1"), token));
++        QVERIFY(!applied);
++    }
++
++    void disconnectRestoresOnlyOwnersOutputs()
++    {
++        QHash<QString, bool> applied;
++        ExperimentalHdrSessions sessions([&](const QString &output, bool enabled) {
++            applied[output] = enabled;
++            return true;
++        });
++        sessions.acquire(QStringLiteral(":1.1"), QStringLiteral("DP-3"));
++        sessions.acquire(QStringLiteral(":1.1"), QStringLiteral("DP-1"));
++        const auto other = sessions.acquire(QStringLiteral(":1.2"), QStringLiteral("DP-2"));
++        sessions.removeOwner(QStringLiteral(":1.1"));
++        QVERIFY(!applied.value(QStringLiteral("DP-3")));
++        QVERIFY(!applied.value(QStringLiteral("DP-1")));
++        QVERIFY(applied.value(QStringLiteral("DP-2")));
++        QVERIFY(sessions.release(QStringLiteral(":1.2"), other));
++    }
++
++    void failedRestoreRetainsOwnershipAndRetries()
++    {
++        bool applied = false;
++        bool failRestore = true;
++        ExperimentalHdrSessions sessions([&](const QString &, bool enabled) {
++            if (!enabled && failRestore) {
++                return false;
++            }
++            applied = enabled;
++            return true;
++        }, nullptr, 40);
++        const auto token = sessions.acquire(QStringLiteral(":1.1"), QStringLiteral("DP-3"));
++        QVERIFY(!sessions.release(QStringLiteral(":1.1"), token));
++        QVERIFY(applied);
++        QVERIFY(!sessions.renew(QStringLiteral(":1.1"), token));
++        QVERIFY(sessions.acquire(QStringLiteral(":1.2"), QStringLiteral("DP-3")).isEmpty());
++        failRestore = false;
++        QTRY_VERIFY_WITH_TIMEOUT(!applied, 500);
++        QVERIFY(!sessions.acquire(QStringLiteral(":1.2"), QStringLiteral("DP-3")).isEmpty());
++    }
++
++    void unplugDoesNotReplayOldOverride()
++    {
++        int restores = 0;
++        ExperimentalHdrSessions sessions([&](const QString &, bool enabled) {
++            restores += !enabled;
++            return true;
++        });
++        const auto old = sessions.acquire(QStringLiteral(":1.1"), QStringLiteral("DP-3"));
++        sessions.dropOutput(QStringLiteral("DP-3"));
++        QVERIFY(!sessions.release(QStringLiteral(":1.1"), old));
++        QCOMPARE(restores, 0);
++        QVERIFY(!sessions.acquire(QStringLiteral(":1.2"), QStringLiteral("DP-3")).isEmpty());
++    }
++
++    void metadataMatchesWorkingCapture()
++    {
++        const auto metadata = experimentalHdrProfile();
++        static_assert(sizeof(metadata) == 32);
++        QCOMPARE(QByteArray(reinterpret_cast<const char *>(&metadata), 30).toHex(),
++                 QByteArray("000000000200268a763908217e9bfa194608ee3d3040e8030000fe03aa03"));
++    }
++
++    void validatesWholeEdidBeforeAllowingProfile()
++    {
++        QByteArray edid(256, '\0');
++        const auto header = QByteArray::fromHex("00ffffffffffff00");
++        std::copy(header.begin(), header.end(), edid.begin());
++        edid[126] = 1;
++        const auto cta = QByteArray::fromHex("02031000eb0146d0004c025d89606f87");
++        std::copy(cta.begin(), cta.end(), edid.begin() + 128);
++        auto checksum = [&edid](int offset) {
++            unsigned char sum = 0;
++            for (int i = 0; i < 127; i++) {
++                sum += static_cast<unsigned char>(edid[offset + i]);
++            }
++            edid[offset + 127] = -sum;
++        };
++        checksum(0); checksum(128);
++        QVERIFY(matchesExperimentalHdrProfile(edid));
++        QByteArray corrupt = edid;
++        corrupt[255] ^= 1;
++        QVERIFY(!matchesExperimentalHdrProfile(corrupt));
++        QVERIFY(!matchesExperimentalHdrProfile(QByteArrayView(edid).first(128)));
++        edid[130] = 8;
++        checksum(128);
++        QVERIFY(!matchesExperimentalHdrProfile(edid));
++    }
++};
++
++QTEST_GUILESS_MAIN(TestExperimentalHdr)
++#include "test_experimental_hdr.moc"
+diff --git a/src/backends/drm/CMakeLists.txt b/src/backends/drm/CMakeLists.txt
+index 11a241f..fd2e4f4 100644
+--- a/src/backends/drm/CMakeLists.txt
++++ b/src/backends/drm/CMakeLists.txt
+@@ -21,6 +21,8 @@ target_sources(kwin PRIVATE
+     drm_property.cpp
+     drm_virtual_egl_layer.cpp
+     drm_virtual_output.cpp
++    experimental_hdr_control.cpp
++    experimental_hdr_sessions.cpp
+ )
+ 
+ target_link_libraries(kwin PRIVATE gbm::gbm PkgConfig::Libxcvt)
+diff --git a/src/backends/drm/drm_backend.cpp b/src/backends/drm/drm_backend.cpp
+index 4ebe488..4c2553f 100644
+--- a/src/backends/drm/drm_backend.cpp
++++ b/src/backends/drm/drm_backend.cpp
+@@ -7,6 +7,7 @@
+     SPDX-License-Identifier: GPL-2.0-or-later
+ */
+ #include "drm_backend.h"
++#include "experimental_hdr_control.h"
+ 
+ #include "config-kwin.h"
+ 
+@@ -99,6 +100,9 @@ DrmBackend::DrmBackend(Session *session, QObject *parent)
+     , m_udevMonitor(m_udev->createMonitor())
+     , m_session(session)
+ {
++    if (qEnvironmentVariableIntValue("KWIN_SILAGE_EXPERIMENTAL_DV") == 1) {
++        new ExperimentalHdrControl(this);
++    }
+ }
+ 
+ DrmBackend::~DrmBackend() = default;
+diff --git a/src/backends/drm/drm_output.cpp b/src/backends/drm/drm_output.cpp
+index 207654f..0077f2b 100644
+--- a/src/backends/drm/drm_output.cpp
++++ b/src/backends/drm/drm_output.cpp
+@@ -12,6 +12,7 @@
+ #include "drm_crtc.h"
+ #include "drm_gpu.h"
+ #include "drm_pipeline.h"
++#include "experimental_hdr_profile.h"
+ 
+ #include "core/brightnessdevice.h"
+ #include "core/colortransformation.h"
+@@ -93,6 +94,32 @@ bool DrmOutput::addLeaseObjects(QList<uint32_t> &objectList)
+     return true;
+ }
+ 
++bool DrmOutput::setExperimentalDvMetadata(bool enabled)
++{
++    if (!m_pipeline || !m_gpu->atomicModeSetting() || !m_connector->hdrMetadata.isValid()) {
++        return !enabled;
++    }
++    if (enabled && (!isEnabled() || !highDynamicRange() || !wideColorGamut() || lease()
++                    || !m_connector->connectorName().startsWith(QLatin1String("DP-"))
++                    || !matchesExperimentalHdrProfile(m_connector->edid()->raw()))) {
++        return false;
++    }
++    if (m_pipeline->experimentalDvMetadata() == enabled) {
++        return true;
++    }
++    m_pipeline->setExperimentalDvMetadata(enabled);
++    if (!DrmPipeline::commitPipelines({m_pipeline}, m_gpu, DrmPipeline::CommitMode::TestAllowModeset)) {
++        m_pipeline->revertPendingChanges();
++        return false;
++    }
++    m_pipeline->applyPendingChanges();
++    for (const auto &layer : m_pipeline->layers()) {
++        layer->addDeviceRepaint(Region::infinite());
++    }
++    m_renderLoop->scheduleRepaint();
++    return true;
++}
++
+ void DrmOutput::leased(DrmLease *lease)
+ {
+     m_lease = lease;
+diff --git a/src/backends/drm/drm_output.h b/src/backends/drm/drm_output.h
+index d687da0..ab007f0 100644
+--- a/src/backends/drm/drm_output.h
++++ b/src/backends/drm/drm_output.h
+@@ -64,6 +64,9 @@ public:
+     void setChannelFactors(const QVector3D &rgb) override;
+     void updateConnectorProperties();
+ 
++    // Validated monitor profile only; applies through tested atomic commits.
++    bool setExperimentalDvMetadata(bool enabled);
++
+     bool setPostBlendPipeline(const ColorPipeline &pipeline, const std::shared_ptr<ColorDescription> &newLayerBlendColor) override;
+     void resetPostBlendPipeline() override;
+ 
+diff --git a/src/backends/drm/drm_pipeline.cpp b/src/backends/drm/drm_pipeline.cpp
+index 3a69f8d..cc4dc3b 100644
+--- a/src/backends/drm/drm_pipeline.cpp
++++ b/src/backends/drm/drm_pipeline.cpp
+@@ -8,6 +8,7 @@
+ */
+ 
+ #include "drm_pipeline.h"
++#include "experimental_hdr_profile.h"
+ 
+ #include <errno.h>
+ 
+@@ -707,6 +708,16 @@ void DrmPipeline::setHighDynamicRange(bool hdr)
+     m_pending.hdr = hdr;
+ }
+ 
++void DrmPipeline::setExperimentalDvMetadata(bool enabled)
++{
++    m_pending.experimentalDvMetadata = enabled;
++}
++
++bool DrmPipeline::experimentalDvMetadata() const
++{
++    return m_pending.experimentalDvMetadata;
++}
++
+ void DrmPipeline::setWideColorGamut(bool wcg)
+ {
+     m_pending.wcg = wcg;
+@@ -736,6 +747,12 @@ std::shared_ptr<DrmBlob> DrmPipeline::createHdrMetadata(TransferFunction::Type t
+     if (!m_connector->edid()->supportsPQ()) {
+         return nullptr;
+     }
++    if (m_pending.experimentalDvMetadata && m_pending.wcg
++        && m_connector->connectorName().startsWith(QLatin1String("DP-"))
++        && matchesExperimentalHdrProfile(m_connector->edid()->raw())) {
++        const hdr_output_metadata profile = experimentalHdrProfile();
++        return DrmBlob::create(gpu(), &profile, sizeof(profile));
++    }
+     const auto colorimetry = m_connector->edid()->nativeColorimetry().value_or(Colorimetry::BT709);
+     const xyY red = colorimetry.red().toxyY();
+     const xyY green = colorimetry.green().toxyY();
+diff --git a/src/backends/drm/drm_pipeline.h b/src/backends/drm/drm_pipeline.h
+index 0e61ed7..3ff4f61 100644
+--- a/src/backends/drm/drm_pipeline.h
++++ b/src/backends/drm/drm_pipeline.h
+@@ -95,6 +95,8 @@ public:
+     void setHighDynamicRange(bool hdr);
+     void setWideColorGamut(bool wcg);
+     void setMaxBpc(uint32_t max);
++    void setExperimentalDvMetadata(bool enabled);
++    bool experimentalDvMetadata() const;
+ 
+     enum class CommitMode {
+         Test,
+@@ -147,6 +149,7 @@ private:
+ 
+         std::shared_ptr<IccProfile> iccProfile;
+         bool hdr = false;
++        bool experimentalDvMetadata = false;
+         bool wcg = false;
+         uint32_t maxBpc = 10;
+ 
+diff --git a/src/backends/drm/experimental_hdr_control.cpp b/src/backends/drm/experimental_hdr_control.cpp
+new file mode 100644
+index 0000000..17c0393
+--- /dev/null
++++ b/src/backends/drm/experimental_hdr_control.cpp
+@@ -0,0 +1,83 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#include "experimental_hdr_control.h"
++#include "drm_backend.h"
++#include "drm_output.h"
++#include <QDBusConnection>
++#include <QDBusError>
++#include <QDBusMessage>
++
++namespace KWin
++{
++
++ExperimentalHdrControl::ExperimentalHdrControl(DrmBackend *backend)
++    : QObject(backend)
++    , m_sessions([backend](const QString &name, bool enabled) {
++        for (BackendOutput *output : backend->outputs()) {
++            if (auto drm = qobject_cast<DrmOutput *>(output); drm && drm->name() == name) {
++                return drm->setExperimentalDvMetadata(enabled);
++            }
++        }
++        // If an output disappeared, no old profile may be applied to its replacement.
++        return !enabled;
++    })
++{
++    m_watcher.setConnection(QDBusConnection::sessionBus());
++    m_watcher.setWatchMode(QDBusServiceWatcher::WatchForUnregistration);
++    connect(&m_watcher, &QDBusServiceWatcher::serviceUnregistered, &m_sessions, &ExperimentalHdrSessions::removeOwner);
++    connect(&m_sessions, &ExperimentalHdrSessions::ownerActive, &m_watcher, &QDBusServiceWatcher::addWatchedService);
++    connect(&m_sessions, &ExperimentalHdrSessions::ownerIdle, &m_watcher, &QDBusServiceWatcher::removeWatchedService);
++    connect(backend, &DrmBackend::outputAdded, this, [this](BackendOutput *output) {
++        if (auto drm = qobject_cast<DrmOutput *>(output)) {
++            watchOutput(drm);
++        }
++    });
++    connect(backend, &DrmBackend::outputRemoved, this, [this](BackendOutput *output) {
++        m_sessions.dropOutput(output->name());
++    });
++    for (BackendOutput *output : backend->outputs()) {
++        if (auto drm = qobject_cast<DrmOutput *>(output)) {
++            watchOutput(drm);
++        }
++    }
++    QDBusConnection::sessionBus().registerObject(QStringLiteral("/dev/silage/KWin/HdrMetadata1"), this,
++        QDBusConnection::ExportScriptableSlots | QDBusConnection::ExportScriptableProperties);
++}
++
++void ExperimentalHdrControl::watchOutput(DrmOutput *output)
++{
++    const auto releaseIfUnavailable = [this, output] {
++        if (!output->isEnabled() || !output->highDynamicRange() || !output->wideColorGamut()) {
++            // Clear backend state before forgetting the sessions.
++            if (output->setExperimentalDvMetadata(false)) {
++                m_sessions.dropOutput(output->name());
++            }
++        }
++    };
++    connect(output, &BackendOutput::enabledChanged, this, releaseIfUnavailable);
++    connect(output, &BackendOutput::highDynamicRangeChanged, this, releaseIfUnavailable);
++    connect(output, &BackendOutput::wideColorGamutChanged, this, releaseIfUnavailable);
++}
++
++QString ExperimentalHdrControl::acquire(const QString &outputName)
++{
++    if (!calledFromDBus()) {
++        return {};
++    }
++    const QString token = m_sessions.acquire(message().service(), outputName);
++    if (token.isEmpty()) {
++        sendErrorReply(QDBusError::NotSupported, QStringLiteral("Output unavailable, busy, or unsupported by the experimental profile"));
++    }
++    return token;
++}
++
++bool ExperimentalHdrControl::renew(const QString &token)
++{
++    return calledFromDBus() && m_sessions.renew(message().service(), token);
++}
++
++bool ExperimentalHdrControl::release(const QString &token)
++{
++    return calledFromDBus() && m_sessions.release(message().service(), token);
++}
++
++}
+diff --git a/src/backends/drm/experimental_hdr_control.h b/src/backends/drm/experimental_hdr_control.h
+new file mode 100644
+index 0000000..703264b
+--- /dev/null
++++ b/src/backends/drm/experimental_hdr_control.h
+@@ -0,0 +1,33 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include "experimental_hdr_sessions.h"
++#include <QDBusContext>
++#include <QDBusServiceWatcher>
++
++namespace KWin
++{
++class DrmBackend;
++class DrmOutput;
++
++// Local prototype API. It is registered only with KWIN_SILAGE_EXPERIMENTAL_DV=1.
++class ExperimentalHdrControl : public QObject, protected QDBusContext
++{
++    Q_OBJECT
++    Q_CLASSINFO("D-Bus Interface", "dev.silage.KWin.HdrMetadata1")
++    Q_PROPERTY(uint version READ version CONSTANT)
++public:
++    explicit ExperimentalHdrControl(DrmBackend *backend);
++    uint version() const { return 1; }
++
++public Q_SLOTS:
++    Q_SCRIPTABLE QString acquire(const QString &outputName);
++    Q_SCRIPTABLE bool renew(const QString &token);
++    Q_SCRIPTABLE bool release(const QString &token);
++
++private:
++    void watchOutput(DrmOutput *output);
++    ExperimentalHdrSessions m_sessions;
++    QDBusServiceWatcher m_watcher;
++};
++}
+diff --git a/src/backends/drm/experimental_hdr_profile.h b/src/backends/drm/experimental_hdr_profile.h
+new file mode 100644
+index 0000000..9ccc006
+--- /dev/null
++++ b/src/backends/drm/experimental_hdr_profile.h
+@@ -0,0 +1,76 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include <QByteArrayView>
++#include <libdrm/drm_mode.h>
++
++namespace KWin
++{
++
++// Prototype profile: exact Dolby capability block observed on the tested monitor.
++inline bool matchesExperimentalHdrProfile(QByteArrayView edid)
++{
++    constexpr unsigned char header[] = {0, 255, 255, 255, 255, 255, 255, 0};
++    constexpr unsigned char capability[] = {1, 0x46, 0xd0, 0, 0x4c, 2, 0x5d, 0x89, 0x60, 0x6f, 0x87};
++    if (edid.size() < 128 || edid.size() != (static_cast<unsigned char>(edid[126]) + 1) * 128) {
++        return false;
++    }
++    const auto bytes = reinterpret_cast<const unsigned char *>(edid.data());
++    for (int i = 0; i < 8; i++) {
++        if (bytes[i] != header[i]) {
++            return false;
++        }
++    }
++    int matches = 0;
++    for (qsizetype start = 0; start < edid.size(); start += 128) {
++        unsigned char sum = 0;
++        for (int i = 0; i < 128; i++) {
++            sum += bytes[start + i];
++        }
++        if (sum != 0) {
++            return false;
++        }
++        const unsigned char *block = bytes + start;
++        if (start == 0 || block[0] != 2 || block[1] < 3 || block[2] == 0) {
++            continue;
++        }
++        if (block[2] < 4 || block[2] > 127) {
++            return false;
++        }
++        for (int pos = 4; pos < block[2];) {
++            const int size = block[pos] & 31;
++            if (pos + 1 + size > block[2]) {
++                return false;
++            }
++            if ((block[pos] >> 5) == 7 && size == sizeof(capability)) {
++                bool equal = true;
++                for (int i = 0; i < size; i++) {
++                    equal &= block[pos + 1 + i] == capability[i];
++                }
++                matches += equal;
++            }
++            pos += size + 1;
++        }
++    }
++    return matches == 1;
++}
++
++inline hdr_output_metadata experimentalHdrProfile()
++{
++    // NVAPI GET capture, 2026-10-19. Not a general Dolby signaling specification.
++    return hdr_output_metadata{
++        .metadata_type = 0,
++        .hdmi_metadata_type1 = hdr_metadata_infoframe{
++            .eotf = 2,
++            .metadata_type = 0,
++            .display_primaries = {{35366, 14710}, {8456, 39806}, {6650, 2118}},
++            .white_point = {15854, 16432},
++            .max_display_mastering_luminance = 1000,
++            .min_display_mastering_luminance = 0,
++            .max_cll = 1022,
++            .max_fall = 938,
++        },
++    };
++}
++
++}
+diff --git a/src/backends/drm/experimental_hdr_sessions.cpp b/src/backends/drm/experimental_hdr_sessions.cpp
+new file mode 100644
+index 0000000..8781abd
+--- /dev/null
++++ b/src/backends/drm/experimental_hdr_sessions.cpp
+@@ -0,0 +1,117 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#include "experimental_hdr_sessions.h"
++#include <QUuid>
++#include <algorithm>
++#include <utility>
++
++namespace KWin
++{
++
++ExperimentalHdrSessions::ExperimentalHdrSessions(Apply apply, QObject *parent, int timeoutMs)
++    : QObject(parent)
++    , m_apply(std::move(apply))
++    , m_timeoutMs(std::max(1, timeoutMs))
++{
++    m_timer.setInterval(std::clamp(m_timeoutMs / 4, 10, 1000));
++    connect(&m_timer, &QTimer::timeout, this, &ExperimentalHdrSessions::expire);
++}
++
++QString ExperimentalHdrSessions::acquire(const QString &owner, const QString &output)
++{
++    if (!owner.startsWith(QLatin1Char(':')) || output.isEmpty()) {
++        return {};
++    }
++    for (const Lease &lease : std::as_const(m_leases)) {
++        if (lease.output == output) {
++            return {};
++        }
++    }
++    if (!m_apply(output, true)) {
++        return {};
++    }
++    const QString token = QUuid::createUuid().toString(QUuid::WithoutBraces);
++    m_leases.insert(token, Lease{owner, output, QDeadlineTimer(m_timeoutMs)});
++    m_timer.start();
++    Q_EMIT ownerActive(owner);
++    return token;
++}
++
++bool ExperimentalHdrSessions::renew(const QString &owner, const QString &token)
++{
++    auto it = m_leases.find(token);
++    if (it == m_leases.end() || it->owner != owner || it->releasing) {
++        return false;
++    }
++    if (it->deadline.hasExpired()) {
++        restore(token);
++        return false;
++    }
++    it->deadline = QDeadlineTimer(m_timeoutMs);
++    return true;
++}
++
++bool ExperimentalHdrSessions::release(const QString &owner, const QString &token)
++{
++    const auto it = m_leases.constFind(token);
++    return it != m_leases.cend() && it->owner == owner && restore(token);
++}
++
++void ExperimentalHdrSessions::erase(const QString &token)
++{
++    const QString owner = m_leases.take(token).owner;
++    const bool ownerStillActive = std::ranges::any_of(m_leases, [&owner](const Lease &lease) {
++        return lease.owner == owner;
++    });
++    if (!ownerStillActive) {
++        Q_EMIT ownerIdle(owner);
++    }
++    if (m_leases.isEmpty()) {
++        m_timer.stop();
++    }
++}
++
++bool ExperimentalHdrSessions::restore(const QString &token)
++{
++    auto it = m_leases.find(token);
++    if (it == m_leases.end()) {
++        return true;
++    }
++    it->releasing = true;
++    if (!m_apply(it->output, false)) {
++        // Keep ownership and retry; another client must not inherit a stale override.
++        return false;
++    }
++    erase(token);
++    return true;
++}
++
++void ExperimentalHdrSessions::removeOwner(const QString &owner)
++{
++    for (const QString &token : m_leases.keys()) {
++        if (m_leases.value(token).owner == owner) {
++            restore(token);
++        }
++    }
++}
++
++void ExperimentalHdrSessions::dropOutput(const QString &output)
++{
++    for (const QString &token : m_leases.keys()) {
++        if (m_leases.value(token).output == output) {
++            // The output is gone. Never replay an old override onto its replacement.
++            erase(token);
++        }
++    }
++}
++
++void ExperimentalHdrSessions::expire()
++{
++    for (const QString &token : m_leases.keys()) {
++        const Lease &lease = m_leases[token];
++        if (lease.releasing || lease.deadline.hasExpired()) {
++            restore(token);
++        }
++    }
++}
++
++}
+diff --git a/src/backends/drm/experimental_hdr_sessions.h b/src/backends/drm/experimental_hdr_sessions.h
+new file mode 100644
+index 0000000..bb1eb29
+--- /dev/null
++++ b/src/backends/drm/experimental_hdr_sessions.h
+@@ -0,0 +1,47 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include <QDeadlineTimer>
++#include <QHash>
++#include <QObject>
++#include <QTimer>
++#include <functional>
++
++namespace KWin
++{
++
++// Owns temporary output overrides. The callback must use normal backend commits.
++class ExperimentalHdrSessions : public QObject
++{
++    Q_OBJECT
++public:
++    using Apply = std::function<bool(const QString &output, bool enabled)>;
++    explicit ExperimentalHdrSessions(Apply apply, QObject *parent = nullptr, int timeoutMs = 5000);
++    QString acquire(const QString &owner, const QString &output);
++    bool renew(const QString &owner, const QString &token);
++    bool release(const QString &owner, const QString &token);
++    void removeOwner(const QString &owner);
++    void dropOutput(const QString &output);
++
++Q_SIGNALS:
++    void ownerActive(const QString &owner);
++    void ownerIdle(const QString &owner);
++
++private:
++    struct Lease
++    {
++        QString owner;
++        QString output;
++        QDeadlineTimer deadline;
++        bool releasing = false;
++    };
++    bool restore(const QString &token);
++    void erase(const QString &token);
++    void expire();
++    Apply m_apply;
++    const int m_timeoutMs;
++    QTimer m_timer;
++    QHash<QString, Lease> m_leases;
++};
++
++}

@@ -52,12 +52,16 @@ class PlaybackFullscreenTest {
         assertFalse(state.active)
         assertNull(state.exit())
     }
-    @Test fun escapeExitsFullscreenBeforeMenuOrPlaybackAndFAlwaysToggles() {
+    @Test fun escapeClosesMenuThenPlaybackWithoutLeavingFullscreenAndFStillToggles() {
         val nav = HudNav(menu = HudMenu.Audio, visible = false, fullscreen = true)
         assertEquals(HudEffect.ToggleFullscreen, nav.on(HudKey.Fullscreen).second)
         val (next, effect) = nav.on(HudKey.Escape)
-        assertEquals(HudEffect.LeaveFullscreen, effect)
-        assertEquals(HudMenu.Audio, next.menu)
+        assertEquals(HudEffect.None, effect)
+        assertEquals(HudMenu.None, next.menu)
+        assertTrue(next.fullscreen)
+        assertEquals(HudEffect.Exit, next.on(HudKey.Escape).second)
+        assertEquals(HudEffect.Exit, nav.copy(menu = HudMenu.None, visible = true).on(HudKey.Escape).second)
+        assertEquals(HudEffect.Exit, nav.copy(fullscreen = false, menu = HudMenu.None).on(HudKey.Escape).second)
         assertEquals(HudEffect.Exit, nav.copy(menu = HudMenu.None).on(HudKey.Back).second)
         assertEquals(HudEffect.Exit, nav.copy(fullscreen = false, menu = HudMenu.None).on(HudKey.Back).second)
         assertEquals(HudKey.Fullscreen, HudKey.ofAwt(java.awt.event.KeyEvent.VK_F))

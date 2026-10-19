@@ -88,8 +88,8 @@ class WindowsAdvancedVideoSmokeTest {
                         assertEquals(frame.graphicsConfiguration.bounds, rect())
                     } finally { SwingUtilities.invokeAndWait { other.dispose() } }
                     Thread.sleep(800); evidence("video-fullscreen-native.png")
-                    postKey(java.awt.event.KeyEvent.VK_ESCAPE)
-                    await("Escape did not restore fullscreen") { !fullscreen.active && rect() == initial }
+                    postKey(java.awt.event.KeyEvent.VK_F)
+                    await("F did not restore fullscreen") { !fullscreen.active && rect() == initial }
                     assertEquals(style,u.GetWindowLongW(hwnd,-16))
                     hud.key(HudKey.Down); hud.key(HudKey.Enter)
                     await("Reset failed") { mpv.getProperty("video-zoom")?.toDoubleOrNull() == 0.0 }

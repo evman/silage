@@ -43,7 +43,7 @@ class PlaybackController(
     private val intervalMs: Long = 10_000,
 ) {
     /** Returns the event that ended playback: [PlayerEvent.Ended] or [PlayerEvent.Shutdown]. */
-    suspend fun run(ready: LaunchResult.Ready): PlayerEvent {
+    suspend fun run(ready: LaunchResult.Ready, onEnded: suspend (PlayerEvent) -> Unit = {}): PlayerEvent {
         try {
             return coroutineScope {
                 // Subscribe before load: a stream that fails instantly emits
@@ -66,6 +66,7 @@ class PlaybackController(
                 }
                 val end = finished.await()
                 ticker.cancel(); pauses.cancel()
+                onEnded(end)
                 end
             }
         } finally {

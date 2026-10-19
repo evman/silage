@@ -46,6 +46,12 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.3.0" date="2026-10-19">
+      <description>
+        <p>Linux downloads include an experimental Dolby Vision helper and private playback renderer, with a Video setting and helper-only administrator authorization at startup. The tested Intel Arc A380 and ASUS DisplayPort setup supports Profile 5, 8.1 and Profile 7 MEL/FEL processing; full Dolby color accuracy remains unverified.</p>
+        <p>Startup blocks input, version selection restores keyboard focus, and Escape returns from playback without an intermediate fullscreen transition. Playback Info reports Dolby profiles, enhancement processing and helper status.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-10-18">
       <description>
         <p>Linux and Windows now share the full desktop feature set. Windows adds a single-file portable EXE with Java and mpv included. Linux adds native media controls and notifications, with per-server remembered sign-in on both platforms.</p>

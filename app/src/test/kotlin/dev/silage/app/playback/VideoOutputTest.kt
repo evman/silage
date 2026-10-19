@@ -37,6 +37,22 @@ class VideoOutputTest {
         assertEquals(emptyList(), KwinOutputs.parse("not json", setOf(0 to 0)))
     }
 
+    @Test fun customCvtModesStillDetectTheHdrMonitor() {
+        // Plasma saves the 4K/240 Hz mode using CVT timing fields, without width/height.
+        val cvt = kwin.replace("\"width\":3840,\"height\":2160", "\"cvt\":{\"hdisplay\":3840,\"vdisplay\":2160}")
+        val outputs = KwinOutputs.parse(cvt, setOf(3840 to 2160, 0 to 1440, 1076 to 0))
+        val under = KwinOutputs.outputAt(outputs, 1920, 2500)
+        assertEquals(Output("DP-3", 0, 1440, 3840, 2160, true), under)
+        assertEquals(VideoOutput.OwnWindow("DP-3"), VideoOutput.choose(7L, under, null))
+    }
+
+    @Test fun anUnknownModeOnAnotherMonitorDoesNotDisableHdrDetection() {
+        val unknown = kwin.replace("\"width\":2560,\"height\":1440", "\"unknown\":true")
+        val outputs = KwinOutputs.parse(unknown, setOf(3840 to 2160, 0 to 1440, 1076 to 0))
+        assertEquals("DP-3", KwinOutputs.outputAt(outputs, 1920, 2500)?.name)
+        assertTrue(outputs.single().hdr)
+    }
+
     @Test fun hdrMonitorGetsMpvsOwnNativeWindowOnThatMonitor() {
         val out = VideoOutput.choose(wid = 7L, under = Output("DP-3", 0, 0, 1, 1, hdr = true), override = null)
         assertEquals(VideoOutput.OwnWindow("DP-3"), out)

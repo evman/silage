@@ -6,6 +6,9 @@ import dev.silage.player.PlayerState
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -62,5 +65,23 @@ class PlaybackSessionTest {
     @Test fun windowClosesBeforeServerStop() = runTest {
         assertEquals(PlayOutcome.Completed, session().play("m"))
         assertEquals(listOf("player.stop", "player.close", "session.stop:sess-1"), log)
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun backPageIsPreparedBeforeWindowCloseAndDoesNotWaitForSlowServerCleanup() = runTest {
+        val server = CompletableDeferred<Unit>()
+        val job = launch {
+            PlaybackSession(
+                launch = { ready },
+                openPlayer = { ScriptedPlayer(log, PlayerEvent.Ended(EndReason.STOP, null)) },
+                progress = { _, _, _ -> },
+                stopSession = { log += "session.stop"; server.await() },
+                beforeClose = { assertEquals(PlayOutcome.Finished, it); log += "page.ready" },
+            ).play("m")
+        }
+        runCurrent()
+        assertEquals(listOf("page.ready", "player.stop", "player.close", "session.stop"), log)
+        server.complete(Unit)
+        job.join()
     }
 }

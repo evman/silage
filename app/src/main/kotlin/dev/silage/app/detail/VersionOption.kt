@@ -68,23 +68,26 @@ private fun sizeName(bytes: Long): String? = when {
 }
 
 /** HDR rank: Dolby Vision 3, named HDR format 2, plain HDR 1. */
-private fun option(fileId: Int, height: Int, hdrName: String?, hdrRank: Int, video: String?, audio: String?, size: Long, bitrate: Int, edition: String?): VersionOption {
+private fun option(fileId: Int, height: Int, hdrName: String?, hdrRank: Int, video: String?, audio: String?, size: Long, bitrate: Int, edition: String?, dvProfile: Int? = null): VersionOption {
     val short = listOfNotNull(resolutionLabel(height), hdrName).joinToString(" · ").ifBlank { "Version $fileId" }
-    val detail = listOfNotNull(edition?.takeIf { it.isNotBlank() }, short, videoCodecName(video), audio, sizeName(size)).joinToString(" · ")
+    val detail = listOfNotNull(edition?.takeIf { it.isNotBlank() }, short, dvProfile?.let { "Profile $it" }, videoCodecName(video), audio, sizeName(size)).joinToString(" · ")
     return VersionOption(fileId, short, detail, rank = height * 1_000_000L + hdrRank * 100_000L + bitrate.coerceIn(0, 99_999))
 }
 
 fun FileVersion.toOption(): VersionOption {
     val track = videoTracks?.firstOrNull()
+    val dvProfile = track?.dolbyVisionProfile?.takeIf { it > 0 }
+        ?: track?.dolbyVision?.let { Regex("(?:dvhe|dvh1|dvav|dva1)\\.(\\d{1,2})(?:\\.|$)", RegexOption.IGNORE_CASE)
+            .find(it)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { profile -> profile > 0 } }
     val (hdrName, hdrRank) = when {
-        track?.dolbyVision != null -> "Dolby Vision" to 3
+        !track?.dolbyVision.isNullOrBlank() || dvProfile != null -> "Dolby Vision" to 3
         !track?.hdrFormat.isNullOrBlank() -> track!!.hdrFormat!! to 2
         hdr || track?.hdr == true -> "HDR" to 1
         else -> null to 0
     }
     val audioTrack = audioTracks?.getOrNull(effectiveAudioTrackIndex ?: 0) ?: audioTracks?.firstOrNull()
     val audio = listOfNotNull(audioCodecName(audioTrack?.codec ?: codecAudio), channelsName(audioTrack?.channels)).joinToString(" ").ifBlank { null }
-    return option(fileId, heightOf(resolution, track?.height), hdrName, hdrRank, codecVideo, audio, fileSize, bitrate, editionRaw)
+    return option(fileId, heightOf(resolution, track?.height), hdrName, hdrRank, codecVideo, audio, fileSize, bitrate, editionRaw, dvProfile)
 }
 
 fun EpisodeFile.toOption(): VersionOption =
@@ -98,5 +101,6 @@ fun defaultVersion(options: List<VersionOption>, lastFileId: Int?): VersionOptio
     options.firstOrNull { it.fileId == lastFileId } ?: options.maxByOrNull { it.rank }
 
 /** The copy matching the kind the person picked (e.g. "4K · HDR"), else [defaultVersion]. */
-fun chooseVersion(options: List<VersionOption>, preferredShort: String?, lastFileId: Int?): VersionOption? =
-    preferredShort?.let { p -> options.firstOrNull { it.short == p } } ?: defaultVersion(options, lastFileId)
+fun chooseVersion(options: List<VersionOption>, preferredShort: String?, lastFileId: Int?, preferredFileId: Int? = null): VersionOption? =
+    options.firstOrNull { it.fileId == preferredFileId }
+        ?: preferredShort?.let { p -> options.firstOrNull { it.short == p } } ?: defaultVersion(options, lastFileId)

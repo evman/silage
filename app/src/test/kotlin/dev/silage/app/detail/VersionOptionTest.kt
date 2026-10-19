@@ -27,6 +27,23 @@ class VersionOptionTest {
     @Test fun dolbyVisionIsNamed() {
         val dv = uhd.copy(videoTracks = listOf(VideoTrack(hdr = true, dolbyVision = "dvhe.08", height = 2160)))
         assertEquals("4K · Dolby Vision", dv.toOption().short)
+        assertEquals("4K · Dolby Vision · Profile 8 · HEVC · TrueHD 7.1 · 58 GB", dv.toOption().detail)
+    }
+
+    @Test fun structuredDolbyProfileIsShownWithoutCodecString() {
+        val dv = uhd.copy(videoTracks = listOf(VideoTrack(dolbyVisionProfile = 5, height = 2160)))
+        assertEquals("4K · Dolby Vision", dv.toOption().short)
+        assertEquals("4K · Dolby Vision · Profile 5 · HEVC · TrueHD 7.1 · 58 GB", dv.toOption().detail)
+    }
+
+    @Test fun selectingTwoCopiesWithTheSameLabelHonorsTheActualFile() {
+        val copies = listOf(
+            uhd.copy(fileId = 20, videoTracks = listOf(VideoTrack(dolbyVisionProfile = 8, height = 2160))).toOption(),
+            uhd.copy(fileId = 21, videoTracks = listOf(VideoTrack(dolbyVisionProfile = 5, height = 2160))).toOption(),
+        )
+        assertEquals(21, chooseVersion(copies, "4K · Dolby Vision", lastFileId = 20, preferredFileId = 21)?.fileId)
+        // That file id belongs to the previous episode: retain the version kind instead.
+        assertEquals(20, chooseVersion(copies, "4K · Dolby Vision", lastFileId = null, preferredFileId = 999)?.fileId)
     }
 
     @Test fun smallFilesShowADecimalAndSdIsNamed() {

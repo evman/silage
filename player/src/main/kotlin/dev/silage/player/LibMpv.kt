@@ -71,7 +71,11 @@ interface LibMpv : Library {
         fun load(): LibMpv {
             if (com.sun.jna.Platform.isWindows()) WindowsPlaybackDependencies.prepare()
             Native.load(if (com.sun.jna.Platform.isWindows()) "msvcrt" else "c", LibC::class.java).setlocale(if (com.sun.jna.Platform.isWindows()) 4 else LC_NUMERIC, "C")
-            val lib = loadFirst(NAMES) { Native.load(it, LibMpv::class.java) }
+            // The bundled Linux renderer is preferred when its host dependencies
+            // are compatible. Older distributions retain their normal libmpv.
+            val bundled = if (com.sun.jna.Platform.isLinux()) System.getProperty("silage.mpv.runtime.dir")
+                ?.let { java.io.File(it, "libmpv.so.2").absolutePath } else null
+            val lib = loadFirst(listOfNotNull(bundled) + NAMES) { Native.load(it, LibMpv::class.java) }
             val major = lib.mpv_client_api_version() ushr 16
             check(major >= 2) { "libmpv client API $major is too old; install mpv ≥ 0.38" }
             return lib

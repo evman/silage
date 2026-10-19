@@ -13,6 +13,7 @@
 
 - **Direct play, full quality.** Silage plays your files as they are, with no server transcoding, using mpv (FFmpeg + libplacebo) with hardware decoding (VA-API, NVDEC, Vulkan).
 - **HDR passthrough on Linux.** On a monitor with HDR enabled (KDE Plasma), video plays in a native Wayland surface with true HDR. Other displays and the Windows build tone-map HDR content to SDR.
+- **Experimental Dolby Vision on Linux.** The helper and private playback runtime are included. Enable it in Settings → Video and restart; only the display helper receives administrator authorization. Tested with Intel Arc A380 and ASUS PG32UCDM over DisplayPort, including Profile 7 MEL/FEL processing. Full Dolby tone-mapping/color accuracy remains unverified. See [setup, compatibility and limitations](DOLBY_VISION.md).
 - **Great upscaling.** 1080p films on a 4K screen use mpv's high-quality profile (`ewa_lanczossharp`, debanding).
 - **Choose your copy.** The best-quality copy is selected by default. When a title is in several libraries (say *Movies* and *Movies (4K)*), pick which version to play: *4K · Dolby Vision · HEVC · TrueHD* or *1080p · H.264 · E-AC3*.
 - **A player HUD like Silo's web player.** Seek bar with buffered range and intro/credits markers; audio, subtitle and speed menus; playback info; Skip Intro / Skip Credits.
@@ -60,7 +61,7 @@ Fedora's stock FFmpeg leaves out H.264/HEVC; for full codec support, install FFm
 curl -fL https://github.com/evman/silage/releases/latest/download/silage-linux-x86_64.tar.gz | tar xz && ./silage-*/install.sh
 ```
 
-Every Linux package needs **mpv 0.37 or newer** (libmpv) from your distribution; Java is bundled. Run `silage --check` to confirm Silage can find mpv. On first launch, enter your Silo server's address, sign in, and pick your profile.
+Linux bundles Java, a private playback runtime and the DV helper. Keep **mpv 0.37 or newer** (libmpv) from your distribution installed: it is the fallback when the bundled renderer's native dependencies are incompatible. Packages declare the helper's Python/polkit/Intel GPU Tools dependencies. Run `silage --check` to check the selected runtime. On first launch, enter your Silo server's address, sign in, and pick your profile. Experimental DV is disabled by default; ordinary playback does not ask for administrator authorization.
 
 ### Build from source
 
@@ -80,7 +81,7 @@ cd silage
 | Enter | Open / select | Show the HUD / press the focused control |
 | Space | — | Play / pause |
 | I | — | Playback info |
-| Esc | Back, then confirm quitting at the root | Close a menu, hide the HUD, then leave the player |
+| Esc | Back, then confirm quitting at the root | Close an open menu; otherwise leave the player |
 | Backspace | Back | Close a menu, hide the HUD, then leave the player |
 | Media keys | — | Play/pause, stop, next/forward, previous/back |
 | Ctrl + / Ctrl − / Ctrl 0 | Interface size | — |
@@ -88,6 +89,10 @@ cd silage
 ## Settings
 
 Settings → Interface controls **Size** and **Sidebar** libraries/order. Settings → Video controls **HDR**, autoplay, intro skipping and preferred copies. Settings → Subtitles controls subtitle appearance. Startup fills the screen and shows the loading animation for at least four seconds before fading.
+The intro blocks input. Selecting a file version returns keyboard focus to Play.
+Linux's experimental Dolby Vision setting takes effect after restarting the app.
+
+See the [changelog](CHANGELOG.md) for release changes.
 
 ## Logs
 

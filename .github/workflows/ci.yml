@@ -5,6 +5,17 @@ on:
   pull_request:
 
 jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install private renderer build dependencies
+        run: pacman -Syu --noconfirm --needed base-devel git meson ninja python pkgconf mpv shaderc vulkan-headers vulkan-icd-loader vulkan-swrast wayland-protocols libpipewire luajit patchelf
+      - name: Build and test the pinned renderer
+        run: bash scripts/dv-helper/build_runtime.sh
+      - name: Verify runtime export
+        run: python3 scripts/dv-helper/release_runtime.py --runtime build/dv-runtime/install --export build/release-runtime
   test:
     runs-on: ubuntu-24.04
     steps:
@@ -15,7 +26,13 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
       - name: Install mpv, ffmpeg, D-Bus and a virtual display
-        run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg dbus xvfb
+        run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg dbus xvfb libdrm-dev pkg-config
+      - name: Test bundled helper and portable packaging
+        run: |
+          python3 -m unittest discover -s scripts/dv-helper -v
+          python3 -m unittest discover -s scripts/dv-lab -v
+          python3 -m unittest discover -s scripts/tests -v
+          bash scripts/dv-helper/install.sh --stage
       - name: Test
         run: xvfb-run -a ./gradlew --no-daemon test :shared:desktopTest
       - uses: actions/upload-artifact@v7
