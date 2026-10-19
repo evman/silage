@@ -18,7 +18,8 @@ sealed interface Route {
     data object Collections : Route
     data object Settings : Route
     data class Library(val id: Int, val name: String) : Route
-    data class Collection(val id: String, val name: String) : Route
+    /** [personal]: one of the profile's own collections (sidebar), rather than a library's. */
+    data class Collection(val id: String, val name: String, val personal: Boolean = false) : Route
     data class Person(val id: Long, val name: String) : Route
     data class Detail(val contentId: String) : Route
     data class RequestDetail(val mediaType: String, val tmdbId: Int) : Route

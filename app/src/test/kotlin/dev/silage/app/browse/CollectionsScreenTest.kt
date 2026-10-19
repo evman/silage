@@ -45,4 +45,11 @@ class CollectionsScreenTest {
         val json = org.siloserver.silo.network.SiloJson.parseToJsonElement("""[{"id":"a","name":"A"}]""")
         assertEquals(listOf("a"), parseCollections(json).first.map { it.id })
     }
+
+    /** The sidebar's collections are the profile's own: their items come from another catalog source than a library's. */
+    @Test fun personalCollectionsUseTheUserCollectionSource() {
+        assertEquals("user_collection", collectionSource(personal = true))
+        assertEquals("library_collection", collectionSource(personal = false))
+        assertEquals(false, dev.silage.app.nav.Route.Collection("c", "C").personal)
+    }
 }

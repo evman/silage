@@ -101,14 +101,20 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
 /** One collection's items as a poster grid. */
 @Composable
 fun CollectionScreen(koin: Koin, collectionId: String, name: String, onOpen: (CardModel) -> Unit,
-    onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> }) {
-    val shuffle = dev.silage.app.playback.rememberShuffleStart(koin, org.siloserver.silo.model.shuffle.ShuffleScopeKind.LIBRARY_COLLECTION, collectionId, onShuffle)
+    onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> },
+    /** A profile's own collection (catalog source `user_collection`) rather than a library's. */
+    personal: Boolean = false) {
+    val shuffle = dev.silage.app.playback.rememberShuffleStart(koin,
+        if (personal) org.siloserver.silo.model.shuffle.ShuffleScopeKind.USER_COLLECTION else org.siloserver.silo.model.shuffle.ShuffleScopeKind.LIBRARY_COLLECTION,
+        collectionId, onShuffle)
     val sections = remember { koin.get<SectionRepository>() }
     val scope = rememberCoroutineScope()
     var focused by remember { mutableStateOf<CardModel?>(null) }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
-    val pager = rememberEntry("collection:$collectionId") {
-        LibraryPager<CatalogContinuationV2> { c -> sections.getLibraryCollectionItems(collectionId, continuation = c, limit = 60).toPage() }
+    val pager = rememberEntry("collection:$collectionId:$personal") {
+        LibraryPager<CatalogContinuationV2> { c ->
+            sections.getLibraryCollectionItems(collectionId, continuation = c, limit = 60, source = collectionSource(personal)).toPage()
+        }
     }
     val state by pager.state.collectAsState()
     LaunchedEffect(pager) { if (pager.state.value.items.isEmpty()) pager.loadMore() }
@@ -126,3 +132,6 @@ fun CollectionScreen(koin: Koin, collectionId: String, name: String, onOpen: (Ca
         })
     }
 }
+
+/** The catalog source for a collection's items: a profile's own collections live under `user_collection`. */
+internal fun collectionSource(personal: Boolean) = if (personal) "user_collection" else "library_collection"

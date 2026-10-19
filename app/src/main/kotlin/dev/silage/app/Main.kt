@@ -288,7 +288,7 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
                 onShuffle = { first, shuffleId -> nav.go(Route.Playing(first, shuffleId = shuffleId)) })
         }
         is Route.Collection -> AppShell(nav, koin, route) {
-            CollectionScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) },
+            CollectionScreen(koin, route.id, route.name, personal = route.personal, onOpen = { nav.go(Route.Detail(it.openTarget)) },
                 onShuffle = { first, shuffleId -> nav.go(Route.Playing(first, shuffleId = shuffleId)) })
         }
         Route.ForYou -> AppShell(nav, koin, route) {
@@ -317,7 +317,7 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             dev.silage.app.notifications.NotificationsScreen(koin, onOpen = { nav.go(Route.Detail(it)) })
         }
         Route.Collections -> AppShell(nav, koin, route) {
-            dev.silage.app.browse.CollectionsScreen(koin, onOpenCollection = { id, name -> nav.go(Route.Collection(id, name)) })
+            dev.silage.app.browse.CollectionsScreen(koin, onOpenCollection = { id, name -> nav.go(Route.Collection(id, name, personal = true)) })
         }
         Route.Watchlist -> AppShell(nav, koin, route) { WatchlistScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         Route.Settings -> AppShell(nav, koin, route) {
