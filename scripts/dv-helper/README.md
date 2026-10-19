@@ -193,7 +193,7 @@ Build and bundle it into a development app image:
 
 ```sh
 bash scripts/dv-helper/build_runtime.sh
-./gradlew :app:createDistributable -PappVersion=0.2.1-dev
+./gradlew :app:createDistributable -PappVersion=0.3.0
 python3 scripts/dv-helper/package_runtime.py --runtime build/dv-runtime/install \
   --image app/build/compose/binaries/main/app/silage
 ```

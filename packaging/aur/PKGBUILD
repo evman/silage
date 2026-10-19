@@ -1,6 +1,6 @@
 # Maintainer: evman <evman311 at gmail dot com>
 pkgname=silage-bin
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="An unofficial Silo client for Linux: a fullscreen home-theater app for Silo media servers"
 arch=('x86_64')
@@ -14,7 +14,7 @@ conflicts=('silage')
 options=('!strip' '!debug')
 source=("$url/releases/download/v$pkgver/silage-$pkgver-linux-x86_64.tar.gz")
 # The release workflow writes the exact tarball checksum in its published PKGBUILD.
-sha256sums=('c74cec1be0a13d6848f6cb85c89a649a8c774f0f27cc58ab2a47b6e64c7859c7')
+sha256sums=('fac3e9d37cb78ad37bb9b7fcbce85710d7389f6910632940b6d413d58e28a103')
 
 package() {
   cd "silage-$pkgver"
