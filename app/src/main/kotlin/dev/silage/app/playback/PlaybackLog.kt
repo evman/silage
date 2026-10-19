@@ -47,7 +47,10 @@ object PlaybackLog {
     fun recordFailure(error: String?, log: List<String>) {
         runCatching {
             Files.createDirectories(failureFile.parent)
-            Files.writeString(failureFile, "// ${Instant.now()} mpv: ${error ?: "unknown error"}\n" + redactLog(log).joinToString("\n") + "\n")
+            // The plan of the playback that failed, before the next attempt replaces last-playback.json.
+            val plan = runCatching { Files.readString(planFile) }.getOrDefault("")
+            Files.writeString(failureFile, "// ${Instant.now()} mpv: ${error ?: "unknown error"}\n" + redactLog(log).joinToString("\n") +
+                "\n\n// Its playback plan:\n" + plan + "\n")
         }
     }
 

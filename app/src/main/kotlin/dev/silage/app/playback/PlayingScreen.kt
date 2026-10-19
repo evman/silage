@@ -36,6 +36,19 @@ import org.siloserver.silo.repository.ProfileRepository
 import org.siloserver.silo.repository.CatalogRepository
 import org.siloserver.silo.model.catalog.EpisodeListItem
 
+/** How often a converted stream's sign-in headers are renewed (access tokens last longer). */
+private const val MediaAuthRefreshMs = 4 * 60_000L
+
+/** The headers Silo's API requests carry: the access token and the active profile. */
+internal suspend fun mediaAuthHeaders(koin: Koin): Map<String, String> {
+    val tokens = koin.get<TokenManager>()
+    return buildMap {
+        tokens.getAccessToken()?.let { put("Authorization", "Bearer $it") }
+        tokens.getProfileId()?.let { put("X-Profile-Id", it) }
+        tokens.getProfileToken()?.let { put("X-Profile-Token", it) }
+    }
+}
+
 private class Surface(val canvas: Canvas, val wid: Long?)
 
 /** The KDE output under the canvas, to see whether its monitor has HDR on. */
@@ -72,6 +85,16 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         }) else null,
     ) } catch (t: Throwable) { mpv.close(); throw t }
     // Subscribed before the controller loads the file, so FileLoaded can't be missed.
+    // A converted stream fetches segments for as long as it plays: renew the
+    // sign-in headers before the access token in them expires.
+    val authRefresh = if (ready.needsMediaAuth) CoroutineScope(Dispatchers.IO).launch {
+        while (true) {
+            kotlinx.coroutines.delay(MediaAuthRefreshMs)
+            val fresh = runCatching { mediaAuthHeaders(koin) }.getOrNull()?.takeIf { it.isNotEmpty() } ?: continue
+            mpv.command("change-list", "http-header-fields", "clr", "")
+            (ready.headers + fresh).forEach { (k, v) -> mpv.command("change-list", "http-header-fields", "append", "$k: $v") }
+        }
+    } else null
     val subtitles = CoroutineScope(Dispatchers.Default).launch(start = CoroutineStart.UNDISPATCHED) {
         mpv.events.filterIsInstance<PlayerEvent.FileLoaded>().first()
         video.apply(mpv::setProperty, mpv::getProperty)
@@ -90,6 +113,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     return object : OpenedPlayer by port {
         override fun close() {
             subtitles.cancel()
+            authRefresh?.cancel()
             detach()
             hud.close()
             port.close()
@@ -127,6 +151,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             profileId = { koin.get<ProfileRepository>().getActiveProfileId() },
             serverUrl = { koin.get<TokenManager>().getServerUrl() },
             preferLastPlayed = { koin.get<dev.silage.app.ui.UiPrefs>().preferredVersion == "last" },
+            mediaAuth = { mediaAuthHeaders(koin) },
         )
         // The canvas gets its native window on the next frame; without one in
         // time, mpv falls back to its own fullscreen window.

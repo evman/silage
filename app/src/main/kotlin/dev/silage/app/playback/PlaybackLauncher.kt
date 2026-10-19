@@ -88,6 +88,12 @@ sealed interface LaunchResult {
         val timelineOffsetSeconds: Double = 0.0,
         /** Which copy is playing and how, for Playback Info ("4K · HDR · original file"). */
         val versionLabel: String? = null,
+        /**
+         * A converted (HLS) stream from the Silo server itself: its playlist and
+         * segments need the signed-in headers, which expire, so the player keeps
+         * them fresh while it plays.
+         */
+        val needsMediaAuth: Boolean = false,
     ) : LaunchResult {
         fun sourcePositionSeconds(playerSeconds: Double): Double = playerSeconds + timelineOffsetSeconds
     }
@@ -105,6 +111,8 @@ class PlaybackLauncher(
     private val newAttemptId: () -> String = { UUID.randomUUID().toString() },
     /** Without a copy chosen: the one last played (Settings: Last played) instead of the best one. */
     private val preferLastPlayed: () -> Boolean = { false },
+    /** The signed-in request headers (Authorization, profile) for Silo's own media URLs. */
+    private val mediaAuth: suspend () -> Map<String, String> = { emptyMap() },
 ) {
     /**
      * [fileId]: the copy the user chose on the detail page. Without one (Home,
@@ -145,6 +153,11 @@ class PlaybackLauncher(
         val url = plan.stream.url.let { if (it.startsWith("/")) serverUrl().trimEnd('/') + it else it }
         val base = serverUrl().trimEnd('/')
         val direct = plan.delivery == PlaybackDelivery.ORIGINAL_HTTP
+        // The original file's link is signed; a converted stream's playlist and
+        // segments are fetched like any other Silo request, with the sign-in
+        // headers (as the Android app's media interceptor adds them).
+        val needsMediaAuth = !direct && sameOrigin(url, base)
+        val headers = if (needsMediaAuth) mediaAuth() + plan.stream.effectiveRequestHeaders else plan.stream.effectiveRequestHeaders
         val selectedId = plan.selectedTracks.subtitle?.id?.takeIf { plan.subtitle.mode != PlaybackSubtitleModeV3.OFF }
         val subtitles = plan.subtitle.inventory
             .filter { it.delivery == SUBTITLE_DELIVERY_SIDECAR && it.url != null && !(direct && it.source == "embedded") }
@@ -161,7 +174,7 @@ class PlaybackLauncher(
             null
         }
         return LaunchResult.Ready(
-            sessionId, url, plan.stream.effectiveRequestHeaders,
+            sessionId, url, headers,
             // A packaged replan can begin at source 42s while mpv's clock starts
             // at zero. Seeking to the source position again would skip twice.
             startSeconds = if (plan.timeline.timelineOffsetSeconds != 0.0) plan.timeline.playerStartSeconds
@@ -171,6 +184,7 @@ class PlaybackLauncher(
             sourceAudio = chosen.audioTracks.orEmpty(), direct = direct,
             selectedAudioOrdinal = plan.selectedTracks.audio?.index ?: audioTrackIndex ?: chosen.effectiveAudioTrackIndex,
             fileId = playFileId, timelineOffsetSeconds = plan.timeline.timelineOffsetSeconds,
+            needsMediaAuth = needsMediaAuth,
             versionLabel = listOf(chosen.toOption().short, if (direct) "original file" else "converted by the server").joinToString(" · "),
         )
     }
@@ -180,3 +194,10 @@ class PlaybackLauncher(
 internal fun defaultCopy(versions: List<org.siloserver.silo.model.catalog.FileVersion>, lastFileId: Int?, preferLastPlayed: Boolean) =
     versions.firstOrNull { preferLastPlayed && it.fileId == lastFileId }
         ?: versions.maxByOrNull { it.toOption().rank }
+
+/** Whether [url] is on the same scheme, host and port as [server]. */
+internal fun sameOrigin(url: String, server: String): Boolean = runCatching {
+    val a = java.net.URI(url); val b = java.net.URI(server)
+    fun port(u: java.net.URI) = if (u.port != -1) u.port else if (u.scheme.equals("https", true)) 443 else 80
+    a.scheme.equals(b.scheme, true) && a.host.equals(b.host, true) && port(a) == port(b)
+}.getOrDefault(false)

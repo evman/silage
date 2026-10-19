@@ -173,6 +173,44 @@ class PlaybackLauncherTest {
         assertEquals(null, defaultCopy(emptyList(), null, false))
     }
 
+    private fun hls(url: String) = SiloJson.decodeFromString(PlaybackDecisionResponseV3.serializer(),
+        """{"protocol_version":3,"session_id":"s","playback_plan":{"plan_id":"p","delivery":"server_remux_hls",
+        "stream":{"url":"$url","protocol":"hls","headers":{}},"decision_reason":"remux"}}""")
+
+    private fun authLauncher(response: PlaybackDecisionResponseV3) = PlaybackLauncher(
+        detail = { ApiResult.Success(WatchDetail(contentId = it, type = "movie", title = "M", versions = listOf(FileVersion(fileId = 1)))) },
+        start = { ApiResult.Success(response) },
+        profileId = { "prof-1" },
+        serverUrl = { "https://silo.example:443" },
+        mediaAuth = { mapOf("Authorization" to "Bearer TOKEN", "X-Profile-Id" to "prof-1") },
+    )
+
+    /** Silo's converted streams refuse a playlist request without the sign-in headers (HTTP 401). */
+    @Test fun convertedStreamsFromTheServerCarryTheSignInHeaders() = runTest {
+        val r = authLauncher(hls("/api/v2/playback/transcode/x/master.m3u8?st=abc")).launch("m")
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals("Bearer TOKEN", r.headers["Authorization"])
+        assertEquals("prof-1", r.headers["X-Profile-Id"])
+        assertTrue(r.needsMediaAuth)
+    }
+
+    @Test fun signInHeadersStayOffOriginalFilesAndOtherHosts() = runTest {
+        val direct = authLauncher(decision("/api/v2/stream/1?st=abc")).launch("m")
+        assertIs<LaunchResult.Ready>(direct)
+        assertTrue("Authorization" !in direct.headers)
+        val elsewhere = authLauncher(hls("https://cdn.example/master.m3u8")).launch("m")
+        assertIs<LaunchResult.Ready>(elsewhere)
+        assertTrue("Authorization" !in elsewhere.headers)
+        assertTrue(!elsewhere.needsMediaAuth)
+    }
+
+    @Test fun originsCompareSchemeHostAndPort() {
+        assertTrue(sameOrigin("https://silo.example/a", "https://silo.example:443"))
+        assertTrue(!sameOrigin("http://silo.example/a", "https://silo.example"))
+        assertTrue(!sameOrigin("https://silo.example:8443/a", "https://silo.example"))
+        assertTrue(!sameOrigin("not a url", "https://silo.example"))
+    }
+
     @Test fun noVersionsFails() = runTest {
         assertEquals(LaunchResult.Failed("This item has no playable file."), launcher(versions = emptyList()).launch("series-1"))
     }
