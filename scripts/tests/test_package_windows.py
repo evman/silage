@@ -31,6 +31,8 @@ class WindowsPackageTest(unittest.TestCase):
         self.portable.write_bytes(b'previous portable exe')
         for name in ['libmpv-2.dll', 'LICENSE-mpv-GPL.txt', 'Copyright-mpv.txt']:
             self.write(self.root / 'native' / name, name)
+        for name in ['vulkan-1.dll', 'VulkanRT-License.txt']:
+            self.write(self.root / 'native/fallback' / name, name)
         for name in ['LICENSE', 'WINDOWS.md']:
             self.write(self.root / name, name)
 
@@ -62,6 +64,8 @@ class WindowsPackageTest(unittest.TestCase):
         self.assertEqual(b'new portable exe', self.portable.read_bytes())
         with zipfile.ZipFile(self.archive) as archive:
             self.assertIn('Silage/silage.exe', archive.namelist())
+            self.assertIn('Silage/fallback/vulkan-1.dll', archive.namelist())
+            self.assertIn('Silage/fallback/VulkanRT-License.txt', archive.namelist())
             self.assertFalse(any('userdata' in Path(name).parts for name in archive.namelist()))
         backup, = (self.root / 'dist/backups').iterdir()
         self.assertEqual('remembered sign-in', (backup / 'Silage/userdata/Data/session.json').read_text())

@@ -33,6 +33,7 @@ try:
     shutil.copy2(root / 'LICENSE', target / 'LICENSE-Silage.txt')
     for name in ['LICENSE-mpv-GPL.txt', 'Copyright-mpv.txt']:
         shutil.copy2(root / 'native' / name, target / name)
+    shutil.copytree(root / 'native/fallback', target / 'fallback')
     shutil.copy2(root / 'WINDOWS.md', target / 'WINDOWS.md')
     # Verification must not rely on developer-only JNA paths or Java.
     env = os.environ.copy()

@@ -20,6 +20,8 @@ $expected = @{
     'libmpv-2.dll' = '0fc3d4a64453fc65b801a687cede8196899788a81a4cd082a9ea477fc418b10f'
     'LICENSE-mpv-GPL.txt' = 'edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6'
     'Copyright-mpv.txt' = 'bfe9ee4cceabcb8ecbfadf208d04156f73d801e6a57369a5606bb8341e204a23'
+    'fallback\vulkan-1.dll' = '98bc6e33b384f83e8cc36174ce1ba81357611d0cbe03462e1ca58d0663034039'
+    'fallback\VulkanRT-License.txt' = '404deb98dabf3e54bf9070d59676b31d69a3da2f9f6e56bdf09ad315c04c718c'
 }
 function Assert-Hash([string]$Path, [string]$ExpectedHash) {
     if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ExpectedHash) {
@@ -46,7 +48,21 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Extracting libmpv failed' }
     Invoke-WebRequest 'https://raw.githubusercontent.com/mpv-player/mpv/a2cd83c56d/LICENSE.GPL' -OutFile (Join-Path $temp 'LICENSE-mpv-GPL.txt')
     Invoke-WebRequest 'https://raw.githubusercontent.com/mpv-player/mpv/a2cd83c56d/Copyright' -OutFile (Join-Path $temp 'Copyright-mpv.txt')
+    # The mpv DLL imports Vulkan even for D3D11 playback. Keep a fallback loader
+    # so machines without a Vulkan driver/runtime still run the portable app.
+    $vulkan = Join-Path $temp 'vulkan.zip'
+    Invoke-WebRequest 'https://sdk.lunarg.com/sdk/download/1.4.341.0/windows/VulkanRT-X64-1.4.341.0-Components.zip' -OutFile $vulkan
+    Assert-Hash $vulkan '20571dcc8292b80a47d68bbbfa4094d87044041f50f4e2e1f326a01e3732b226'
+    Expand-Archive -LiteralPath $vulkan -DestinationPath (Join-Path $temp 'vulkan')
+    $components = Join-Path $temp 'vulkan\VulkanRT-X64-1.4.341.0-Components'
+    New-Item -ItemType Directory (Join-Path $temp 'fallback') | Out-Null
+    Copy-Item (Join-Path $components 'x64\vulkan-1.dll') (Join-Path $temp 'fallback\vulkan-1.dll')
+    Copy-Item (Join-Path $components 'VulkanRT-License.txt') (Join-Path $temp 'fallback\VulkanRT-License.txt')
     foreach ($name in $expected.Keys) { Assert-Hash (Join-Path $temp $name) $expected[$name] }
-    foreach ($name in $expected.Keys) { Copy-Item (Join-Path $temp $name) (Join-Path $native $name) -Force }
+    foreach ($name in $expected.Keys) {
+        $destination = Join-Path $native $name
+        New-Item -ItemType Directory -Force (Split-Path $destination -Parent) | Out-Null
+        Copy-Item (Join-Path $temp $name) $destination -Force
+    }
 } finally { Remove-Item $temp -Recurse -Force }
 Write-Output 'Windows playback dependencies downloaded and verified'

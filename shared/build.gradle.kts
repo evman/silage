@@ -41,6 +41,5 @@ kotlin {
 tasks.withType<Test>().configureEach {
     doFirst {
         systemProperty("silage.test.classpath", classpath.asPath)
-        rootProject.layout.buildDirectory.file("remember-test-classpath.txt").get().asFile.writeText(classpath.asPath)
     }
 }

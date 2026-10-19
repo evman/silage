@@ -39,6 +39,8 @@ copy /y /b "native\libmpv-2.dll" "dist\Silage\" >> "%LOG%" 2>&1 || goto restore
 copy /y "LICENSE" "dist\Silage\LICENSE-Silage.txt" >> "%LOG%" 2>&1 || goto restore
 copy /y "native\LICENSE-mpv-GPL.txt" "dist\Silage\" >> "%LOG%" 2>&1 || goto restore
 copy /y "native\Copyright-mpv.txt" "dist\Silage\" >> "%LOG%" 2>&1 || goto restore
+robocopy "native\fallback" "dist\Silage\fallback" /E /NFL /NDL /NJH /NJS >> "%LOG%" 2>&1
+if errorlevel 8 goto restore
 copy /y "WINDOWS.md" "dist\Silage\" >> "%LOG%" 2>&1 || goto restore
 
 echo [4/7] Checking the packaged app finds its bundled mpv...

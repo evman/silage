@@ -174,11 +174,12 @@ that are not in git:
 
 - `toolchains\jdk-*`: unpack a JDK 21 ZIP here (Microsoft OpenJDK or Temurin).
 - `native\`: `libmpv-2.dll` from the mpv development archive, with
-  `LICENSE-mpv-GPL.txt` and `Copyright-mpv.txt`.
+  `LICENSE-mpv-GPL.txt` and `Copyright-mpv.txt`, plus the fallback loader
+  prepared by `scripts\prepare-windows.ps1`.
 
 Download links and checksums are under *Download provenance* below. To prepare
 mpv automatically, run `powershell -ExecutionPolicy Bypass -File scripts\prepare-windows.ps1`.
-It verifies the archive, DLL and license hashes. If `JAVA_HOME` points to JDK 21,
+It verifies the mpv and Vulkan loader archive, DLL and license hashes. If `JAVA_HOME` points to JDK 21,
 it also links that JDK under `toolchains` (otherwise unpack a portable JDK there).
 7-Zip is needed for this preparation step. Released apps need none of these tools.
 
@@ -236,6 +237,9 @@ The build remains unsigned; this release does not add a code-signing certificate
 - Watchlist, favorites and watched use Silo's v2 endpoints directly; upstream's
   Android-only offline outbox is not used on desktop.
 - Device metadata reports Windows.
+- mpv imports the Vulkan loader even during D3D11 playback. The app prefers the
+  system loader, with a bundled fallback under `fallback` for clean machines.
+  This needs no Vulkan SDK, runtime installer, or administrator rights.
 
 ## Download provenance
 
@@ -250,3 +254,8 @@ Build scripts: https://github.com/shinchiro/mpv-winbuild-cmake
 mpv source: https://github.com/mpv-player/mpv/tree/a2cd83c56d
 
 mpv's GPL license and copyright notice are shipped beside `silage.exe`.
+
+Vulkan loader fallback (x64), with its runtime license included:
+https://sdk.lunarg.com/sdk/download/1.4.341.0/windows/VulkanRT-X64-1.4.341.0-Components.zip
+Archive SHA256: 20571dcc8292b80a47d68bbbfa4094d87044041f50f4e2e1f326a01e3732b226
+`vulkan-1.dll` SHA256: 98bc6e33b384f83e8cc36174ce1ba81357611d0cbe03462e1ca58d0663034039

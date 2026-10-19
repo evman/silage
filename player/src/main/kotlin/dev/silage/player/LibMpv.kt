@@ -57,7 +57,7 @@ interface LibMpv : Library {
                 try {
                     return loader(name)
                 } catch (e: UnsatisfiedLinkError) {
-                    errors += "$name: ${e.message?.lineSequence()?.firstOrNull()}"
+                    errors += "$name: ${e.message?.lineSequence()?.take(2)?.joinToString(" ")}"
                 }
             }
             throw UnsatisfiedLinkError("libmpv not found (tried ${errors.joinToString("; ")})")
@@ -69,6 +69,7 @@ interface LibMpv : Library {
          * environment, so reset it first (number parsing only).
          */
         fun load(): LibMpv {
+            if (com.sun.jna.Platform.isWindows()) WindowsPlaybackDependencies.prepare()
             Native.load(if (com.sun.jna.Platform.isWindows()) "msvcrt" else "c", LibC::class.java).setlocale(if (com.sun.jna.Platform.isWindows()) 4 else LC_NUMERIC, "C")
             val lib = loadFirst(NAMES) { Native.load(it, LibMpv::class.java) }
             val major = lib.mpv_client_api_version() ushr 16
