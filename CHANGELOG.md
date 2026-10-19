@@ -1,5 +1,11 @@
 # Changelog
 
+## Installer update — 2026-10-19
+
+- Migrate the three unowned DV helper files left by portable setup or development
+  when installing the Arch package. Limit overwrite permission to those exact
+  regular files and preserve conflicts with files owned by another package.
+
 ## 0.3.0 — 2026-10-19
 
 - Include the Linux DV helper, its portable first-launch setup, and a pinned

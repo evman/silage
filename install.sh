@@ -14,6 +14,22 @@ sudo_() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }
 # one, and are auto-confirmed when there isn't (e.g. CI).
 ask() { if (exec </dev/tty) 2>/dev/null; then "$@" </dev/tty; else "$@" --noconfirm; fi; }
 
+# Portable first-launch setup and early development installs placed these
+# root-owned files outside pacman's database. Let the package take ownership
+# of those exact files, but never override files owned by another package.
+arch_install() {
+  for path in \
+    /usr/libexec/silage-dv-helper/kms-snapshot \
+    /usr/libexec/silage-dv-helper/silage-dv-helper \
+    /usr/share/polkit-1/actions/dev.silage.dv-helper.policy; do
+    if [ -f "$path" ] && [ ! -L "$path" ] && ! pacman -Qoq "$path" >/dev/null 2>&1; then
+      say "Migrating existing helper file into package ownership: $path"
+      set -- "$@" --overwrite "${path#/}"
+    fi
+  done
+  ask "$@"
+}
+
 id=""; like=""
 if [ -r /etc/os-release ]; then
   # shellcheck disable=SC1091
@@ -33,11 +49,11 @@ case "$family" in
        && { need paru || need yay; }; then
       helper=$(need paru && echo paru || echo yay)
       say "Installing silage-bin from the AUR with $helper"
-      ask "$helper" -S --needed silage-bin
+      arch_install "$helper" -S --needed silage-bin
     else
       say "Downloading the latest Silage package for Arch"
       curl -fL --progress-bar -o "$tmp/silage-bin-x86_64.pkg.tar.zst" "$repo/silage-bin-x86_64.pkg.tar.zst"
-      ask sudo_ pacman -U --needed "$tmp/silage-bin-x86_64.pkg.tar.zst"
+      arch_install sudo_ pacman -U --needed "$tmp/silage-bin-x86_64.pkg.tar.zst"
     fi ;;
   *" debian "*|*" ubuntu "*)
     say "Downloading the latest Silage .deb"

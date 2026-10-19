@@ -21,6 +21,17 @@ jobs:
           else pacman -Syu --noconfirm --needed curl sudo; fi
       - name: One-line install from the README
         run: curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
+      - name: Migrate a portable helper installation (Arch)
+        if: matrix.image == 'archlinux:latest'
+        run: |
+          pacman -R --noconfirm silage-bin
+          install -Dm755 /dev/null /usr/libexec/silage-dv-helper/kms-snapshot
+          install -Dm755 /dev/null /usr/libexec/silage-dv-helper/silage-dv-helper
+          install -Dm644 /dev/null /usr/share/polkit-1/actions/dev.silage.dv-helper.policy
+          curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
+          pacman -Qo /usr/libexec/silage-dv-helper/kms-snapshot
+          pacman -Qo /usr/libexec/silage-dv-helper/silage-dv-helper
+          pacman -Qo /usr/share/polkit-1/actions/dev.silage.dv-helper.policy
       - name: Run it
         run: |
           silage --version

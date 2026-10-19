@@ -45,6 +45,10 @@ curl -fLO https://github.com/evman/silage/releases/latest/download/silage-bin-x8
 ```
 To build the Arch package yourself, download the release's [PKGBUILD](https://github.com/evman/silage/releases/latest/download/PKGBUILD). It pins the matching Linux tarball checksum and can be built with `makepkg`.
 
+If you previously used the portable DV helper setup, use the one-command installer
+above to switch to the Arch package. It transfers the three unowned helper files
+into package ownership automatically, avoiding pacman's file-conflict error.
+
 **Ubuntu 24.04+ / Debian 13**:
 ```sh
 curl -fLO https://github.com/evman/silage/releases/latest/download/silage_amd64.deb && sudo apt install ./silage_amd64.deb
