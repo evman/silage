@@ -17,6 +17,8 @@ private data class UiPrefsFile(
     val experimentalDolbyVision: Boolean = false,
     /** Where the main window was left (Windows). */
     val window: dev.silage.app.SavedWindow? = null,
+    /** Open Silage as a borderless fullscreen window (Windows) instead of a normal one. */
+    val fullscreenStart: Boolean = false,
     /** Play the next episode after the "Up next" countdown. */
     val autoplayNext: Boolean = true,
     /** Jump past intro markers without pressing Skip Intro. */
@@ -82,6 +84,10 @@ class UiPrefs(private val path: Path) {
     var window: dev.silage.app.SavedWindow?
         get() = read().window
         set(value) = write { it.copy(window = value) }
+
+    var fullscreenStart: Boolean
+        get() = read().fullscreenStart
+        set(value) = write { it.copy(fullscreenStart = value) }
 
     var autoplayNext: Boolean
         get() = read().autoplayNext

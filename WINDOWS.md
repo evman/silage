@@ -110,13 +110,16 @@ PC or Windows account requires signing in again; interface settings still travel
   the inbox (new episodes, fulfilled requests). While Silage is in the
   background, new ones also pop up as Windows notifications; clicking one
   brings Silage forward on the inbox.
-- Opens as a borderless fullscreen window: no title bar, window buttons or taskbar
-  over the app. Escape goes back through pages, then offers **Quit Silage?** when
-  there is no previous page. **Cancel** is focused first; use arrows or Tab to
+- Opens as a normal window, maximized or where you left it, with a dark title bar and
+  the taskbar visible. **F11** (or the player's fullscreen button) fills the monitor with a
+  borderless window and back; it is never exclusive fullscreen, so Alt+Tab and other
+  windows behave normally. *Settings → Interface → Window → Fullscreen* opens Silage
+  borderless every time instead. Fullscreen refits to the monitor it is on when moved
+  there (Win+Shift+Arrow). Escape goes back through pages, then offers **Quit Silage?**
+  when there is no previous page. **Cancel** is focused first; use arrows or Tab to
   choose, Enter/Space to activate, or click either button. Escape cancels the
-  dialog. Alt+Tab still switches apps and Alt+F4 closes Silage. The Silage
-  icon is embedded in both the portable EXE and the app launcher. Moving the
-  window to another monitor (Win+Shift+Arrow) refits it to that screen.
+  dialog. Alt+F4 closes Silage. The Silage icon is embedded in both the portable EXE
+  and the app launcher.
 
 ## Controls
 
@@ -129,6 +132,7 @@ PC or Windows account requires signing in again; interface settings still travel
 | Alt+← | back | — |
 | Space | — | play / pause |
 | F | — | fullscreen |
+| F11 | borderless fullscreen on/off | — |
 | I | — | playback info |
 | Ctrl+F | search | — |
 | Ctrl + / Ctrl − / Ctrl 0 | interface size bigger / smaller / Medium | — |

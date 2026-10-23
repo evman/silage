@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.roundToInt
 import dev.silage.app.connect.ConnectPresenter
 import dev.silage.app.connect.ConnectScreen
@@ -87,9 +88,8 @@ fun main(args: Array<String>) {
         // Without a usable libmpv nothing can play: explain how to install it.
         application {
             Window(onCloseRequest = ::exitApplication, title = BuildInfo.NAME, icon = LogoIcon,
-                undecorated = isWindows, resizable = !isWindows,
-                state = rememberWindowState(placement = initialWindowPlacement())) {
-                BorderlessStartup(window, isWindows)
+                state = rememberWindowState(placement = windowPlacement(borderless = false, saved = null))) {
+                BorderlessStartup(window, isWindows, borderless = false)
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalDensity provides Density(constraints.maxHeight / 1080f, 1f)) {
                         KeyRoot(Route.Connect, onBack = { false }, onQuit = ::exitApplication) { MpvMissingScreen(problem) }
@@ -101,8 +101,10 @@ fun main(args: Array<String>) {
     }
     val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
     val crashLog = CrashLog()
-    // Remember the monitor, but always open Windows as a borderless fullscreen window.
+    // Windows opens as a normal window where it was left; Settings → Interface can open it
+    // as a borderless fullscreen window instead (never AWT's exclusive mode).
     val uiPrefs = koin.get<dev.silage.app.ui.UiPrefs>()
+    val borderless = isWindows && uiPrefs.fullscreenStart
     val savedWindow = if (isWindows) restorableWindow(runCatching { uiPrefs.window }.getOrNull(), screenBounds()) else null
     val windowMemory = WindowMemory(savedWindow) { uiPrefs.window = it }
     // Developer hook for reproducing exits: post a real Esc key press after N seconds.
@@ -126,16 +128,16 @@ fun main(args: Array<String>) {
           },
       ) {
         val windowState = rememberWindowState(
-            placement = initialWindowPlacement(),
+            placement = windowPlacement(borderless, savedWindow),
             position = savedWindow?.let { WindowPosition(it.x.dp, it.y.dp) } ?: WindowPosition.PlatformDefault,
             size = savedWindow?.let { DpSize(it.width.dp, it.height.dp) } ?: DpSize(1280.dp, 800.dp),
         )
         val closeSilage: () -> Unit = { if (isWindows) windowMemory.save(); exitApplication() }
         var splashDone by remember { mutableStateOf(false) }
         Window(onCloseRequest = closeSilage, state = windowState, title = BuildInfo.NAME, icon = LogoIcon,
-            undecorated = isWindows, resizable = !isWindows,
+            undecorated = borderless, resizable = !borderless,
             onPreviewKeyEvent = { e -> !splashDone || (interfaceZoomKey(e)?.let { step -> uiPrefs.interfaceSize = step(uiPrefs.interfaceSize); true } ?: false) }) {
-            BorderlessStartup(window, isWindows)
+            BorderlessStartup(window, isWindows, borderless)
             val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
             val dvAuthorization = remember {
                 if (dev.silage.app.playback.dvHelperRequested(uiPrefs.experimentalDolbyVision)) dev.silage.app.playback.DvHelperAuthorization() else null
@@ -153,7 +155,8 @@ fun main(args: Array<String>) {
                         windowMemory.update(
                             maximized = placement == WindowPlacement.Maximized,
                             floatingBounds = bounds?.takeIf { placement == WindowPlacement.Floating },
-                            playbackFullscreen = playbackFullscreen.active,
+                            // A borderless start fills the monitor: that is not the window's own size.
+                            playbackFullscreen = playbackFullscreen.active || borderless,
                         )
                     }
                 }
@@ -198,7 +201,8 @@ fun main(args: Array<String>) {
                                 }
                             }
                             val route by nav.route.collectAsState()
-                            KeyRoot(route, onBack = nav::back, onQuit = closeSilage, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
+                            KeyRoot(route, onBack = nav::back, onQuit = closeSilage,
+                                onFullscreen = if (isWindows) ({ playbackFullscreen.toggle() }) else null, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
                         }
                         if (!splashDone) SplashScreen(ready = navigator != null) { splashDone = true }
                         if (System.getProperty("os.name").startsWith("Windows")) {
@@ -217,15 +221,20 @@ fun main(args: Array<String>) {
 }
 
 @Composable
-private fun BorderlessStartup(window: java.awt.Frame, isWindows: Boolean) {
+private fun BorderlessStartup(window: java.awt.Frame, isWindows: Boolean, borderless: Boolean) {
     val fullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
-    LaunchedEffect(window, isWindows) {
-        if (isWindows) {
+    LaunchedEffect(window, isWindows, borderless) {
+        if (isWindows && borderless) {
             while (!window.isShowing) delay(20)
             fullscreen.enter()
+        } else if (isWindows) {
+            // A normal window: the dark title bar, once the native window exists.
+            withTimeoutOrNull(2000) { while (!window.isDisplayable) delay(20) }
+            WindowsChrome.useDarkTitleBar(window)
         }
     }
-    // Moving the window to another monitor (Win+Shift+Arrow) refits it to that screen.
+    // Fullscreen (borderless start, or F11 / the player's button) refits to the monitor it is on:
+    // moving it with Win+Shift+Arrow, or a display change, would otherwise leave the old size.
     if (isWindows) DisposableEffect(window) {
         val follow = dev.silage.app.playback.WindowsMonitors.followMonitor(window)
         onDispose { follow.close() }

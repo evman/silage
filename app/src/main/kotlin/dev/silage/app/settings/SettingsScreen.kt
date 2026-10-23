@@ -123,6 +123,15 @@ private fun InterfaceSection(koin: Koin) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             dev.silage.app.ui.InterfaceSize.entries.forEach { s -> Pill(s.label, selected = size == s) { prefs.interfaceSize = s } }
         }
+        if (System.getProperty("os.name").startsWith("Windows")) {
+            Spacer(Modifier.height(40.dp))
+            val fullscreenStart = remember(version) { prefs.fullscreenStart }
+            Heading("Window", "How Silage opens. F11 (or the player's fullscreen button) switches to borderless fullscreen and back at any time. Takes effect the next time you open Silage.")
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Pill("Normal window", selected = !fullscreenStart) { prefs.fullscreenStart = false }
+                Pill("Fullscreen", selected = fullscreenStart) { prefs.fullscreenStart = true }
+            }
+        }
         Spacer(Modifier.height(40.dp))
         Heading("Sidebar", "Choose which libraries appear in the sidebar, and their order.")
         SidebarEditorList(all) { prefs.sidebar = it }

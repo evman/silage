@@ -32,7 +32,7 @@ import androidx.compose.ui.platform.LocalFocusManager
  * swallows every key; from the root, an arrow enters the page.
  */
 @Composable
-fun KeyRoot(route: Route, onBack: () -> Boolean, onSearch: () -> Unit = {}, onQuit: () -> Unit = {}, content: @Composable () -> Unit) {
+fun KeyRoot(route: Route, onBack: () -> Boolean, onSearch: () -> Unit = {}, onQuit: () -> Unit = {}, onFullscreen: (() -> Unit)? = null, content: @Composable () -> Unit) {
     val focus = LocalFocusManager.current
     val self = remember { FocusRequester() }
     var rootFocused by remember { mutableStateOf(false) }
@@ -49,6 +49,8 @@ fun KeyRoot(route: Route, onBack: () -> Boolean, onSearch: () -> Unit = {}, onQu
                     e.isAltPressed && e.key == Key.DirectionLeft -> onBack()
                     // Ctrl+F: search, as in Windows apps.
                     e.isCtrlPressed && e.key == Key.F -> { onSearch(); true }
+                    // F11: borderless fullscreen on or off (Windows).
+                    e.key == Key.F11 && onFullscreen != null -> { onFullscreen(); true }
                     else -> false
                 }
             }
