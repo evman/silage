@@ -32,6 +32,18 @@ private data class UiPrefsFile(
     val preferredVersion: String = "best",
     /** How big the interface is drawn: see [InterfaceSize]. */
     val interfaceSize: String = InterfaceSize.Default.wire,
+    /** Jump past recap markers ("Previously on…") without pressing Skip Recap. */
+    val autoSkipRecap: Boolean = false,
+    /** At the credits marker, go to the next episode (or past the credits) by itself. */
+    val autoSkipCredits: Boolean = false,
+    /** mpv's audio device name ("wasapi/{…}"); null plays through the Windows default. */
+    val audioDevice: String? = null,
+    /** Two-letter language for the audio track; null keeps the server's / file's choice. */
+    val audioLanguage: String? = null,
+    /** Subtitles at the start: null (the server's choice for the profile), off, on, forced. */
+    val subtitleMode: String? = null,
+    /** Two-letter language for subtitles when [subtitleMode] picks them; null follows the audio language. */
+    val subtitleLanguage: String? = null,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -78,6 +90,23 @@ class UiPrefs(private val path: Path) {
     var autoSkipIntro: Boolean
         get() = read().autoSkipIntro
         set(value) = write { it.copy(autoSkipIntro = value) }
+
+    var autoSkipRecap: Boolean
+        get() = read().autoSkipRecap
+        set(value) = write { it.copy(autoSkipRecap = value) }
+
+    var autoSkipCredits: Boolean
+        get() = read().autoSkipCredits
+        set(value) = write { it.copy(autoSkipCredits = value) }
+
+    var audioDevice: String?
+        get() = read().audioDevice
+        set(value) = write { it.copy(audioDevice = value) }
+
+    /** Default audio and subtitle choices for new videos (Settings → Playback / Subtitles). */
+    var languages: dev.silage.app.playback.LanguagePrefs
+        get() = read().let { dev.silage.app.playback.LanguagePrefs(it.audioLanguage, it.subtitleMode, it.subtitleLanguage) }
+        set(value) = write { it.copy(audioLanguage = value.audio, subtitleMode = value.subtitleMode, subtitleLanguage = value.subtitle) }
 
     var calendarFilter: String?
         get() = read().calendarFilter

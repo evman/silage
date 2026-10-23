@@ -59,6 +59,12 @@ compose.desktop {
         (findProperty("packagingJavaHome") as String?)?.let { javaHome = it }
         // WmClass sets the X11 window class to "silage" (matches the desktop entry).
         if (!System.getProperty("os.name").startsWith("Windows")) jvmArgs += listOf("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
+        // A bounded heap that is handed back to Windows when idle: without a limit the JVM
+        // grows to a quarter of the PC's memory and keeps it.
+        if (System.getProperty("os.name").startsWith("Windows")) jvmArgs += listOf(
+            "-Xmx1g", "-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=15000",
+            "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=30", "-XX:+UseStringDeduplication",
+        )
         nativeDistributions {
             targetFormats(if (System.getProperty("os.name").startsWith("Windows")) TargetFormat.Exe else TargetFormat.AppImage)
             // From suggestRuntimeModules, plus EC crypto (HTTPS servers) and naming.

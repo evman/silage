@@ -63,6 +63,27 @@ class HudModelTest {
         assertEquals("English SDH · External", t.subtitles[0].label)
     }
 
+    @Test fun anExternalCopyOfAnEmbeddedSubtitleIsHidden() {
+        val t = Tracks.parse("""
+            [{"id":1,"type":"sub","lang":"eng","codec":"subrip"},
+             {"id":2,"type":"sub","lang":"eng","title":"SDH","codec":"subrip"},
+             {"id":3,"type":"sub","lang":"en","title":"English","codec":"webvtt","external":true},
+             {"id":4,"type":"sub","lang":"en","title":"English SDH","codec":"webvtt","external":true},
+             {"id":5,"type":"sub","lang":"fr","title":"French","codec":"webvtt","external":true}]
+        """.trimIndent())
+        assertEquals(listOf(1, 2, 5), t.subtitles.map { it.id })
+    }
+
+    @Test fun repeatedExternalSubtitlesShowOnceAndThePlayingOneStays() {
+        val t = Tracks.parse("""
+            [{"id":1,"type":"sub","lang":"en","codec":"subrip"},
+             {"id":2,"type":"sub","lang":"en","title":"English","codec":"webvtt","external":true,"selected":true},
+             {"id":3,"type":"sub","lang":"de","title":"German","codec":"webvtt","external":true},
+             {"id":4,"type":"sub","lang":"de","title":"German","codec":"webvtt","external":true}]
+        """.trimIndent())
+        assertEquals(listOf(1, 2, 3), t.subtitles.map { it.id })
+    }
+
     @Test fun badTrackListIsEmpty() {
         val t = Tracks.parse("{oops")
         assertTrue(t.audio.isEmpty() && t.subtitles.isEmpty())
@@ -90,6 +111,25 @@ class HudModelTest {
     @Test fun skipCreditsShowsDuringTheCredits() {
         assertEquals(SkipPrompt("Skip Credits", 3000.0, SkipPrompt.Kind.Credits), SkipPrompt.at(2950.0, intro, credits))
         assertEquals(null, SkipPrompt.at(500.0, null, null))
+    }
+
+    @Test fun recapsGetTheirOwnSkipButton() {
+        val recap = org.siloserver.silo.model.catalog.TimeRange(0.0, 28.0)
+        assertEquals(SkipPrompt("Skip Recap", 28.0, SkipPrompt.Kind.Recap), SkipPrompt.at(5.0, intro, credits, recap = recap))
+        assertEquals(SkipPrompt.Kind.Intro, SkipPrompt.at(31.0, intro, credits, recap = recap)?.kind)
+    }
+
+    @Test fun autoSkipFollowsTheSettingsOncePerMarker() {
+        val all = AutoSkip(intro = true, recap = true, credits = true)
+        val introPrompt = SkipPrompt("Skip Intro", 95.0, SkipPrompt.Kind.Intro)
+        val nextPrompt = SkipPrompt("Next Episode", 3000.0, SkipPrompt.Kind.NextEpisode)
+        assertEquals(SkipPrompt.Kind.Intro, autoSkipAction(introPrompt, all, emptySet()))
+        assertEquals(null, autoSkipAction(introPrompt, all, setOf(SkipPrompt.Kind.Intro)), "seeking back into the intro lets it play")
+        assertEquals(null, autoSkipAction(introPrompt, AutoSkip(recap = true, credits = true), emptySet()))
+        assertEquals(SkipPrompt.Kind.NextEpisode, autoSkipAction(nextPrompt, all, emptySet()))
+        assertEquals(null, autoSkipAction(nextPrompt, all, setOf(SkipPrompt.Kind.Credits)))
+        assertEquals(null, autoSkipAction(nextPrompt, AutoSkip(intro = true), emptySet()))
+        assertEquals(null, autoSkipAction(null, all, emptySet()))
     }
 
     @Test fun creditsOfAnEpisodeWithANextOneOfferTheNextEpisode() {

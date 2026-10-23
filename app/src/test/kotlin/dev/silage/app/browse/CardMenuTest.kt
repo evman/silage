@@ -5,9 +5,27 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class CardMenuTest {
-    private fun card(kind: String?, watched: Boolean = false, progress: Float? = null, row: String? = null, anchor: String? = null, series: String? = null) =
-        CardModel("id", "T", null, null, null, false, progress, watched, null, null, null, null, "", "id", kind = kind,
-            homeRow = row, progressUpdatedAt = anchor, seriesId = series)
+    private fun card(kind: String?, watched: Boolean = false, progress: Float? = null, row: String? = null, anchor: String? = null, series: String? = null,
+        inWatchlist: Boolean = false, id: String = "id") =
+        CardModel(id, "T", null, null, null, false, progress, watched, null, null, null, null, "", id, kind = kind,
+            homeRow = row, progressUpdatedAt = anchor, seriesId = series, inWatchlist = inWatchlist)
+
+    @kotlin.test.BeforeTest fun forgetMenuChanges() = WatchlistMemory.clear()
+
+    @Test fun titlesAlreadyOnTheWatchlistOfferToRemoveThemAnywhere() {
+        assertEquals(true, CardMenuEntry.RemoveFromWatchlist in cardMenuEntries(card("movie", inWatchlist = true), onWatchlistPage = false))
+        assertEquals(true, CardMenuEntry.RemoveFromWatchlist in cardMenuEntries(card("series", row = "watchlist"), onWatchlistPage = false))
+        // A change made from a menu shows in the next menu before the page reloads.
+        WatchlistMemory.set("m2", true)
+        assertEquals(true, CardMenuEntry.RemoveFromWatchlist in cardMenuEntries(card("movie", id = "m2"), onWatchlistPage = false))
+        WatchlistMemory.set("m2", false)
+        assertEquals(true, CardMenuEntry.AddToWatchlist in cardMenuEntries(card("movie", id = "m2", inWatchlist = true), onWatchlistPage = false))
+    }
+
+    @Test fun continueWatchingCanBeRemovedWithoutTheServersAnchor() {
+        val started = card("episode", progress = 0.3f, row = "continue_watching", anchor = null)
+        assertEquals(true, CardMenuEntry.RemoveFromRow in cardMenuEntries(started, false, canDismiss = true))
+    }
 
     @Test fun moviesPlayOpenWatchlistAndWatched() {
         assertEquals(listOf(CardMenuEntry.Play, CardMenuEntry.Open, CardMenuEntry.AddToWatchlist, CardMenuEntry.MarkWatched),

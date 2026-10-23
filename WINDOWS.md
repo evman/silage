@@ -73,15 +73,27 @@ PC or Windows account requires signing in again; interface settings still travel
 - Connect, sign in, profiles (with PINs; with a single profile Silage skips
   "Who's watching?" and only asks for its PIN if it has one), Home,
   libraries, search and title pages, with resume and choice of version.
+- Library pages sort by everything the Silo web app offers (date added, title,
+  release date, year, duration, ratings, resolution, bitrate, progress and
+  more, ascending or descending). **Filters** narrows them by watch status,
+  genre, decade, duration, resolution, HDR / Dolby Vision, content rating,
+  audio, subtitle and original language, studio, network and country.
 - Collections: the sidebar's Collections page lists every collection you
   can see, with a pill per collection group; libraries also have their own
   Collections tab.
 - Playback inside the Silage window (Direct3D 11, hardware decoding), with a
   player bar for audio, subtitles, speed, chapters, playback info and fullscreen.
-- Skip Intro / Skip Credits, Next Episode during the credits, an "Up next"
-  screen with an autoplay countdown, and optional automatic intro skipping.
+- Skip Intro / Skip Recap / Skip Credits, Next Episode during the credits, an
+  "Up next" screen with an autoplay countdown. Settings → Playback can skip
+  intros, recaps and credits automatically, each on its own switch.
+- Settings → Playback also chooses the audio language new videos start with
+  and the sound output (speakers, headphones, a TV over HDMI). Settings →
+  Subtitles chooses whether subtitles start off, on or forced-only, and in
+  which language. Unset, both follow your Silo profile.
 - Video settings during playback: Fit/Fill, aspect ratio and zoom.
-- Watchlist, favorites and watched / unwatched (titles and episodes).
+- Watchlist, favorites and watched / unwatched (titles and episodes). Right-click
+  a poster to play, resume or start over, add to or remove from the watchlist,
+  mark watched, reset progress, or remove it from Continue Watching / Next Up.
 - Cast pages, For You recommendations, the Calendar and Shuffle (when the
   server offers them).
 - Requests (when the server has them turned on for your profile): Search
@@ -103,7 +115,8 @@ PC or Windows account requires signing in again; interface settings still travel
   there is no previous page. **Cancel** is focused first; use arrows or Tab to
   choose, Enter/Space to activate, or click either button. Escape cancels the
   dialog. Alt+Tab still switches apps and Alt+F4 closes Silage. The Silage
-  icon is embedded in both the portable EXE and the app launcher.
+  icon is embedded in both the portable EXE and the app launcher. Moving the
+  window to another monitor (Win+Shift+Arrow) refits it to that screen.
 
 ## Controls
 

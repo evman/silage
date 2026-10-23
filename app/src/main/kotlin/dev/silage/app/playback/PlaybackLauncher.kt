@@ -28,6 +28,7 @@ data class PlaybackMeta(
     val seriesTitle: String? = null,
     val seasonNumber: Int? = null,
     val episodeNumber: Int? = null,
+    val recap: TimeRange? = null,
 ) {
     companion object {
         fun of(item: WatchDetail) = PlaybackMeta(
@@ -46,6 +47,7 @@ data class PlaybackMeta(
             seriesTitle = item.seriesTitle,
             seasonNumber = item.seasonNumber,
             episodeNumber = item.episodeNumber,
+            recap = item.recap,
         )
     }
 }
@@ -100,6 +102,8 @@ sealed interface LaunchResult {
          * bar would shrink and jump as it grows.
          */
         val sourceDurationSeconds: Double? = null,
+        /** Settings say no subtitles: also switch off any the file itself marks as default. */
+        val subtitlesOff: Boolean = false,
     ) : LaunchResult {
         fun sourcePositionSeconds(playerSeconds: Double): Double = playerSeconds + timelineOffsetSeconds
     }
@@ -119,6 +123,8 @@ class PlaybackLauncher(
     private val preferLastPlayed: () -> Boolean = { false },
     /** The signed-in request headers (Authorization, profile) for Silo's own media URLs. */
     private val mediaAuth: suspend () -> Map<String, String> = { emptyMap() },
+    /** Default audio and subtitle languages on this PC; empty leaves both to the server. */
+    private val languages: () -> LanguagePrefs = { LanguagePrefs() },
 ) {
     /**
      * [fileId]: the copy the user chose on the detail page. Without one (Home,
@@ -136,13 +142,17 @@ class PlaybackLauncher(
         val chosen = item.versions.firstOrNull { it.fileId == fileId } ?: defaultCopy(item.versions, item.userData?.lastFileId, preferLastPlayed())
         val playFileId = chosen?.fileId ?: return LaunchResult.Failed("This item has no playable file.")
         val profile = profileId() ?: return LaunchResult.Failed("No profile selected.")
+        val prefs = languages()
+        // An audio switch in the player names its track; otherwise the preferred language's.
+        val preferredAudio = if (audioTrackIndex == null) preferredAudioOrdinal(chosen.audioTracks.orEmpty(), prefs.audio) else null
+        val requestedAudio = audioTrackIndex ?: preferredAudio
 
         val request = PlaybackStartRequestV3(
             clientFeatures = playbackClientFeaturesV3(context),
             fileId = playFileId,
             profileId = profile,
             playbackAttemptId = newAttemptId(),
-            audioTrackIndex = audioTrackIndex,
+            audioTrackIndex = requestedAudio,
             startPosition = positionSeconds,
             subtitleFidelityPreference = SubtitleFidelityPreference.PRESERVE,
             capabilities = capabilities,
@@ -170,7 +180,19 @@ class PlaybackLauncher(
             val key = org.siloserver.silo.model.subtitles.SubtitleSyncState.storedKey(id)
             plan.subtitle.inventory.firstOrNull { it.syncKey == key && it.delivery == SUBTITLE_DELIVERY_SIDECAR && it.url != null }
         }
-        val selectedId = stored?.trackId ?: plan.selectedTracks.subtitle?.id?.takeIf { plan.subtitle.mode != PlaybackSubtitleModeV3.OFF }
+        val selectedAudio = (if (direct && preferredAudio != null) preferredAudio else null)
+            ?: plan.selectedTracks.audio?.index ?: requestedAudio ?: chosen.effectiveAudioTrackIndex
+        // Tracks mpv can show: sidecar files, and in direct play the file's own (embedded) ones.
+        val usable = plan.subtitle.inventory.filter {
+            (it.delivery == SUBTITLE_DELIVERY_SIDECAR && it.url != null) || (direct && it.source == "embedded")
+        }
+        val pick = if (stored != null) SubtitlePick.Server
+            else pickSubtitle(usable, prefs, chosen.audioTracks?.getOrNull(selectedAudio ?: -1)?.language)
+        val selectedId = when (pick) {
+            SubtitlePick.Server -> stored?.trackId ?: plan.selectedTracks.subtitle?.id?.takeIf { plan.subtitle.mode != PlaybackSubtitleModeV3.OFF }
+            SubtitlePick.Off -> null
+            is SubtitlePick.Track -> pick.trackId
+        }
         val subtitles = plan.subtitle.inventory
             .filter { it.delivery == SUBTITLE_DELIVERY_SIDECAR && it.url != null && !(direct && it.source == "embedded") }
             .map { s ->
@@ -179,8 +201,10 @@ class PlaybackLauncher(
             }
         val embeddedStream = if (direct) {
             plan.subtitle.inventory.firstOrNull { it.trackId == selectedId && it.source == "embedded" }?.let { sel ->
-                plan.subtitle.embedded?.streamIndex
-                    ?: sel.url?.substringAfter("embedded_stream_index=", "")?.takeWhile { it.isDigit() }?.toIntOrNull()
+                val fromUrl = sel.url?.substringAfter("embedded_stream_index=", "")?.takeWhile { it.isDigit() }?.toIntOrNull()
+                // The plan's embedded stream is its own choice; ours is read from the track's link.
+                if (pick is SubtitlePick.Track) fromUrl ?: plan.subtitle.embedded?.streamIndex
+                else plan.subtitle.embedded?.streamIndex ?: fromUrl
             }
         } else {
             null
@@ -194,7 +218,8 @@ class PlaybackLauncher(
             meta = PlaybackMeta.of(item),
             subtitles = subtitles, embeddedSubtitleStream = embeddedStream,
             sourceAudio = chosen.audioTracks.orEmpty(), direct = direct,
-            selectedAudioOrdinal = plan.selectedTracks.audio?.index ?: audioTrackIndex ?: chosen.effectiveAudioTrackIndex,
+            selectedAudioOrdinal = selectedAudio,
+            subtitlesOff = pick == SubtitlePick.Off,
             fileId = playFileId, timelineOffsetSeconds = plan.timeline.timelineOffsetSeconds,
             needsMediaAuth = needsMediaAuth,
             sourceDurationSeconds = plan.source.durationSeconds?.takeIf { it > 0 },

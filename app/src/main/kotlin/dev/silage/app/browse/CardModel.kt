@@ -27,6 +27,8 @@ data class CardModel(
     /** The anchors a Home dismissal needs: when the progress was saved, and the episode's series. */
     val progressUpdatedAt: String? = null,
     val seriesId: String? = null,
+    /** Whether the title is on the profile's watchlist (the server's user state), for the right-click menu. */
+    val inWatchlist: Boolean = false,
 )
 
 fun isProgressRow(sectionType: String): Boolean =
@@ -45,7 +47,7 @@ private fun card(
     id: String, type: String, title: String, seriesTitle: String?, season: Int?, episode: Int?, year: Int,
     runtime: Int?, rating: String?, overview: String?, position: Double?, duration: Double?,
     posterUrl: String?, posterThumbhash: String?, backdropUrl: String?, backdropThumbhash: String?, logoUrl: String?,
-    played: Boolean, landscape: Boolean,
+    played: Boolean, landscape: Boolean, inWatchlist: Boolean = false,
 ): CardModel {
     val isEpisode = type == "episode" && seriesTitle != null
     val image = if (landscape) backdropUrl ?: posterUrl else posterUrl
@@ -66,17 +68,18 @@ private fun card(
         metaLine = listOfNotNull(year.takeIf { it > 0 }?.toString(), formatRuntime(runtime), rating).joinToString(" · "),
         openTarget = id,
         kind = type,
+        inWatchlist = inWatchlist,
     )
 }
 
 fun SectionItem.toCard(landscape: Boolean): CardModel = card(
     contentId, type, title, seriesTitle, seasonNumber, episodeNumber, year, runtime, contentRating, overview,
     positionSeconds, durationSeconds, posterUrl, posterThumbhash, backdropUrl, backdropThumbhash, logoUrl,
-    userState?.played == true, landscape,
+    userState?.played == true, landscape, inWatchlist = userState?.inWatchlist == true,
 ).copy(progressUpdatedAt = progressUpdatedAt, seriesId = seriesId)
 
 fun BrowseItem.toCard(): CardModel = card(
     contentId, type, title, seriesTitle, seasonNumber, episodeNumber, year, runtime, contentRating, overview,
     positionSeconds, durationSeconds, posterUrl, posterThumbhash, backdropUrl, backdropThumbhash, logoUrl = null,
-    played = userState?.played == true, landscape = false,
+    played = userState?.played == true, landscape = false, inWatchlist = userState?.inWatchlist == true,
 )

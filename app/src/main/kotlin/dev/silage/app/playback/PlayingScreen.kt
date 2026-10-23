@@ -71,6 +71,10 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
     val mpv = MpvPlayer(playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1") +
         koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle.mpvOptions())
+    // The chosen audio output, if it is still connected; otherwise the Windows default.
+    koin.get<dev.silage.app.ui.UiPrefs>().audioDevice?.let { device ->
+        if (AudioDevices.parse(mpv.getProperty("audio-device-list")).any { it.name == device }) mpv.setProperty("audio-device", device)
+    }
     val dvBackend = System.getenv("SILAGE_EXPERIMENTAL_DV")
     val helperRequested = dvAuthorization != null
     val helper = AtomicReference<ExperimentalDvHelper?>()
@@ -78,7 +82,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val hud = try { PlayerHud(mpv, ready.meta,
         fullscreenWindow = if (output is VideoOutput.Embedded) fullscreen else null,
         videoSession = video,
-        autoSkipIntro = koin.get<dev.silage.app.ui.UiPrefs>().autoSkipIntro,
+        autoSkip = koin.get<dev.silage.app.ui.UiPrefs>().let { dev.silage.app.playback.hud.AutoSkip(it.autoSkipIntro, it.autoSkipRecap, it.autoSkipCredits) },
         infoRows = listOfNotNull(ready.versionLabel?.let { "Version" to it }),
         liveInfoRows = {
             if (helperRequested) listOf("DV helper" to (helper.get()?.description() ?: "Requires native HDR on a known monitor"))
@@ -119,6 +123,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         ready.embeddedSubtitleStream?.let { stream ->
             SubtitleCommands.sidForStream(mpv.getProperty("track-list") ?: "[]", stream)?.let { mpv.command("set", "sid", it.toString()) }
         }
+        if (ready.subtitlesOff) mpv.command("set", "sid", "no")
     }
     val canvas = surface?.canvas
     val detach = if (output is VideoOutput.Embedded && canvas != null) attachEmbeddedInput(canvas, hud) else ({})
@@ -161,6 +166,8 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
     val dvAuthorization = LocalDvHelperAuthorization.current
     val video = remember(contentId) { VideoSession() }
     DisposableEffect(fullscreen, contentId) { onDispose { fullscreen?.leave() } }
+    // Browsing artwork isn't on screen while a video plays: give most of its memory back.
+    LaunchedEffect(Unit) { runCatching { dev.silage.app.ui.Images.loader.memoryCache?.trimToSize(48L shl 20) } }
     var error by remember { mutableStateOf<String?>(null) }
     // Shown after an episode plays to its end, when another follows.
     var upNext by remember { mutableStateOf<Pair<EpisodeListItem, String?>?>(null) }
@@ -184,6 +191,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             serverUrl = { koin.get<TokenManager>().getServerUrl() },
             preferLastPlayed = { koin.get<dev.silage.app.ui.UiPrefs>().preferredVersion == "last" },
             mediaAuth = { mediaAuthHeaders(koin) },
+            languages = { koin.get<dev.silage.app.ui.UiPrefs>().languages },
         )
         // The canvas gets its native window on the next frame; without one in
         // time, mpv falls back to its own fullscreen window.

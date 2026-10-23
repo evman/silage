@@ -23,13 +23,6 @@ import org.siloserver.silo.network.map
 import org.siloserver.silo.repository.CatalogRepository
 import org.siloserver.silo.repository.SectionRepository
 
-enum class LibrarySort(val key: String, val order: String, val label: String) {
-    Added("added_at", "desc", "Recently added"),
-    Title("title", "asc", "Title"),
-    Release("release_date", "desc", "Release date"),
-    Rating("rating_imdb", "desc", "Rating"),
-}
-
 suspend fun ApiResult<CatalogResponse>.toPage(): ApiResult<Page<CatalogContinuationV2>> =
     map { r -> Page(r.items.map { it.toCard() }, r.hasMore, r.continuation) }
 
@@ -40,16 +33,27 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
     val shuffle = dev.silage.app.playback.rememberShuffleStart(koin, org.siloserver.silo.model.shuffle.ShuffleScopeKind.LIBRARY, libraryId.toString(), onShuffle)
     // Saved with this visit's back-stack entry, so Back from a detail page returns here intact.
     var tab by rememberSaveable { mutableStateOf(0) }
-    var sort by rememberSaveable { mutableStateOf(LibrarySort.Added) }
+    // Sort and filters, kept with this visit so Back from a title returns to the same results.
+    val filtersFlow = rememberEntry("library:$libraryId:filters") { kotlinx.coroutines.flow.MutableStateFlow(LibraryFilters()) }
+    val filters by filtersFlow.collectAsState()
+    var panelOpen by rememberSaveable { mutableStateOf(false) }
+    var vocabulary by remember(libraryId) { mutableStateOf<org.siloserver.silo.model.catalog.CatalogFiltersResponse?>(null) }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
     var focused by remember(libraryId) { mutableStateOf<CardModel?>(null) }
     val scope = rememberCoroutineScope()
     val catalog = remember { koin.get<CatalogRepository>() }
     val sections = remember { koin.get<SectionRepository>() }
 
-    val pager = rememberEntry("library:$libraryId:$tab:$sort") {
+    LaunchedEffect(libraryId) {
+        (catalog.getFilters(libraryId = libraryId, includeTechnical = true) as? ApiResult.Success)?.let { vocabulary = it.data }
+    }
+    val pager = rememberEntry("library:$libraryId:$tab:${if (tab == 0) filters.key else ""}") {
         if (tab == 0) {
-            LibraryPager<CatalogContinuationV2> { c -> catalog.browse(libraryId = libraryId, sort = sort.key, order = sort.order, continuation = c, limit = 60).toPage() }
+            val f = filters
+            LibraryPager<CatalogContinuationV2> { c ->
+                catalog.browse(libraryId = libraryId, sort = f.state.sort, order = f.state.order, continuation = c, limit = 60,
+                    queryGroups = f.groups(), match = f.match.takeIf { f.activeCount > 0 }).toPage()
+            }
         } else {
             LibraryPager<Unit> {
                 sections.getLibraryCollections(libraryId).map { list ->
@@ -69,13 +73,13 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
     Box(Modifier.fillMaxSize()) {
         PageBackdrop(focused)
         // Each tab/sort keeps its own scroll position.
-        key(tab, sort) { PosterGrid(
+        key(tab, filters.state.sort) { PosterGrid(
             state,
             onLoadMore = { scope.launch { pager.loadMore() } },
             onRetry = { scope.launch { pager.retry() } },
             onOpen = { if (tab == 0) onOpen(it) else onOpenCollection(it.id, it.title) },
             onFocus = { focused = it; lastFocused = it.id },
-            emptyText = if (tab == 0) "Nothing here yet" else "No collections in this library",
+            emptyText = if (tab == 1) "No collections in this library" else if (filters.activeCount > 0) "Nothing matches these filters" else "Nothing here yet",
             firstFocus = first,
             restoreId = lastFocused,
             header = {
@@ -87,10 +91,12 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
                             Pill("Collections", selected = tab == 1) { tab = 1 }
                             if (tab == 0) {
                                 Spacer(Modifier.width(18.dp))
-                                Pill("Sort: ${sort.label}") { sort = LibrarySort.entries[(sort.ordinal + 1) % LibrarySort.entries.size] }
+                                SortControls(filters) { filtersFlow.value = it }
+                                Pill(if (filters.activeCount > 0) "Filters · ${filters.activeCount}" else "Filters", selected = panelOpen || filters.activeCount > 0) { panelOpen = !panelOpen }
                                 shuffle?.let { start -> Pill("Shuffle", onClick = start) }
                             }
                         }
+                        if (tab == 0 && panelOpen) FilterPanel(filters, vocabulary) { filtersFlow.value = it }
                     }
                 }
             },

@@ -60,11 +60,42 @@ data class Tracks(val audio: List<Track>, val subtitles: List<Track>) {
         /** Parses mpv's `track-list` property (JSON). */
         fun parse(json: String): Tracks = runCatching {
             val all = Json.parseToJsonElement(json).jsonArray.map { it.jsonObject }
-            fun of(type: String) = all.filter { it.str("type") == type }.map { t ->
-                Track(t.int("id") ?: 0, label(t, type), t.bool("selected"))
-            }
+            fun of(type: String) = all.filter { it.str("type") == type }
+                .let { if (type == "sub") withoutDuplicateSubtitles(it) else it }
+                .map { t -> Track(t.int("id") ?: 0, label(t, type), t.bool("selected")) }
             Tracks(of("audio"), of("sub"))
         }.getOrDefault(Empty)
+
+        /**
+         * The server also offers each subtitle it can read as a file to load, so the same
+         * English track showed up twice: once from the video and once "External". An
+         * external track is dropped when the video already has one in the same language
+         * with the same forced / SDH flags, unless it is the one playing.
+         */
+        internal fun withoutDuplicateSubtitles(subs: List<JsonObject>): List<JsonObject> {
+            fun key(t: JsonObject): Triple<String, Boolean, Boolean>? {
+                val lang = t.str("lang")?.let(::normalLanguage) ?: return null
+                val title = t.str("title").orEmpty()
+                val sdh = t.bool("hearing-impaired") || Regex("""\b(SDH|CC|HI)\b|hearing""", RegexOption.IGNORE_CASE).containsMatchIn(title)
+                val forced = t.bool("forced") || title.contains("forced", ignoreCase = true)
+                return Triple(lang, forced, sdh)
+            }
+            val internal = subs.filter { !it.bool("external") }.mapNotNull(::key).toSet()
+            val seenExternal = mutableSetOf<Triple<String, Boolean, Boolean>>()
+            return subs.filter { t ->
+                if (!t.bool("external") || t.bool("selected")) return@filter true
+                val k = key(t) ?: return@filter true
+                k !in internal && seenExternal.add(k)
+            }
+        }
+
+        /** "en", "eng" and "en-US" all as "en". */
+        private fun normalLanguage(tag: String): String {
+            val base = tag.trim().substringBefore('-').substringBefore('_').lowercase()
+            if (base.length != 3) return base
+            return runCatching { Locale.getAvailableLocales().firstOrNull { l -> runCatching { l.isO3Language == base }.getOrDefault(false) }?.language }.getOrNull()
+                ?.takeIf { it.isNotEmpty() } ?: base
+        }
 
         private fun label(t: JsonObject, type: String): String {
             val language = t.str("lang")?.let { Locale.forLanguageTag(it).getDisplayLanguage(Locale.ENGLISH).ifBlank { it } }
@@ -238,7 +269,7 @@ data class HudNav(
  * During the credits of an episode with a next one it becomes "Next Episode".
  */
 data class SkipPrompt(val label: String, val target: Double, val kind: Kind = Kind.Intro) {
-    enum class Kind { Intro, Credits, NextEpisode }
+    enum class Kind { Intro, Recap, Credits, NextEpisode }
 
     companion object {
         fun at(
@@ -246,9 +277,11 @@ data class SkipPrompt(val label: String, val target: Double, val kind: Kind = Ki
             intro: org.siloserver.silo.model.catalog.TimeRange?,
             credits: org.siloserver.silo.model.catalog.TimeRange?,
             hasNextEpisode: Boolean = false,
+            recap: org.siloserver.silo.model.catalog.TimeRange? = null,
         ): SkipPrompt? {
             fun inside(r: org.siloserver.silo.model.catalog.TimeRange?) = r != null && position >= r.start && position < r.end - 1.0
             return when {
+                inside(recap) -> SkipPrompt("Skip Recap", recap!!.end, Kind.Recap)
                 inside(intro) -> SkipPrompt("Skip Intro", intro!!.end, Kind.Intro)
                 inside(credits) && hasNextEpisode -> SkipPrompt("Next Episode", credits!!.end, Kind.NextEpisode)
                 inside(credits) -> SkipPrompt("Skip Credits", credits!!.end, Kind.Credits)
@@ -256,6 +289,24 @@ data class SkipPrompt(val label: String, val target: Double, val kind: Kind = Ki
             }
         }
     }
+}
+
+/** Which markers the player jumps past by itself (Settings → Playback). */
+data class AutoSkip(val intro: Boolean = false, val recap: Boolean = false, val credits: Boolean = false)
+
+/**
+ * What to do by itself at [prompt] under [auto], given the kinds already handled this
+ * playback (each marker is skipped once, so seeking back into it lets you watch it).
+ */
+fun autoSkipAction(prompt: SkipPrompt?, auto: AutoSkip, done: Set<SkipPrompt.Kind>): SkipPrompt.Kind? {
+    val kind = prompt?.kind ?: return null
+    val wanted = when (kind) {
+        SkipPrompt.Kind.Intro -> auto.intro
+        SkipPrompt.Kind.Recap -> auto.recap
+        SkipPrompt.Kind.Credits, SkipPrompt.Kind.NextEpisode -> auto.credits
+    }
+    val family = if (kind == SkipPrompt.Kind.NextEpisode) SkipPrompt.Kind.Credits else kind
+    return if (wanted && family !in done) kind else null
 }
 
 /** The Playback Info panel's rows, from mpv properties. */

@@ -55,8 +55,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val selectSourceAudio: ((Int) -> Unit)? = null,
     private val fullscreenWindow: PlaybackFullscreen? = null,
     private val videoSession: VideoSession = VideoSession(),
-    /** Jump past the intro marker by itself, once per playback. */
-    private val autoSkipIntro: Boolean = false,
+    /** Markers to jump past by itself, each once per playback. */
+    private val autoSkip: AutoSkip = AutoSkip(),
     /** Whether a next episode is known yet; while it is, the credits button reads "Next Episode". */
     private val hasNextEpisode: () -> Boolean = { false },
     /** Ends this episode and moves on to the next. */
@@ -357,7 +357,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private var overlayShown = false
     private var lastInfoAt = 0L
     private var chaptersLoaded = false
-    private var introAutoSkipped = false
+    private val autoSkipped = mutableSetOf<SkipPrompt.Kind>()
 
     /** The primary button is held (a press reached the scene and no release yet): moves then drag. */
     private var primaryDown = false
@@ -428,10 +428,10 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             nav = nav.copy(hasChapters = chapters.isNotEmpty())
         }
         val skip = SkipPrompt.at(s.positionSeconds, ui.value.meta.intro, ui.value.meta.credits,
-            hasNextEpisode = onNextEpisode != null && hasNextEpisode())
-        if (autoSkipIntro && !introAutoSkipped && skip?.kind == SkipPrompt.Kind.Intro) {
-            introAutoSkipped = true
-            actions.seekTo(skip.target)
+            hasNextEpisode = onNextEpisode != null && hasNextEpisode(), recap = ui.value.meta.recap)
+        autoSkipAction(skip, autoSkip, autoSkipped)?.let { kind ->
+            autoSkipped += if (kind == SkipPrompt.Kind.NextEpisode) SkipPrompt.Kind.Credits else kind
+            if (kind == SkipPrompt.Kind.NextEpisode) actions.nextEpisode() else actions.seekTo(skip!!.target)
         }
         if (nav.visible && !visibility.visible(now, s.paused, nav.menu != HudMenu.None)) nav = nav.copy(visible = false, focus = HudFocus.PlayPause)
         nav = nav.copy(hasSkip = skip != null, focus = if (skip == null && nav.focus == HudFocus.Skip) HudFocus.Seek else nav.focus)
@@ -486,10 +486,18 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
 
     private fun render(sc: ImageComposeScene, w: Int, h: Int) {
         val bmp = bitmap!!
-        sc.render(System.nanoTime()).readPixels(bmp)
-        val bytes = bmp.readPixels() ?: return
-        native!!.write(0, bytes, 0, bytes.size)
-        mpv.addOverlay(0, Pointer.nativeValue(native), bmp.width, bmp.height, w, h)
+        val target = native!!
+        // Each render returns a new full-frame image. Closing it right away matters: left to
+        // the garbage collector, these native frames piled up to gigabytes during playback.
+        // The pixels are read straight into the overlay buffer, with no per-frame Java copy.
+        val frame = sc.render(System.nanoTime())
+        try {
+            val pixmap = org.jetbrains.skia.Pixmap.make(bmp.imageInfo, Pointer.nativeValue(target), bmp.width * 4)
+            try {
+                if (!frame.readPixels(pixmap, 0, 0, false)) return
+            } finally { pixmap.close() }
+        } finally { frame.close() }
+        mpv.addOverlay(0, Pointer.nativeValue(target), bmp.width, bmp.height, w, h)
         overlayShown = true
     }
 

@@ -49,7 +49,7 @@ import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.repository.AuthRepository
 import org.siloserver.silo.repository.PersonalDataRepository
 
-private enum class Section(val label: String) { Interface("Interface"), Video("Video"), Subtitles("Subtitles"), Account("Account"), About("About") }
+private enum class Section(val label: String) { Interface("Interface"), Playback("Playback"), Video("Video"), Subtitles("Subtitles"), Account("Account"), About("About") }
 
 /** Settings: sections on the left, the chosen section's rows on the right. */
 @Composable
@@ -67,6 +67,7 @@ fun SettingsScreen(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServer: () -
         Box(Modifier.padding(start = 56.dp, top = 112.dp).weight(1f)) {
             when (section) {
                 Section.Interface -> InterfaceSection(koin)
+                Section.Playback -> PlaybackSection(koin)
                 Section.Video -> VideoSection(koin)
                 Section.Subtitles -> SubtitlesSection(koin)
                 Section.Account -> AccountSection(koin, onSwitchProfile, onSwitchServer, onSignedOut)
@@ -159,9 +160,6 @@ private fun VideoSection(koin: Koin) {
     val version by prefs.changes.collectAsState()
     val mode = remember(version) { prefs.hdrMode }
     val experimentalDv = remember(version) { prefs.experimentalDolbyVision }
-    val autoplay = remember(version) { prefs.autoplayNext }
-    val skipIntro = remember(version) { prefs.autoSkipIntro }
-    val preferredVersion = remember(version) { prefs.preferredVersion }
     Column(Modifier.verticalScroll(rememberScrollState())) {
         Heading("HDR", "Auto plays HDR natively when HDR is turned on for the monitor Silage is on.")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -178,6 +176,24 @@ private fun VideoSection(koin: Koin) {
             }
             Spacer(Modifier.height(40.dp))
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlaybackSection(koin: Koin) {
+    val prefs = remember { koin.get<UiPrefs>() }
+    val version by prefs.changes.collectAsState()
+    val autoplay = remember(version) { prefs.autoplayNext }
+    val skipIntro = remember(version) { prefs.autoSkipIntro }
+    val skipRecap = remember(version) { prefs.autoSkipRecap }
+    val skipCredits = remember(version) { prefs.autoSkipCredits }
+    val languages = remember(version) { prefs.languages }
+    val device = remember(version) { prefs.audioDevice }
+    val preferredVersion = remember(version) { prefs.preferredVersion }
+    var devices by remember { mutableStateOf<List<dev.silage.app.playback.AudioDevice>?>(null) }
+    LaunchedEffect(Unit) { devices = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { dev.silage.app.playback.AudioDevices.list() } }
+    Column(Modifier.verticalScroll(rememberScrollState())) {
         Heading("Next episode", "When an episode ends, play the next one after a $UpNextCountdownSeconds-second countdown.")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Pill("Automatically", selected = autoplay) { prefs.autoplayNext = true }
@@ -190,11 +206,43 @@ private fun VideoSection(koin: Koin) {
             Pill("Show a Skip button", selected = !skipIntro) { prefs.autoSkipIntro = false }
         }
         Spacer(Modifier.height(40.dp))
+        Heading("Recaps", "Skip \"Previously on…\" recaps by themselves when the server knows where they are.")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("Skip automatically", selected = skipRecap) { prefs.autoSkipRecap = true }
+            Pill("Show a Skip button", selected = !skipRecap) { prefs.autoSkipRecap = false }
+        }
+        Spacer(Modifier.height(40.dp))
+        Heading("Credits", "When the credits start, go straight to the next episode (or past the credits of a film).")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("Skip automatically", selected = skipCredits) { prefs.autoSkipCredits = true }
+            Pill("Show a button", selected = !skipCredits) { prefs.autoSkipCredits = false }
+        }
+        Spacer(Modifier.height(40.dp))
+        Heading("Audio language", "The audio track new videos start with, when the file has one in that language. The Audio menu in the player still switches.")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("Server default", selected = languages.audio == null) { prefs.languages = languages.copy(audio = null) }
+            dev.silage.app.playback.SettingsLanguages.forEach { code ->
+                Pill(dev.silage.app.playback.languageName(code), selected = languages.audio == code) { prefs.languages = languages.copy(audio = code) }
+            }
+        }
+        Spacer(Modifier.height(40.dp))
+        Heading("Audio output", "Where Silage plays sound. Applies from the next video.")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("System default", selected = device == null) { prefs.audioDevice = null }
+            devices?.forEach { d -> Pill(d.description, selected = device == d.name) { prefs.audioDevice = d.name } }
+            // A chosen device that isn't connected now: shown so it can be changed back.
+            if (device != null && devices != null && devices!!.none { it.name == device }) {
+                Pill("Saved device (not connected)", selected = true) { prefs.audioDevice = null }
+            }
+        }
+        if (devices == null) Text("Looking for sound devices…", color = Silage.Text3, fontSize = 17.sp, modifier = Modifier.padding(top = 10.dp))
+        Spacer(Modifier.height(40.dp))
         Heading("Preferred version", "When a title has several copies (4K and 1080p, say) and you haven't picked one with the version button.")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Pill("Best quality", selected = preferredVersion != "last") { prefs.preferredVersion = "best" }
             Pill("Last played", selected = preferredVersion == "last") { prefs.preferredVersion = "last" }
         }
+        Spacer(Modifier.height(48.dp))
     }
 }
 
@@ -203,8 +251,11 @@ private fun SubtitlesSection(koin: Koin) {
     val prefs = remember { koin.get<UiPrefs>() }
     val version by prefs.changes.collectAsState()
     val style = remember(version) { prefs.subtitleStyle }
+    val languages = remember(version) { prefs.languages }
     Column(Modifier.verticalScroll(rememberScrollState())) {
-        Heading("Subtitles", "How subtitles look on this PC. Changes apply from the next video you play.")
+        DefaultSubtitles(languages) { prefs.languages = it }
+        Spacer(Modifier.height(40.dp))
+        Heading("Appearance", "How subtitles look on this PC. Changes apply from the next video you play.")
         SubtitlePreview(style)
         Spacer(Modifier.height(32.dp))
         Heading("Size")
@@ -229,6 +280,30 @@ private fun SubtitlesSection(koin: Koin) {
         Spacer(Modifier.height(32.dp))
         Pill("Reset to default") { prefs.subtitleStyle = SubtitleStyle() }
         Spacer(Modifier.height(48.dp))
+    }
+}
+
+/** Which subtitles new videos start with, and in what language. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DefaultSubtitles(languages: dev.silage.app.playback.LanguagePrefs, onChange: (dev.silage.app.playback.LanguagePrefs) -> Unit) {
+    val modes = dev.silage.app.playback.SubtitleModes
+    Heading("Default subtitles", "What new videos start with. Server default follows your Silo profile; the Subtitles menu in the player still switches.")
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Pill("Server default", selected = languages.subtitleMode == null) { onChange(languages.copy(subtitleMode = null)) }
+        Pill("Off", selected = languages.subtitleMode == modes.Off) { onChange(languages.copy(subtitleMode = modes.Off)) }
+        Pill("On", selected = languages.subtitleMode == modes.On) { onChange(languages.copy(subtitleMode = modes.On)) }
+        Pill("Forced only", selected = languages.subtitleMode == modes.Forced) { onChange(languages.copy(subtitleMode = modes.Forced)) }
+    }
+    if (languages.subtitleMode == modes.On || languages.subtitleMode == modes.Forced) {
+        Spacer(Modifier.height(32.dp))
+        Heading("Subtitle language")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("Same as audio", selected = languages.subtitle == null) { onChange(languages.copy(subtitle = null)) }
+            dev.silage.app.playback.SettingsLanguages.forEach { code ->
+                Pill(dev.silage.app.playback.languageName(code), selected = languages.subtitle == code) { onChange(languages.copy(subtitle = code)) }
+            }
+        }
     }
 }
 

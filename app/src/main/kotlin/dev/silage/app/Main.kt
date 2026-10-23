@@ -225,6 +225,11 @@ private fun BorderlessStartup(window: java.awt.Frame, isWindows: Boolean) {
             fullscreen.enter()
         }
     }
+    // Moving the window to another monitor (Win+Shift+Arrow) refits it to that screen.
+    if (isWindows) DisposableEffect(window) {
+        val follow = dev.silage.app.playback.WindowsMonitors.followMonitor(window)
+        onDispose { follow.close() }
+    }
 }
 
 private suspend fun startRoute(koin: Koin): Route {

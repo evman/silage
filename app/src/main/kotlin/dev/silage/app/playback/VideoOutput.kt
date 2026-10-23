@@ -28,7 +28,7 @@ sealed interface VideoOutput {
             // mpv expects a 32-bit HWND value, ignoring the high bits.
             // Until Windows HDR detection is implemented, explicitly tone-map to SDR.
             return common + mapOf("gpu-api" to "d3d11", "gpu-context" to "d3d11",
-                "hwdec" to "auto-safe", "target-colorspace-hint" to "no") + when (this) {
+                "hwdec" to "auto-safe", "target-colorspace-hint" to "no") + windowsCache + when (this) {
                 is Embedded -> mapOf("wid" to (wid and 0xffffffffL).toString(),
                     "input-vo-keyboard" to "no", "input-cursor-passthrough" to "yes")
                 is OwnWindow -> mapOf("fullscreen" to "yes", "title" to "Silage")
@@ -48,6 +48,17 @@ sealed interface VideoOutput {
     }
 
     companion object {
+        /**
+         * Windows reads ahead less than Linux: the 1 GiB + 256 MiB demuxer cache was a large
+         * part of Silage using over 2 GB while playing. 384 MiB is still minutes of a TV
+         * episode and about half a minute of a 4K remux, plenty for a home server.
+         */
+        internal val windowsCache = mapOf(
+            "demuxer-max-bytes" to "384MiB",
+            "demuxer-max-back-bytes" to "64MiB",
+            "demuxer-readahead-secs" to "120",
+        )
+
         private val common = mapOf(
             // First, so the explicit scaler settings below refine it.
             "profile" to "high-quality",

@@ -105,7 +105,11 @@ class CatalogApi(client: HttpClient, private val v2: CatalogV2Api = CatalogV2Api
 
 internal fun List<CatalogQueryGroup>.toV2Groups() = map { group ->
     CatalogRuleGroupV2(group.match, group.rules.map { rule ->
-        CatalogRuleV2(rule.field, rule.op, if (rule.values.isNotEmpty()) JsonArray(rule.values.map(::JsonPrimitive)) else JsonPrimitive(rule.value))
+        // Runtime bounds are numbers (minutes) on the wire; the other fields keep their strings.
+        fun primitive(v: String): JsonPrimitive =
+            if (rule.field == "runtime") v.toDoubleOrNull()?.let { n -> if (n % 1.0 == 0.0) JsonPrimitive(n.toLong()) else JsonPrimitive(n) } ?: JsonPrimitive(v)
+            else JsonPrimitive(v)
+        CatalogRuleV2(rule.field, rule.op, if (rule.values.isNotEmpty()) JsonArray(rule.values.map(::primitive)) else primitive(rule.value))
     })
 }
 

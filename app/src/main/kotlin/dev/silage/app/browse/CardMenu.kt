@@ -37,9 +37,21 @@ class CardMenu(
                     // saved position, and unmarking leaves the title unwatched from the start.
                     actions.setWatched(card.id, true) && actions.setWatched(card.id, false)
                 }
-                CardMenuEntry.RemoveFromRow -> { dismiss?.invoke(card); notify(if (isNextUp(card)) "Removed from Next Up" else "Removed from Continue Watching") }
-                CardMenuEntry.AddToWatchlist -> act("Added to your watchlist") { actions.setWatchlist(card.id, true) }
-                CardMenuEntry.RemoveFromWatchlist -> act("Removed from your watchlist") { actions.setWatchlist(card.id, false) }
+                CardMenuEntry.RemoveFromRow -> when {
+                    isNextUp(card) -> { dismiss?.invoke(card); notify("Removed from Next Up") }
+                    card.progressUpdatedAt != null -> { dismiss?.invoke(card); notify("Removed from Continue Watching") }
+                    // No dismissal anchor from this server: clearing the saved position takes
+                    // the title off Continue Watching just the same.
+                    else -> act("Removed from Continue Watching") {
+                        actions.setWatched(card.id, true) && actions.setWatched(card.id, false)
+                    }
+                }
+                CardMenuEntry.AddToWatchlist -> act("Added to your watchlist") {
+                    actions.setWatchlist(card.id, true).also { if (it) WatchlistMemory.set(card.id, true) }
+                }
+                CardMenuEntry.RemoveFromWatchlist -> act("Removed from your watchlist") {
+                    actions.setWatchlist(card.id, false).also { if (it) WatchlistMemory.set(card.id, false) }
+                }
                 CardMenuEntry.MarkWatched -> act("Marked as watched") { actions.setWatched(card.id, true) }
                 CardMenuEntry.MarkUnwatched -> act("Marked as unwatched") { actions.setWatched(card.id, false) }
             }
@@ -53,6 +65,18 @@ class CardMenu(
             if (ok) changed()
         }
     }
+}
+
+/**
+ * Watchlist changes made from right-click menus this session, so the next menu on the
+ * same title offers the opposite action before its page reloads.
+ */
+object WatchlistMemory {
+    private val changed = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    fun set(id: String, on: Boolean) { changed[id] = on }
+    fun isOn(card: CardModel, onWatchlistPage: Boolean): Boolean =
+        changed[card.id] ?: (onWatchlistPage || card.inWatchlist || card.homeRow?.contains("watchlist") == true)
+    internal fun clear() = changed.clear()
 }
 
 private val progressRows = setOf("continue_watching", "in_progress", "next_up", "up_next")
@@ -84,11 +108,13 @@ fun cardMenuEntries(card: CardModel, onWatchlistPage: Boolean, canDismiss: Boole
             if (started) add(CardMenuEntry.PlayFromStart)
         }
         add(CardMenuEntry.Open)
-        if (kind != "episode" && kind in watchable) add(if (onWatchlistPage) CardMenuEntry.RemoveFromWatchlist else CardMenuEntry.AddToWatchlist)
+        if (kind != "episode" && kind in watchable) add(if (WatchlistMemory.isOn(card, onWatchlistPage)) CardMenuEntry.RemoveFromWatchlist else CardMenuEntry.AddToWatchlist)
         if (kind in watchable) add(if (card.watched) CardMenuEntry.MarkUnwatched else CardMenuEntry.MarkWatched)
         if (started && kind in playable) add(CardMenuEntry.ResetProgress)
-        val anchored = if (isNextUp(card)) card.seriesId != null else card.progressUpdatedAt != null
-        if (canDismiss && card.homeRow in progressRows && anchored) add(CardMenuEntry.RemoveFromRow)
+        // Continue Watching works with or without the server's dismissal anchor (see CardMenu.items);
+        // Next Up can only be dismissed for its series.
+        val removable = if (isNextUp(card)) card.seriesId != null else true
+        if (canDismiss && card.homeRow in progressRows && removable) add(CardMenuEntry.RemoveFromRow)
     }
 }
 

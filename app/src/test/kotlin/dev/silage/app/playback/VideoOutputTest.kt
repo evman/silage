@@ -109,4 +109,13 @@ class VideoOutputTest {
             assertEquals("yes", o["deband"])
         }
     }
+
+    /** Windows keeps a smaller read-ahead so playback doesn't hold gigabytes of memory. */
+    @Test fun windowsUsesABoundedDemuxerCache() {
+        val o = VideoOutput.Embedded(1).mpvOptions("Windows 11")
+        assertEquals("384MiB", o["demuxer-max-bytes"])
+        assertEquals("64MiB", o["demuxer-max-back-bytes"])
+        assertEquals("120", o["demuxer-readahead-secs"])
+        assertEquals("yes", o["cache"])
+    }
 }
