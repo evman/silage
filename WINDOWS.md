@@ -124,9 +124,8 @@ PC or Windows account requires signing in again; interface settings still travel
 - Favorites and History: sidebar pages beside Watchlist, as poster grids of the
   titles you marked as favorites and of what you watched lately. Right-click a title in
   History for Remove from history (a show goes with all of its episodes).
-- Title pages have a Trailer button that plays the title's trailer (YouTube or a trailer
-  file on the server), and series pages a *Mark season watched* button after the season
-  buttons. Right-click an episode for *Mark watched up to here* (earlier seasons too).
+- Series pages have a *Mark season watched* button after the season buttons. Right-click
+  an episode for *Mark watched up to here* (earlier seasons too).
 - Search shows your recent searches (ones that led to a title) while the box is empty.
 - Title pages have an Info button: the full details, cast and crew, and the file that
   would play: its size, bitrate, and each video, audio and subtitle track.
@@ -137,8 +136,9 @@ PC or Windows account requires signing in again; interface settings still travel
   when the app is built). A copy downloaded into `userdata\Data\tools` takes precedence, and a
   build without the folder asks once to download them. yt-dlp is its folder build, which
   starts faster than the single-file one. A trailer plays at the best quality YouTube has,
-  at any resolution. Silage looks up a trailer's streams as soon as its title page opens
-  (and when you point at a trailer), so pressing play starts it almost at once.
+  at any resolution. Silage looks a trailer up only when you play it, one at a time, so
+  YouTube doesn't take it for a bot; a trailer played again soon after starts at once. When
+  YouTube does refuse ("confirm you're not a bot"), Silage says so instead of retrying.
 - More like this: movie and show pages end with a row of similar titles from your server
   (the same ones Silo's web client shows), under the cast. Click one to open its page.
 - Back: pages that sit on top of another (a title, a person, a collection) have a

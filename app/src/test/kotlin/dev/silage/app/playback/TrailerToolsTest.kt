@@ -6,7 +6,9 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class TrailerToolsTest {
     private val hash = "a".repeat(63) + "B"
@@ -116,5 +118,11 @@ class TrailerToolsTest {
         assertEquals("Root/1", single.userAgent)
         assertNull(TrailerPrefetch.parse("not json"))
         assertNull(TrailerPrefetch.parse("{}"))
+    }
+
+    @Test fun youtubesBotRefusalIsRecognised() {
+        assertTrue(TrailerPrefetch.isBotRefusal("ERROR: [youtube] abc: Sign in to confirm you\u2019re not a bot. Use --cookies"))
+        assertTrue(TrailerPrefetch.isBotRefusal("ERROR: unable to download video data: HTTP Error 429: Too Many Requests"))
+        assertFalse(TrailerPrefetch.isBotRefusal("ERROR: [youtube] abc: Video unavailable"))
     }
 }

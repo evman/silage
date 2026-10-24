@@ -14,7 +14,6 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.launch
@@ -190,23 +189,6 @@ private fun DetailContent(
     var showingInfo by remember { mutableStateOf(false) }
     // A "Mark season watched" write in flight.
     var markingSeason by remember { mutableStateOf(false) }
-    // The title's main trailer for the Trailer button: a trailer from the rail (YouTube or a local file), else its first YouTube video.
-    val trailerEntry = remember(item) { mainTrailer(trailerRailEntries(item)) }
-    fun playTrailer(entry: org.siloserver.silo.model.catalog.TrailerRailEntry) {
-        when (entry) {
-            is org.siloserver.silo.model.catalog.TrailerRailEntry.Local -> onPlay(entry.extra.contentId, false, entry.extra.fileId)
-            is org.siloserver.silo.model.catalog.TrailerRailEntry.Remote -> {
-                val trailer = dev.silage.app.nav.Trailer(youtubeWatchUrl(entry.video.siteKey), entry.title)
-                if (dev.silage.app.playback.TrailerTools.ready()) onTrailer(trailer) else settingUpTrailer = trailer
-            }
-        }
-    }
-    // Ready the YouTube one's streams now, so pressing Trailer starts it at once.
-    LaunchedEffect(trailerEntry) {
-        (trailerEntry as? org.siloserver.silo.model.catalog.TrailerRailEntry.Remote)?.let {
-            dev.silage.app.playback.TrailerPrefetch.prefetch(youtubeWatchUrl(it.video.siteKey))
-        }
-    }
     val next = if (m.isSeries) nextEpisode(episodes) else null
     val options = remember(item, next) {
         (if (m.isSeries) next?.files?.map { it.toOption() } else item.versions.map { it.toOption() }).orEmpty().sortedBest()
@@ -251,7 +233,6 @@ private fun DetailContent(
                         }
                         if (options.size > 1 && selected != null) ActionButton(Icons.Outlined.Layers, "Versions (${options.size})") { picking = true }
                         shuffle?.let { start -> ActionButton(Icons.Filled.Shuffle, "Shuffle", onClick = start) }
-                        trailerEntry?.let { entry -> ActionButton(Icons.Outlined.Movie, "Trailer") { playTrailer(entry) } }
                         ActionButton(Icons.Outlined.Info, "Info") { showingInfo = true }
                         watchlist.value?.let { on ->
                             ToggleChip(if (on) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, if (on) "On your watchlist" else "Add to watchlist", on) { scope.launch { watchlist.toggle() } }
@@ -318,13 +299,7 @@ private fun DetailContent(
             val trailers = trailerRailEntries(item)
             if (trailers.isNotEmpty()) {
                 item {
-                    // Look up the first YouTube trailer's streams now, so it starts at once when played.
-                    androidx.compose.runtime.LaunchedEffect(trailers) {
-                        trailers.firstNotNullOfOrNull { it as? org.siloserver.silo.model.catalog.TrailerRailEntry.Remote }
-                            ?.let { dev.silage.app.playback.TrailerPrefetch.prefetch(youtubeWatchUrl(it.video.siteKey)) }
-                    }
                     TrailerRail(trailers, onPlayLocal = { id, file -> onPlay(id, false, file) },
-                        onPointRemote = { entry -> dev.silage.app.playback.TrailerPrefetch.prefetch(youtubeWatchUrl(entry.video.siteKey)) },
                         onPlayRemote = { entry ->
                         val trailer = dev.silage.app.nav.Trailer(youtubeWatchUrl(entry.video.siteKey), entry.title)
                         if (dev.silage.app.playback.TrailerTools.ready()) onTrailer(trailer) else settingUpTrailer = trailer
@@ -526,7 +501,3 @@ internal fun moreLikeThis(items: List<org.siloserver.silo.model.catalog.BrowseIt
  */
 internal fun episodeScrollIndex(episodeIndex: Int): Int = if (episodeIndex <= 0) 1 else 1 + episodeIndex
 
-/** The trailer the title page's Trailer button plays: the first entry that is a trailer, else the first YouTube video. */
-internal fun mainTrailer(entries: List<org.siloserver.silo.model.catalog.TrailerRailEntry>): org.siloserver.silo.model.catalog.TrailerRailEntry? =
-    entries.firstOrNull { it.kind.contains("trailer", ignoreCase = true) }
-        ?: entries.firstOrNull { it is org.siloserver.silo.model.catalog.TrailerRailEntry.Remote }

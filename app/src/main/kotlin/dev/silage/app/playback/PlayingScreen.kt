@@ -226,7 +226,9 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
                     launch = {
                         found = if (direct) TrailerPrefetch.streams(trailer.url).await() else null
                         playedDirect = found != null
-                        LaunchResult.Ready(sessionId = "trailer", url = found?.playUrl ?: trailer.url, headers = emptyMap(), startSeconds = null,
+                        // YouTube refused the lookup as a bot: mpv asking again would be refused too.
+                        if (found == null && TrailerPrefetch.blocked()) LaunchResult.Failed(TrailerPrefetch.BlockedMessage)
+                        else LaunchResult.Ready(sessionId = "trailer", url = found?.playUrl ?: trailer.url, headers = emptyMap(), startSeconds = null,
                             meta = PlaybackMeta(title = trailer.title, line = "Trailer"))
                     },
                     openPlayer = { ready ->
@@ -239,9 +241,12 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             }
             var outcome = withContext(Dispatchers.IO) { trailerSession(direct = true).play(trailer.url) }
             // Streams found earlier that won't play (say, a link YouTube has since refused): let mpv look again.
-            if (outcome is PlayOutcome.Failed && playedDirect) outcome = withContext(Dispatchers.IO) { trailerSession(direct = false).play(trailer.url) }
+            if (outcome is PlayOutcome.Failed && playedDirect && !TrailerPrefetch.blocked()) outcome = withContext(Dispatchers.IO) { trailerSession(direct = false).play(trailer.url) }
             fullscreen?.leave()
-            if (outcome is PlayOutcome.Failed) error = "Couldn't play this trailer. ${outcome.message}" else onDone()
+            if (outcome is PlayOutcome.Failed) {
+                val message = outcome.message
+                error = if (message == TrailerPrefetch.BlockedMessage) message else "Couldn't play this trailer. $message"
+            } else onDone()
             return@LaunchedEffect
         }
         // A packaged stream can contain only one audio track. Stop that session

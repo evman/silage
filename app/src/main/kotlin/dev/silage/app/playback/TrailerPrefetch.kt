@@ -18,9 +18,10 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
- * Finds a YouTube trailer's streams with yt-dlp before it is played: when its title page opens,
- * or when its card is pointed at. Finding them is most of a trailer's wait, so pressing play then
- * starts the video almost at once. Each lookup is kept for a while; YouTube's links last hours.
+ * Finds a YouTube trailer's streams with yt-dlp when it is played. Lookups happen only on play:
+ * looking trailers up ahead (on opening a title page, or pointing at a card) asked YouTube so
+ * often that it began refusing this connection as a bot. Each lookup is kept for a while, so
+ * playing the same trailer again starts at once; YouTube's links last hours.
  */
 object TrailerPrefetch {
     /** The streams yt-dlp chose, and the browser name YouTube expects them to be fetched with. */
@@ -33,15 +34,27 @@ object TrailerPrefetch {
 
     private class Entry(val at: Long, val job: Deferred<Streams?>)
 
+    /** Set when YouTube last refused a lookup as a bot ("Sign in to confirm you're not a bot", or too many requests). */
+    @Volatile private var blockedAt = 0L
+    private const val BlockedMs = 15 * 60_000L
+
+    /** Whether YouTube refused this connection recently, so trying again (or letting mpv try) won't help yet. */
+    fun blocked(): Boolean = blockedAt != 0L && System.currentTimeMillis() - blockedAt < BlockedMs
+
+    /** What a trailer error says when YouTube is refusing this connection. */
+    const val BlockedMessage = "YouTube is refusing trailers from this connection for now (it asked to confirm you're not a bot). Try again later."
+
+    /** Whether yt-dlp's error output says YouTube refused it as a bot or for too many requests. */
+    internal fun isBotRefusal(stderr: String): Boolean =
+        stderr.contains("not a bot", ignoreCase = true) || stderr.contains("HTTP Error 429", ignoreCase = true) ||
+            stderr.contains("Too Many Requests", ignoreCase = true)
+
     private const val KeepMs = 30 * 60_000L
     private const val TimeoutSeconds = 60L
     private val entries = ConcurrentHashMap<String, Entry>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    // Pointing along a row of trailers shouldn't start a yt-dlp for each.
-    private val running = Semaphore(2)
-
-    /** Starts finding [url]'s streams if the tools are there; does nothing when already found or underway. */
-    fun prefetch(url: String) { if (TrailerTools.ready()) streams(url) }
+    // One lookup at a time: YouTube is quick to refuse a burst.
+    private val running = Semaphore(1)
 
     /** [url]'s streams: the lookup already made or underway, else a new one. Null when yt-dlp couldn't find them. */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -53,15 +66,19 @@ object TrailerPrefetch {
 
     private suspend fun resolve(url: String): Streams? {
         val command = TrailerTools.ytdlpCommand() + listOf("-J", "--no-playlist", "--no-warnings", "-f", TrailerTools.Format, url)
-        val process = runCatching { ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD).start() }.getOrNull() ?: return null
+        val process = runCatching { ProcessBuilder(command).start() }.getOrNull() ?: return null
         try {
             runCatching { process.outputStream.close() }
-            // Read while waiting, so a large answer can't fill the pipe and stall yt-dlp.
+            // Read both while waiting, so a large answer can't fill a pipe and stall yt-dlp.
             val output = scope.async { runCatching { process.inputStream.readAllBytes().decodeToString() }.getOrNull() }
+            val errors = scope.async { runCatching { process.errorStream.readAllBytes().decodeToString() }.getOrDefault("") }
             val finished = process.waitFor(TimeoutSeconds, TimeUnit.SECONDS)
             if (!finished) { process.destroyForcibly(); return null }
             val json = output.await()
-            return if (process.exitValue() == 0 && json != null) parse(json) else null
+            val streams = if (process.exitValue() == 0 && json != null) parse(json) else null
+            if (streams == null && isBotRefusal(errors.await())) blockedAt = System.currentTimeMillis()
+            if (streams != null) blockedAt = 0L
+            return streams
         } finally {
             process.destroyForcibly()
         }

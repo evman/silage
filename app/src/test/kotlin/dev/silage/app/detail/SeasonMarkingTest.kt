@@ -25,20 +25,6 @@ class SeasonMarkingTest {
     }
 }
 
-class MainTrailerTest {
-    private fun remote(kind: String, key: String) = org.siloserver.silo.model.catalog.TrailerRailEntry.Remote(
-        org.siloserver.silo.model.catalog.ItemVideo(kind = kind, site = "YouTube", siteKey = key))
-    private fun local(kind: String) = org.siloserver.silo.model.catalog.TrailerRailEntry.Local(
-        org.siloserver.silo.model.catalog.ItemExtra(contentId = "x", kind = kind))
-
-    @Test fun theTrailerButtonPrefersATrailerThenAnyYouTubeVideo() {
-        assertEquals("t", (mainTrailer(listOf(remote("featurette", "f"), remote("trailer", "t"))) as org.siloserver.silo.model.catalog.TrailerRailEntry.Remote).video.siteKey)
-        assertEquals(local("trailer"), mainTrailer(listOf(local("featurette"), local("trailer"))))
-        assertEquals("f", (mainTrailer(listOf(local("featurette"), remote("featurette", "f"))) as org.siloserver.silo.model.catalog.TrailerRailEntry.Remote).video.siteKey)
-        assertEquals(null, mainTrailer(listOf(local("featurette"))))
-    }
-}
-
 class RecentSearchesTest {
     @Test fun recentSearchesAreNewestFirstOnceEachAndCapped() {
         val list = dev.silage.app.browse.RecentSearches.add(listOf("Dune", "Alien"), " alien ")
