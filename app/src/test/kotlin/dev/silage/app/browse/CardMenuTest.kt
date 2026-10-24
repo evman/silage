@@ -80,4 +80,12 @@ class CardMenuTest {
         assertEquals(HomeDismissal("next_up", "series:a"), homeDismissal(card("episode", row = "continue_watching", series = "series:a")))
         assertEquals(null, homeDismissal(card("movie", row = "continue_watching")))
     }
+
+    @Test fun anAcceptedRemovalSaysSoAndAFailedOneSaysWhy() = kotlinx.coroutines.runBlocking {
+        val c = card("episode", row = "continue_watching", series = "series:a")
+        assertEquals("Removed from Continue Watching" to true, runRemoval({ null }, c, "Removed from Continue Watching"))
+        assertEquals("Couldn't remove it: nope" to false, runRemoval({ "Couldn't remove it: nope" }, c, "Removed"))
+        assertEquals(false, runRemoval({ error("boom") }, c, "Removed").second)
+        assertEquals("Couldn't remove it from here." to false, runRemoval(null, c, "Removed"))
+    }
 }

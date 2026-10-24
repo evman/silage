@@ -54,9 +54,10 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
     // Home's right-click menu can also remove a card from Continue Watching / Next Up.
     val base = dev.silage.app.browse.LocalCardMenu.current
     val sections = remember { koin.get<org.siloserver.silo.repository.SectionRepository>() }
-    // Shows the server accepted a removal for: hidden from the progress rows at once, whether or not
-    // the reload that follows is served stale.
-    var removed by remember { mutableStateOf(emptySet<String>()) }
+    // Shows the server accepted a removal for: hidden from the progress rows at once, and kept with
+    // this visit to Home (like its rows), so they stay hidden after a trip to another page.
+    val removals = rememberEntryViewModel { HomeRemovals() }
+    val removed by removals.shows.collectAsState()
     val menu = remember(base, vm) {
         base?.forHome(
             // Straight to the server, so its answer can be shown. It drops the whole show from both
@@ -68,7 +69,7 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
                     target == null -> "The server didn't say which entry this is."
                     owner == null -> "You're signed out."
                     else -> when (val r = sections.dismissHomeItem(target.surface, card.id, target.anchor, owner)) {
-                        is org.siloserver.silo.network.ApiResult.Success -> { removed = removed + (card.seriesId ?: card.id); null }
+                        is org.siloserver.silo.network.ApiResult.Success -> { removals.add(card.seriesId ?: card.id); null }
                         is org.siloserver.silo.network.ApiResult.Error -> "Couldn't remove it: ${r.message}"
                         else -> "Can't reach the server."
                     }
@@ -81,6 +82,13 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
         val shown = remember(state.sections, removed) { withoutRemovedShows(state.sections, removed) }
         SectionRowsScreen(shown, state.isLoading, state.error, onRetry = { vm.refresh() }, emptyText = "Nothing on Home yet", onOpen = onOpen, onPlay = onPlay)
     }
+}
+
+/** The shows removed from Home's progress rows during one visit to Home. */
+class HomeRemovals : androidx.lifecycle.ViewModel() {
+    private val _shows = kotlinx.coroutines.flow.MutableStateFlow(emptySet<String>())
+    val shows: kotlinx.coroutines.flow.StateFlow<Set<String>> = _shows
+    fun add(show: String) { _shows.value = _shows.value + show }
 }
 
 /** The progress rows (Continue Watching, Next Up) without the shows in [removed] (series ids, or the item's own id). */

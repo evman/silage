@@ -70,9 +70,9 @@ class CardMenu(
     /** Asks the server, and says what it answered: the row reloads only once it accepted (it drops the whole show). */
     private fun removeFromRow(card: CardModel, done: String) {
         scope.launch {
-            val problem = runCatching { dismiss?.invoke(card) ?: "Couldn't remove it from here." }.getOrElse { "Couldn't remove it: ${it.message}" }
-            notify(problem ?: done)
-            if (problem == null) changed()
+            val (message, accepted) = runRemoval(dismiss, card, done)
+            notify(message)
+            if (accepted) changed()
         }
     }
 
@@ -83,6 +83,17 @@ class CardMenu(
             if (ok) changed()
         }
     }
+}
+
+/**
+ * Runs [dismiss] for [card]: [done] and true when the server accepted it, else what went wrong and false.
+ * [dismiss] answers null for success, so a missing [dismiss] is checked first rather than with `?:` on
+ * its answer (which once turned every success into "Couldn't remove it from here.").
+ */
+internal suspend fun runRemoval(dismiss: (suspend (CardModel) -> String?)?, card: CardModel, done: String): Pair<String, Boolean> {
+    if (dismiss == null) return "Couldn't remove it from here." to false
+    val problem = runCatching { dismiss(card) }.getOrElse { "Couldn't remove it: ${it.message}" }
+    return if (problem == null) done to true else problem to false
 }
 
 /**
