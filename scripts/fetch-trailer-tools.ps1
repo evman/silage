@@ -13,8 +13,9 @@ function Get-Sum([string]$Url, [string]$Name) {
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
         Invoke-WebRequest $Url -OutFile $tmp -UseBasicParsing
+        # Any line holding a SHA-256 (64 hex digits) and, when a name is given, that file's name.
         foreach ($line in (Get-Content -LiteralPath $tmp)) {
-            if ($line.Trim() -match '^([0-9a-fA-F]{64})(?:\s+\*?(.+))?$' -and (-not $Name -or $Matches[2].Trim() -eq $Name)) { return $Matches[1].ToLowerInvariant() }
+            if ($line -match '(?<![0-9a-fA-F])([0-9a-fA-F]{64})(?![0-9a-fA-F])' -and (-not $Name -or $line.Contains($Name))) { return $Matches[1].ToLowerInvariant() }
         }
     } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
     throw "No checksum for '$Name' found at $Url"

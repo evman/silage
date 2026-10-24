@@ -63,11 +63,13 @@ object TrailerTools {
 
     /** The checksum for [name] in a `SHA2-256SUMS` file ("hash *name"), or the lone hash of a `.sha256sum` file when [name] is null. */
     internal fun parseChecksum(text: String, name: String?): String? {
-        val lines = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }
-        val hash = Regex("^([0-9a-fA-F]{64})(?:\\s+\\*?(.+))?$")
-        return lines.mapNotNull { hash.matchEntire(it) }
-            .firstOrNull { name == null || it.groupValues[2] == name }
-            ?.groupValues?.get(1)?.lowercase()
+        // Any line with a SHA-256 (64 hex digits) and, when a name is given, that file's name:
+        // releases word these files slightly differently ("hash *name", "hash  name", a bare hash).
+        val hash = Regex("(?<![0-9a-fA-F])([0-9a-fA-F]{64})(?![0-9a-fA-F])")
+        return text.lineSequence()
+            .filter { name == null || it.contains(name) }
+            .firstNotNullOfOrNull { hash.find(it)?.groupValues?.get(1) }
+            ?.lowercase()
     }
 
     internal fun sha256(file: Path): String {
