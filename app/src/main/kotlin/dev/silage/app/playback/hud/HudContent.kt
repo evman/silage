@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.HighQuality
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
@@ -70,7 +71,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 
-enum class HudMenu { None, Audio, Subtitles, Speed, Chapters, Info, Video, FindSubtitles, AiSubtitles }
+enum class HudMenu { None, Audio, Subtitles, Speed, Quality, Chapters, Info, Video, FindSubtitles, AiSubtitles }
+
+/** One row of the player's Quality menu: a `quality_preference` [id], its name and bitrate. */
+data class QualityRow(val id: String, val label: String, val detail: String?, val selected: Boolean)
 
 data class HudUi(
     val meta: PlaybackMeta = PlaybackMeta(),
@@ -95,6 +99,8 @@ data class HudUi(
     /** Find / AI subtitles are offered (the server's subtitle tools are wired in). */
     val hasSubtitleTools: Boolean = false,
     val finder: FinderUi = FinderUi(),
+    /** The server's quality choices for this video; empty hides the Quality button. */
+    val qualities: List<QualityRow> = emptyList(),
 )
 
 interface HudActions {
@@ -117,6 +123,8 @@ interface HudActions {
     fun createSubtitles() {}
     fun pickHit(index: Int) {}
     fun pickAi(index: Int) {}
+    /** Restarts playback at a quality from the Quality menu. */
+    fun quality(id: String) {}
 }
 
 val SPEEDS = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
@@ -194,6 +202,9 @@ private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
                 UtilityButton(Icons.AutoMirrored.Outlined.VolumeUp, active = ui.menu == HudMenu.Audio, focused = ui.focus == HudFocus.Audio) { act.openMenu(HudMenu.Audio) }
                 UtilityButton(Icons.Outlined.Subtitles, active = ui.menu == HudMenu.Subtitles, focused = ui.focus == HudFocus.Subtitles) { act.openMenu(HudMenu.Subtitles) }
                 UtilityButton(Icons.Outlined.Speed, active = ui.menu == HudMenu.Speed, focused = ui.focus == HudFocus.Speed) { act.openMenu(HudMenu.Speed) }
+                if (ui.qualities.isNotEmpty()) {
+                    UtilityButton(Icons.Outlined.HighQuality, label = "Quality", active = ui.menu == HudMenu.Quality, focused = ui.focus == HudFocus.Quality) { act.openMenu(HudMenu.Quality) }
+                }
                 if (ui.chapters.isNotEmpty()) {
                     UtilityButton(Icons.Outlined.Bookmarks, label = "Chapters", active = ui.menu == HudMenu.Chapters, focused = ui.focus == HudFocus.Chapters) { act.openMenu(HudMenu.Chapters) }
                 }
@@ -320,6 +331,7 @@ private fun UtilityButton(icon: ImageVector, modifier: Modifier = Modifier, size
 private fun MenuPanel(ui: HudUi, act: HudActions) {
     if (ui.menu == HudMenu.Video) { VideoPanel(ui, act); return }
     if (ui.menu == HudMenu.FindSubtitles || ui.menu == HudMenu.AiSubtitles) { FinderPanel(ui, act); return }
+    if (ui.menu == HudMenu.Quality) { QualityPanel(ui, act); return }
     Column(
         Modifier.width(400.dp).heightIn(max = 620.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
@@ -345,6 +357,21 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
         Text(title, color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
         if (rows.isEmpty()) Text("None available", color = Dim, fontSize = 17.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp))
         rows.forEachIndexed { i, (label, selected, onClick) -> MenuRow(label, selected, highlighted = i == ui.menuIndex && ui.focus != null, onClick = onClick) }
+    }
+}
+
+/** The server's qualities for this video, each with its bitrate; picking one restarts playback where it is. */
+@Composable
+private fun QualityPanel(ui: HudUi, act: HudActions) {
+    Column(
+        Modifier.width(400.dp).heightIn(max = 620.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+            .verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+    ) {
+        Text("Quality", color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
+        ui.qualities.forEachIndexed { i, q ->
+            MenuRow(q.label, q.selected, highlighted = i == ui.menuIndex && ui.focus != null, detail = q.detail) { act.quality(q.id) }
+        }
     }
 }
 

@@ -166,12 +166,30 @@ fun FavoritesScreen(koin: Koin, onOpen: (CardModel) -> Unit) =
 /** What the profile watched lately, most recent first. */
 @Composable
 fun HistoryScreen(koin: Koin, onOpen: (CardModel) -> Unit) =
-    PersonalListScreen(koin, "history", "History", "Nothing watched yet", onOpen)
+    PersonalListScreen(koin, "history", "History", "Nothing watched yet", onOpen, removableFromHistory = true)
 
 /** One of the profile's own lists (the catalog's `source`) as a titled poster grid. */
 @Composable
-private fun PersonalListScreen(koin: Koin, source: String, title: String, emptyText: String, onOpen: (CardModel) -> Unit) {
+private fun PersonalListScreen(koin: Koin, source: String, title: String, emptyText: String, onOpen: (CardModel) -> Unit,
+    /** History: the right-click menu also offers Remove from history. */
+    removableFromHistory: Boolean = false) {
     val catalog = remember { koin.get<CatalogRepository>() }
+    // Titles removed from history on this visit: gone from the grid at once.
+    var removed by remember { mutableStateOf(emptySet<String>()) }
+    val base = LocalCardMenu.current
+    val menu = remember(base, removableFromHistory) {
+        if (!removableFromHistory || base == null) base
+        else base.forHistory(
+            remove = { card ->
+                when (val r = koin.get<org.siloserver.silo.network.apiv2.HistoryRemovalV2Api>().remove(card.id)) {
+                    is org.siloserver.silo.network.ApiResult.Success -> { removed = removed + card.id; null }
+                    is org.siloserver.silo.network.ApiResult.Error -> "Couldn't remove it: ${r.message.ifBlank { "the server said no" }}"
+                    is org.siloserver.silo.network.ApiResult.NetworkError -> "Can't reach the server."
+                }
+            },
+            removed = {},
+        )
+    }
     val scope = rememberCoroutineScope()
     var focused by remember { mutableStateOf<CardModel?>(null) }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
@@ -179,13 +197,20 @@ private fun PersonalListScreen(koin: Koin, source: String, title: String, emptyT
     val state by pager.state.collectAsState()
     LaunchedEffect(pager) { if (pager.state.value.items.isEmpty()) pager.loadMore() }
     val first = rememberInitialFocus(state.items.isNotEmpty())
+    val shown = remember(state, removed) { withoutRemoved(state, removed) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalCardMenu provides menu) {
     Box(Modifier.fillMaxSize()) {
         PageBackdrop(focused)
-        PosterGrid(state, { scope.launch { pager.loadMore() } }, { scope.launch { pager.retry() } }, onOpen, { focused = it; lastFocused = it.id },
+        PosterGrid(shown, { scope.launch { pager.loadMore() } }, { scope.launch { pager.retry() } }, onOpen, { focused = it; lastFocused = it.id },
             emptyText = emptyText, firstFocus = first, restoreId = lastFocused, header = {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(title, color = Silage.Text, fontSize = 48.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 56.dp, bottom = 12.dp))
                 }
             })
     }
+    }
 }
+
+/** The grid without the cards in [removed] (by id). */
+internal fun withoutRemoved(state: PagerState, removed: Set<String>): PagerState =
+    if (removed.isEmpty()) state else state.copy(items = state.items.filterNot { it.id in removed })

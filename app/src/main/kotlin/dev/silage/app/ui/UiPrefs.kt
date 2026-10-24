@@ -46,6 +46,10 @@ private data class UiPrefsFile(
     val subtitleMode: String? = null,
     /** Two-letter language for subtitles when [subtitleMode] picks them; null follows the audio language. */
     val subtitleLanguage: String? = null,
+    /** Streaming quality to ask the server for: "auto", or a resolution such as "1080p" (see [dev.silage.app.playback.QualityPrefs]). */
+    val qualityPreference: String = "auto",
+    /** The most the server may send, in kbps; null for no limit. */
+    val maxBitrateKbps: Int? = null,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -125,6 +129,11 @@ class UiPrefs(private val path: Path) {
     var preferredVersion: String
         get() = read().preferredVersion
         set(value) = write { it.copy(preferredVersion = value) }
+
+    /** Streaming quality and bitrate limit (Settings → Video). */
+    var quality: dev.silage.app.playback.QualityPrefs
+        get() = read().let { dev.silage.app.playback.QualityPrefs(it.qualityPreference, it.maxBitrateKbps) }
+        set(value) = write { it.copy(qualityPreference = value.preference, maxBitrateKbps = value.maxBitrateKbps) }
 
     var subtitleStyle: dev.silage.app.playback.SubtitleStyle
         get() = read().let { dev.silage.app.playback.SubtitleStyle.of(it.subtitleSize, it.subtitleBackground, it.subtitlePosition, it.subtitleColor) }

@@ -49,5 +49,7 @@ val desktopModule = module {
     single { dev.silage.app.ui.UiPrefs(XdgPaths.config.resolve("ui.json")) }
     single { dev.silage.app.settings.ProfileUiStore(get()) }
     single { dev.silage.app.shell.SidebarStore() }
+    single { org.siloserver.silo.network.apiv2.HistoryRemovalV2Api(get(), get(), get()) }
+    single { org.siloserver.silo.network.apiv2.LoginSessionsV2Api(get(), get(), get()) }
     single { dev.silage.app.shell.LiveFeatures(get(), get(), get()) { where, t -> dev.silage.app.CrashLog().record(where, t) } }
 }

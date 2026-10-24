@@ -181,7 +181,7 @@ enum class HudKey {
 }
 
 /** The HUD controls reachable with the arrow keys. */
-enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Chapters, Video, Fullscreen, Info }
+enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Quality, Chapters, Video, Fullscreen, Info }
 
 sealed interface HudEffect {
     data object None : HudEffect
@@ -209,8 +209,10 @@ data class HudNav(
     val fullscreen: Boolean = false,
     /** The Chapters button only exists (and takes focus) when the file has chapters. */
     val hasChapters: Boolean = false,
+    /** Likewise the Quality button, when the server offers qualities. */
+    val hasQuality: Boolean = false,
 ) {
-    private val row get() = if (hasChapters) ROW else ROW - HudFocus.Chapters
+    private val row get() = ROW.filter { (it != HudFocus.Chapters || hasChapters) && (it != HudFocus.Quality || hasQuality) }
 
     fun on(key: HudKey): Pair<HudNav, HudEffect> {
         if (key == HudKey.Fullscreen) return copy(visible = true) to HudEffect.ToggleFullscreen
@@ -260,7 +262,7 @@ data class HudNav(
     }
 
     companion object {
-        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Chapters, HudFocus.Info, HudFocus.Video, HudFocus.Fullscreen)
+        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Quality, HudFocus.Chapters, HudFocus.Info, HudFocus.Video, HudFocus.Fullscreen)
     }
 }
 

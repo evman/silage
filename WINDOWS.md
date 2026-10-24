@@ -91,6 +91,14 @@ PC or Windows account requires signing in again; interface settings still travel
   Subtitles chooses whether subtitles start off, on or forced-only, and in
   which language. Unset, both follow your Silo profile.
 - Video settings during playback: Fit/Fill, aspect ratio and zoom.
+- Quality during playback: the player's Quality button lists the qualities the server
+  offers for the video (Original, then smaller sizes with their bitrates); picking one
+  restarts the video where it was, at that quality, for this video only.
+- Original files play directly, Dolby Vision included: Silage tells the server it picks
+  the audio track itself, so choosing a language other than the file's default no longer
+  makes the server repackage the whole file (which removed Dolby Vision and converted DTS
+  or TrueHD to AAC). mpv shows Dolby Vision on an HDR monitor as HDR10, and tone-maps it
+  to SDR on a monitor without HDR.
 - Watchlist, favorites and watched / unwatched (titles and episodes). Right-click
   a poster to play, resume or start over, add to or remove from the watchlist,
   mark watched, reset progress, or remove it from Continue Watching / Next Up.
@@ -107,7 +115,10 @@ PC or Windows account requires signing in again; interface settings still travel
   it into your language if that differs). The chosen subtitles switch on by
   themselves; the video restarts where it was, which takes a moment.
 - Favorites and History: sidebar pages beside Watchlist, as poster grids of the
-  titles you marked as favorites and of what you watched lately.
+  titles you marked as favorites and of what you watched lately. Right-click a title in
+  History for Remove from history (a show goes with all of its episodes).
+- Title pages have an Info button: the full details, cast and crew, and the file that
+  would play: its size, bitrate, and each video, audio and subtitle track.
 - Trailers & More: title pages show a rail of the title's trailers and extras, all
   played inside Silage. Extras your server holds (featurettes, behind the scenes) play
   directly. YouTube trailers use yt-dlp and Deno, which the packaged app carries in its
@@ -182,6 +193,12 @@ holding isn't available to Silage.
   best one (default) or the one played last. Playback Info shows which copy
   is playing and whether it is the original file. These are stored on this PC in `ui.json`, not on your Silo
   profile.
+- **Settings → Video** also sets *Streaming quality* (Auto plays the original file whenever
+  it can; a resolution caps it) and a *Maximum bitrate* the server must stay under; a file
+  above it is converted to fit. Set it below your connection's speed if videos stop to buffer.
+- **Settings → Devices:** every device signed in to your account (Silage shows as "Silage on"
+  your PC's name), with where and when each was last used. Sign out one you no longer use,
+  or all the others at once.
 - **Settings → Subtitles:** size, background (shadow, outline, dark box or
   none), text color and position, with a preview. They apply from the next
   video played and are stored in `ui.json`. Styled (ASS) subtitles keep their

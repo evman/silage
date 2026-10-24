@@ -107,4 +107,17 @@ class CardMenuTest {
             seriesId = "series:a", seriesTitle = "A", seasonNumber = 4).toCard(landscape = true)
         assertEquals(4, fromHome.seasonNumber)
     }
+
+    @Test fun onlyTheHistoryPageOffersRemoveFromHistory() {
+        assertEquals(false, CardMenuEntry.RemoveFromHistory in cardMenuEntries(card("series"), false))
+        val entries = cardMenuEntries(card("series"), false, canRemoveFromHistory = true)
+        assertEquals(CardMenuEntry.RemoveFromHistory, entries.last())
+        assertEquals("Remove from history", CardMenuEntry.RemoveFromHistory.label(card("movie")))
+    }
+
+    @Test fun removedTitlesLeaveTheGridAtOnce() {
+        val state = PagerState(items = listOf(card("movie", id = "a"), card("movie", id = "b")))
+        assertEquals(listOf("b"), withoutRemoved(state, setOf("a")).items.map { it.id })
+        assertEquals(state, withoutRemoved(state, emptySet()))
+    }
 }

@@ -154,4 +154,14 @@ class HudModelTest {
         assertEquals(HudFocus.Chapters, with.on(HudKey.Right).first.focus)
         assertEquals(HudEffect.Activate(HudFocus.Chapters), with.copy(focus = HudFocus.Chapters).on(HudKey.Enter).second)
     }
+
+    @Test fun theQualityButtonIsAFocusStopOnlyWhenTheServerOffersQualities() {
+        assertEquals(HudFocus.Info, HudNav(focus = HudFocus.Speed).on(HudKey.Right).first.focus)
+        val with = HudNav(focus = HudFocus.Speed, hasQuality = true)
+        assertEquals(HudFocus.Quality, with.on(HudKey.Right).first.focus)
+        assertEquals(HudEffect.Activate(HudFocus.Quality), with.copy(focus = HudFocus.Quality).on(HudKey.Enter).second)
+        // From Quality the next stop is Chapters when there are chapters, else Info.
+        assertEquals(HudFocus.Chapters, with.copy(focus = HudFocus.Quality, hasChapters = true).on(HudKey.Right).first.focus)
+        assertEquals(HudFocus.Info, with.copy(focus = HudFocus.Quality).on(HudKey.Right).first.focus)
+    }
 }

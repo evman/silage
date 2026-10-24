@@ -49,7 +49,7 @@ import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.repository.AuthRepository
 import org.siloserver.silo.repository.PersonalDataRepository
 
-private enum class Section(val label: String) { Interface("Interface"), Posters("Posters"), TitlePages("Title pages"), Playback("Playback"), Video("Video"), Subtitles("Subtitles"), Account("Account"), About("About") }
+private enum class Section(val label: String) { Interface("Interface"), Posters("Posters"), TitlePages("Title pages"), Playback("Playback"), Video("Video"), Subtitles("Subtitles"), Account("Account"), Devices("Devices"), About("About") }
 
 /** Settings: sections on the left, the chosen section's rows on the right. */
 @Composable
@@ -73,6 +73,7 @@ fun SettingsScreen(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServer: () -
                 Section.Video -> VideoSection(koin)
                 Section.Subtitles -> SubtitlesSection(koin)
                 Section.Account -> AccountSection(koin, onSwitchProfile, onSwitchServer, onSignedOut)
+                Section.Devices -> DevicesSection(koin)
                 Section.About -> AboutSection(koin)
             }
         }
@@ -165,13 +166,30 @@ fun SidebarEditorList(all: List<dev.silage.app.shell.SidebarLibrary>, onChange: 
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun VideoSection(koin: Koin) {
     val prefs = remember { koin.get<UiPrefs>() }
     val version by prefs.changes.collectAsState()
     val mode = remember(version) { prefs.hdrMode }
     val experimentalDv = remember(version) { prefs.experimentalDolbyVision }
+    val quality = remember(version) { prefs.quality }
     Column(Modifier.verticalScroll(rememberScrollState())) {
+        Heading("Streaming quality", "Auto plays the original file whenever this PC can, and only asks the server to convert when it must. " +
+            "Pick a resolution to always watch at that size or lower (the server converts anything bigger). The player's Quality button changes it for one video.")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            dev.silage.app.playback.QualityPrefs.Preferences.forEach { (wire, label) ->
+                Pill(label, selected = quality.preference == wire) { prefs.quality = quality.copy(preference = wire) }
+            }
+        }
+        Spacer(Modifier.height(40.dp))
+        Heading("Maximum bitrate", "The most the server may send. A file above it is converted to fit, so set this below your connection's speed if videos stop to buffer.")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            dev.silage.app.playback.QualityPrefs.Limits.forEach { (kbps, label) ->
+                Pill(label, selected = quality.maxBitrateKbps == kbps) { prefs.quality = quality.copy(maxBitrateKbps = kbps) }
+            }
+        }
+        Spacer(Modifier.height(40.dp))
         Heading("HDR", "Auto plays HDR natively when HDR is turned on for the monitor Silage is on.")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Pill("Auto", selected = mode == "auto") { prefs.hdrMode = "auto" }

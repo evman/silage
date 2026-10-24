@@ -69,8 +69,12 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val subtitleTools: SubtitleTools? = null,
     /** The runtime to show instead of mpv's duration (a converted stream's grows as it's produced). */
     private val knownDuration: Double? = null,
+    /** The Quality menu's rows; empty hides it. */
+    qualities: List<QualityRow> = emptyList(),
+    /** Restarts playback at the picked quality. */
+    private val selectQuality: ((String) -> Unit)? = null,
 ) : AutoCloseable {
-    private val ui = mutableStateOf(HudUi(meta = meta, hasSubtitleTools = subtitleTools != null))
+    private val ui = mutableStateOf(HudUi(meta = meta, hasSubtitleTools = subtitleTools != null, qualities = if (selectQuality != null) qualities else emptyList()))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
     private val inbox = ConcurrentLinkedQueue<() -> Unit>()
     private val nativeMouseMoved = AtomicBoolean(false)
@@ -78,7 +82,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     @Volatile private var running = true
 
     // HUD-thread state.
-    private var nav = HudNav()
+    private var nav = HudNav(hasQuality = ui.value.qualities.isNotEmpty())
     private var keyboardFocus = false
 
     private val actions = object : HudActions {
@@ -176,6 +180,10 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                 }
             }
         }
+        override fun quality(id: String) {
+            nav = nav.copy(menu = HudMenu.None)
+            selectQuality?.invoke(id)
+        }
         override fun video(index: Int, step: Int) {
             videoSession.update(VideoControls.adjust(videoSession.settings, index, step), mpv::setProperty, mpv::getProperty)
             ui.value = ui.value.copy(video = videoSession.settings, videoError = videoSession.error)
@@ -192,6 +200,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         HudMenu.FindSubtitles -> ui.value.finder.hits.map { false }
         HudMenu.AiSubtitles -> if (ui.value.finder.aiProgress == null) ui.value.finder.aiOptions.map { false } else emptyList()
         HudMenu.Speed -> SPEEDS.map { it == ui.value.speed }
+        HudMenu.Quality -> ui.value.qualities.map { it.selected }
         HudMenu.Video -> List(VideoControls.RowCount) { false }
         HudMenu.Chapters -> Chapter.indexAt(ui.value.chapters, mpv.state.value.positionSeconds).let { current ->
             ui.value.chapters.indices.map { it == current }
@@ -217,6 +226,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             HudMenu.FindSubtitles -> actions.pickHit(index)
             HudMenu.AiSubtitles -> actions.pickAi(index)
             HudMenu.Speed -> SPEEDS.getOrNull(index)?.let(actions::speed)
+            HudMenu.Quality -> ui.value.qualities.getOrNull(index)?.let { actions.quality(it.id) }
             HudMenu.Chapters -> actions.chapter(index)
             else -> Unit
         }
@@ -284,6 +294,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                     HudFocus.Audio -> actions.openMenu(HudMenu.Audio)
                     HudFocus.Subtitles -> actions.openMenu(HudMenu.Subtitles)
                     HudFocus.Speed -> actions.openMenu(HudMenu.Speed)
+                    HudFocus.Quality -> actions.openMenu(HudMenu.Quality)
                     HudFocus.Chapters -> actions.openMenu(HudMenu.Chapters)
                     HudFocus.Info -> actions.openMenu(HudMenu.Info)
                     HudFocus.Video -> actions.openMenu(HudMenu.Video)

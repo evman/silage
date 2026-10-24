@@ -13,6 +13,7 @@ import org.siloserver.silo.model.playback.NATIVE_EMBEDDED_SUBTITLE_CODECS
 import org.siloserver.silo.model.playback.NATIVE_HLS_PLAYBACK_V1_FEATURE
 import org.siloserver.silo.model.playback.NativeEmbeddedSubtitleCapability
 import org.siloserver.silo.model.playback.CLIENT_DV7_TO_HDR10
+import org.siloserver.silo.model.playback.CLIENT_SELECTED_AUDIO_TRACK_V1_CLAIM
 import org.siloserver.silo.model.playback.CLIENT_DV_TRANSFORM_RECIPE_VERSION
 import org.siloserver.silo.model.playback.PlaybackTransformationExecutor
 import org.siloserver.silo.model.playback.PlaybackTransformationV3
@@ -91,6 +92,11 @@ object DesktopCapabilities {
             ),
             subtitles = mpvSubtitles,
             features = listOf("track_switching", "audio_delay", "subtitle_delay", "buffer_reporting"),
+            // mpv plays any of the file's audio tracks: once the file is open Silage switches to the
+            // one the plan chose (see openMpv). Without this claim, picking a track other than the
+            // file's default (say, by Settings → audio language) made the server remux the whole
+            // file over HLS, stripping Dolby Vision and converting DTS/TrueHD to AAC on the way.
+            validatedClaims = listOf(CLIENT_SELECTED_AUDIO_TRACK_V1_CLAIM),
         ),
         DELIVERY_CLASS_PROGRESSIVE to DeliveryCapability(
             enabled = false,

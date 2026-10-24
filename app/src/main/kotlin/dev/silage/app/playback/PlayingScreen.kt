@@ -67,6 +67,8 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     hasNextEpisode: () -> Boolean = { false }, onNextEpisode: (() -> Unit)? = null,
     subtitleTools: ((MpvPlayer) -> dev.silage.app.playback.hud.SubtitleTools)? = null,
     extraOptions: Map<String, String> = emptyMap(),
+    /** A quality picked in the player: restart the session with it, at this position. */
+    onQuality: ((quality: String, position: Double, paused: Boolean) -> Unit)? = null,
     onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
@@ -95,6 +97,13 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         hasNextEpisode = hasNextEpisode,
         onNextEpisode = if (onNextEpisode != null) ({ onNextEpisode(); mpv.command("stop"); Unit }) else null,
         audioRows = { mounted -> audioMenuTracks(ready.sourceAudio, mounted, ready.direct, ready.selectedAudioOrdinal) },
+        qualities = if (onQuality == null) emptyList() else qualityRows(ready.qualities, ready.activeQuality),
+        selectQuality = onQuality?.let { restart -> { id: String ->
+            if (id != ready.activeQuality) {
+                restart(id, ready.sourcePositionSeconds(mpv.state.value.positionSeconds), mpv.state.value.paused)
+                mpv.command("stop")
+            }
+        } },
         selectSourceAudio = if (sourceSwitch) ({ ordinal ->
             if (ordinal != ready.selectedAudioOrdinal && ordinal in ready.sourceAudio.indices) {
                 onAudio(ordinal, ready.sourcePositionSeconds(mpv.state.value.positionSeconds), mpv.state.value.paused)
@@ -194,6 +203,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             preferLastPlayed = { koin.get<dev.silage.app.ui.UiPrefs>().preferredVersion == "last" },
             mediaAuth = { mediaAuthHeaders(koin) },
             languages = { koin.get<dev.silage.app.ui.UiPrefs>().languages },
+            quality = { koin.get<dev.silage.app.ui.UiPrefs>().quality },
         )
         // The canvas gets its native window on the next frame; without one in
         // time, mpv falls back to its own fullscreen window.
@@ -230,9 +240,12 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         // A packaged stream can contain only one audio track. Stop that session
         // before requesting another source ordinal using the existing start API.
         // Also a stored subtitle to switch to (found or AI-made): the new session's plan lists it.
-        data class AudioChange(val ordinal: Int?, val position: Double, val paused: Boolean, val storedSubtitle: Int? = null)
+        // Also a quality picked in the player's Quality menu: the session restarts with it, where it was.
+        data class AudioChange(val ordinal: Int?, val position: Double, val paused: Boolean, val storedSubtitle: Int? = null, val quality: String? = null)
         // Kept for later restarts (an audio switch) so the chosen subtitle stays on.
         var storedSubtitle: Int? = null
+        // Kept for later restarts too, so an audio switch doesn't undo a quality picked in the player.
+        var chosenQuality: String? = null
         val profile = withContext(Dispatchers.IO) { runCatching { koin.get<ProfileRepository>().getActiveProfile() }.getOrNull() }
         val change = java.util.concurrent.atomic.AtomicReference<AudioChange?>(null)
         var requested: AudioChange? = null
@@ -249,7 +262,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         while (true) {
             var handedBack = false
             val session = PlaybackSession(
-                launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position, storedSubtitle) },
+                launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position, storedSubtitle, chosenQuality) },
                 openPlayer = { ready ->
                     selectedFile = ready.fileId
                     meta = ready.meta
@@ -277,6 +290,9 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
                         )
                     } }
                     openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video, dvAuthorization, subtitleTools = tools,
+                        onQuality = { quality, position, paused ->
+                            change.compareAndSet(null, AudioChange(ready.selectedAudioOrdinal, position, paused, quality = quality))
+                        },
                         hasNextEpisode = { nextEpisode.get() != null },
                         onNextEpisode = if (shuffle == null && ready.meta.seriesId != null) ({ nextRequested.set(true) }) else null,
                     ) { ordinal, position, paused ->
@@ -302,6 +318,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             if (handedBack) break
             requested = change.getAndSet(null)
             requested?.storedSubtitle?.let { storedSubtitle = it }
+            requested?.quality?.let { chosenQuality = it }
             if (outcome is PlayOutcome.Failed) { fullscreen?.leave(); error = outcome.message; break }
             if (requested == null && shuffle != null) {
                 if (outcome is PlayOutcome.Completed) {
@@ -372,3 +389,7 @@ internal fun PlaybackFailure(message: String, onDone: () -> Unit) {
         Button(onClick = onDone, modifier = Modifier.focusRequester(back)) { Text("Back") }
     }
 }
+
+/** The player's Quality menu rows: the plan's options, with the one playing marked. */
+internal fun qualityRows(options: List<org.siloserver.silo.model.playback.PlaybackQualityOption>, active: String?): List<dev.silage.app.playback.hud.QualityRow> =
+    options.map { dev.silage.app.playback.hud.QualityRow(it.id, it.name, it.bitrateLabel, selected = it.id == active) }

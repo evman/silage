@@ -27,11 +27,13 @@ class PlaybackLauncherTest {
         response: ApiResult<PlaybackDecisionResponseV3> = ApiResult.Success(decision("/api/v2/stream/77")),
         sent: MutableList<PlaybackStartRequestV3> = mutableListOf(),
         item: (String) -> WatchDetail = { WatchDetail(contentId = it, type = "movie", title = "M", versions = versions) },
+        quality: QualityPrefs = QualityPrefs(),
     ) = PlaybackLauncher(
         detail = { ApiResult.Success(item(it)) },
         start = { req -> sent += req; response },
         profileId = { "prof-1" },
         serverUrl = { "http://nas:8096" },
+        quality = { quality },
     )
 
     @Test fun explicitAudioChoiceAndPositionReachServer() = runTest {
@@ -255,5 +257,34 @@ class PlaybackLauncherTest {
             LaunchResult.Failed("The server couldn't plan playback: No validated playback route is available for this source and output route."),
             launcher(response = ApiResult.Success(refused)).launch("m"),
         )
+    }
+
+    @Test fun theQualitySettingAndAPlayerPickReachTheServerAndTheMenuComesBack() = runTest {
+        val sent = mutableListOf<PlaybackStartRequestV3>()
+        val response = SiloJson.decodeFromString(PlaybackDecisionResponseV3.serializer(),
+            """{"protocol_version":3,"session_id":"sess-1","playback_plan":{"plan_id":"p1","delivery":"original_http",
+            "stream":{"url":"/s","protocol":"http_progressive","headers":{}},"decision_reason":"direct",
+            "effective_recipe":{"width":3840,"height":2160,"bitrate_kbps":95900},
+            "available_qualities":[{"label":"original","height":2160,"bitrate_kbps":95900,"preserves_source":true},
+              {"label":"1080p-medium","height":1080,"bitrate_kbps":10000,"display_name":"1080p · 10 Mbps"}]}}""")
+        val l = launcher(response = ApiResult.Success(response), sent = sent, quality = QualityPrefs("1080p", 40_000))
+        val r = l.launch("movie-1")
+        assertIs<LaunchResult.Ready>(r)
+        assertEquals("1080p", sent.last().qualityPreference)
+        assertEquals(40_000, sent.last().bandwidthCapKbps)
+        assertEquals(listOf("auto", "original", "1080p-medium"), r.qualities.map { it.id })
+        // A pick in the player wins over the setting for that playback.
+        l.launch("movie-1", qualityPreference = "original")
+        assertEquals("original", sent.last().qualityPreference)
+        // No limit sends none.
+        launcher(sent = sent).launch("movie-1")
+        assertEquals("auto", sent.last().qualityPreference)
+        assertEquals(null, sent.last().bandwidthCapKbps)
+    }
+
+    @Test fun theOriginalFilePlayerClaimsItPicksTheAudioTrack() {
+        // Without the claim, a non-default audio track made the server remux the file (stripping Dolby Vision).
+        val original = DesktopCapabilities.context.deliveries[org.siloserver.silo.model.playback.DELIVERY_CLASS_ORIGINAL_HTTP]!!
+        assertTrue(org.siloserver.silo.model.playback.CLIENT_SELECTED_AUDIO_TRACK_V1_CLAIM in original.validatedClaims)
     }
 }

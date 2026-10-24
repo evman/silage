@@ -104,6 +104,9 @@ sealed interface LaunchResult {
         val sourceDurationSeconds: Double? = null,
         /** Settings say no subtitles: also switch off any the file itself marks as default. */
         val subtitlesOff: Boolean = false,
+        /** The player's Quality menu (Auto, then the server's rungs), and the row now playing. */
+        val qualities: List<org.siloserver.silo.model.playback.PlaybackQualityOption> = emptyList(),
+        val activeQuality: String? = null,
     ) : LaunchResult {
         fun sourcePositionSeconds(playerSeconds: Double): Double = playerSeconds + timelineOffsetSeconds
     }
@@ -125,6 +128,8 @@ class PlaybackLauncher(
     private val mediaAuth: suspend () -> Map<String, String> = { emptyMap() },
     /** Default audio and subtitle languages on this PC; empty leaves both to the server. */
     private val languages: () -> LanguagePrefs = { LanguagePrefs() },
+    /** Streaming quality and bitrate limit on this PC (Settings → Video). */
+    private val quality: () -> QualityPrefs = { QualityPrefs() },
 ) {
     /**
      * [fileId]: the copy the user chose on the detail page. Without one (Home,
@@ -133,7 +138,9 @@ class PlaybackLauncher(
      */
     suspend fun launch(contentId: String, fromStart: Boolean = false, fileId: Int? = null, audioTrackIndex: Int? = null, positionSeconds: Double? = null,
         /** A subtitle stored on the server (downloaded or AI-made) to switch on instead of the plan's choice. */
-        storedSubtitleId: Int? = null): LaunchResult {
+        storedSubtitleId: Int? = null,
+        /** A quality picked in the player for this playback, instead of the one in Settings. */
+        qualityPreference: String? = null): LaunchResult {
         val item = when (val r = detail(contentId)) {
             is ApiResult.Success -> r.data
             is ApiResult.Error -> return LaunchResult.Failed("Couldn't load this item: ${r.message}")
@@ -147,11 +154,15 @@ class PlaybackLauncher(
         val preferredAudio = if (audioTrackIndex == null) preferredAudioOrdinal(chosen.audioTracks.orEmpty(), prefs.audio) else null
         val requestedAudio = audioTrackIndex ?: preferredAudio
 
+        val qualityPrefs = quality()
+        val wantedQuality = qualityPreference ?: qualityPrefs.preference
         val request = PlaybackStartRequestV3(
             clientFeatures = playbackClientFeaturesV3(context),
             fileId = playFileId,
             profileId = profile,
             playbackAttemptId = newAttemptId(),
+            qualityPreference = wantedQuality,
+            bandwidthCapKbps = qualityPrefs.maxBitrateKbps?.takeIf { it > 0 },
             audioTrackIndex = requestedAudio,
             startPosition = positionSeconds,
             subtitleFidelityPreference = SubtitleFidelityPreference.PRESERVE,
@@ -209,6 +220,7 @@ class PlaybackLauncher(
         } else {
             null
         }
+        val qualityOptions = org.siloserver.silo.model.playback.playbackQualityMenu(plan.availableQualities)
         return LaunchResult.Ready(
             sessionId, url, headers,
             // A packaged replan can begin at source 42s while mpv's clock starts
@@ -224,6 +236,8 @@ class PlaybackLauncher(
             needsMediaAuth = needsMediaAuth,
             sourceDurationSeconds = plan.source.durationSeconds?.takeIf { it > 0 },
             versionLabel = listOf(chosen.toOption().short, if (direct) "original file" else "converted by the server").joinToString(" · "),
+            qualities = qualityOptions,
+            activeQuality = org.siloserver.silo.model.playback.activePlaybackQualityId(qualityOptions, wantedQuality, plan.effectiveRecipe),
         )
     }
 }

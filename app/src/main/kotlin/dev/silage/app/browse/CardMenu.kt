@@ -26,10 +26,16 @@ class CardMenu(
     private val changed: () -> Unit = {},
     /** Opens an episode's show on the episode's season, at the episode. */
     val goToShow: (seriesId: String, season: Int?, episodeId: String) -> Unit = { id, _, _ -> open(id) },
+    /** Removes a card from the profile's watch history; only the History page offers it. Null when the server accepted it, else what went wrong. */
+    private val historyRemove: (suspend (CardModel) -> String?)? = null,
 ) {
     /** This menu on Home: removing from a row, and reloading Home after a change. */
     fun forHome(dismiss: suspend (CardModel) -> String?, changed: () -> Unit) =
-        CardMenu(play, playFromStart, open, actions, scope, notify, onWatchlistPage, dismiss, changed, goToShow)
+        CardMenu(play, playFromStart, open, actions, scope, notify, onWatchlistPage, dismiss, changed, goToShow, historyRemove)
+
+    /** This menu on the History page: removing a title from history, and telling the page it went. */
+    fun forHistory(remove: suspend (CardModel) -> String?, removed: () -> Unit) =
+        CardMenu(play, playFromStart, open, actions, scope, notify, onWatchlistPage, dismiss, removed, goToShow, remove)
 
     /** The poster's shortcut buttons: save the change, and say so when it didn't take. */
     suspend fun quickFavorite(id: String, on: Boolean): Boolean =
@@ -38,7 +44,8 @@ class CardMenu(
     suspend fun quickWatched(id: String, on: Boolean): Boolean =
         runCatching { actions.setWatched(id, on) }.getOrDefault(false).also { if (!it) notify("Couldn't save that change. Try again.") }
 
-    fun items(card: CardModel): List<ContextMenuItem> = cardMenuEntries(card, onWatchlistPage, canDismiss = dismiss != null).map { entry ->
+    fun items(card: CardModel): List<ContextMenuItem> = cardMenuEntries(card, onWatchlistPage, canDismiss = dismiss != null,
+        canRemoveFromHistory = historyRemove != null).map { entry ->
         ContextMenuItem(entry.label(card)) {
             when (entry) {
                 CardMenuEntry.Play -> play(card.openTarget)
@@ -63,6 +70,11 @@ class CardMenu(
                 }
                 CardMenuEntry.RemoveFromWatchlist -> act("Removed from your watchlist") {
                     actions.setWatchlist(card.id, false).also { if (it) WatchlistMemory.set(card.id, false) }
+                }
+                CardMenuEntry.RemoveFromHistory -> scope.launch {
+                    val (message, accepted) = runRemoval(historyRemove, card, "Removed from history")
+                    notify(message)
+                    if (accepted) changed()
                 }
                 CardMenuEntry.MarkWatched -> act("Marked as watched") { actions.setWatched(card.id, true) }
                 CardMenuEntry.MarkUnwatched -> act("Marked as unwatched") { actions.setWatched(card.id, false) }
@@ -138,7 +150,7 @@ fun homeDismissal(card: CardModel): HomeDismissal? {
 enum class CardMenuEntry(private val text: String) {
     Play("Play"), PlayFromStart("Play from beginning"), Open("Open"), GoToShow("Go to show"), AddToWatchlist("Add to watchlist"),
     RemoveFromWatchlist("Remove from watchlist"), MarkWatched("Mark as watched"), MarkUnwatched("Mark as unwatched"),
-    ResetProgress("Reset progress"), RemoveFromRow("Remove from Continue Watching"),
+    ResetProgress("Reset progress"), RemoveFromRow("Remove from Continue Watching"), RemoveFromHistory("Remove from history"),
     ;
 
     fun label(card: CardModel): String = when {
@@ -152,7 +164,7 @@ private val playable = setOf("movie", "episode", "video")
 private val watchable = setOf("movie", "episode", "series", "show", "video")
 
 /** The menu for [card]: none for collections and requests (no [CardModel.kind]). */
-fun cardMenuEntries(card: CardModel, onWatchlistPage: Boolean, canDismiss: Boolean = false): List<CardMenuEntry> {
+fun cardMenuEntries(card: CardModel, onWatchlistPage: Boolean, canDismiss: Boolean = false, canRemoveFromHistory: Boolean = false): List<CardMenuEntry> {
     val kind = card.kind?.lowercase() ?: return emptyList()
     val started = card.progress != null
     return buildList {
@@ -170,6 +182,7 @@ fun cardMenuEntries(card: CardModel, onWatchlistPage: Boolean, canDismiss: Boole
         // Next Up can only be dismissed for its series.
         val removable = if (isNextUp(card)) card.seriesId != null else true
         if (canDismiss && card.homeRow in progressRows && removable) add(CardMenuEntry.RemoveFromRow)
+        if (canRemoveFromHistory) add(CardMenuEntry.RemoveFromHistory)
     }
 }
 

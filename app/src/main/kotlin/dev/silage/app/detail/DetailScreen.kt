@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.launch
@@ -184,6 +185,8 @@ private fun DetailContent(
     var preferredShort by rememberSaveable(contentId) { mutableStateOf<String?>(null) }
     var preferredFileId by rememberSaveable(contentId) { mutableStateOf<Int?>(null) }
     var picking by remember { mutableStateOf(System.getenv("SILAGE_DEV_OPEN_VERSIONS") == "1") }
+    // The info dialog: details, full cast and crew, and the file that would play.
+    var showingInfo by remember { mutableStateOf(false) }
     val next = if (m.isSeries) nextEpisode(episodes) else null
     val options = remember(item, next) {
         (if (m.isSeries) next?.files?.map { it.toOption() } else item.versions.map { it.toOption() }).orEmpty().sortedBest()
@@ -228,6 +231,7 @@ private fun DetailContent(
                         }
                         if (options.size > 1 && selected != null) ActionButton(Icons.Outlined.Layers, "Versions (${options.size})") { picking = true }
                         shuffle?.let { start -> ActionButton(Icons.Filled.Shuffle, "Shuffle", onClick = start) }
+                        ActionButton(Icons.Outlined.Info, "Info") { showingInfo = true }
                         watchlist.value?.let { on ->
                             ToggleChip(if (on) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, if (on) "On your watchlist" else "Add to watchlist", on) { scope.launch { watchlist.toggle() } }
                         }
@@ -291,6 +295,10 @@ private fun DetailContent(
                     }
                 }
             }
+        }
+        if (showingInfo) {
+            val file = item.versions.firstOrNull { it.fileId == selected?.fileId } ?: item.versions.firstOrNull()
+            TitleInfoDialog(m.title, remember(item, file) { titleInfoSections(item, file) }, onDismiss = { showingInfo = false })
         }
         settingUpTrailer?.let { trailer ->
             TrailerSetupDialog(onReady = { settingUpTrailer = null; onTrailer(trailer) }, onCancel = { settingUpTrailer = null })
