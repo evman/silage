@@ -23,7 +23,8 @@ sealed interface Route {
     /** [personal]: one of the profile's own collections (sidebar), rather than a library's. */
     data class Collection(val id: String, val name: String, val personal: Boolean = false) : Route
     data class Person(val id: Long, val name: String) : Route
-    data class Detail(val contentId: String) : Route
+    /** [season] and [episode]: open a show's page on that season, at that episode (from "Go to show"). */
+    data class Detail(val contentId: String, val season: Int? = null, val episode: String? = null) : Route
     data class RequestDetail(val mediaType: String, val tmdbId: Int) : Route
     /** [trailer]: a provider trailer (YouTube) played in the same player, rather than a title from the server. */
     data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null, val shuffleId: String? = null,

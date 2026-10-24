@@ -88,4 +88,23 @@ class CardMenuTest {
         assertEquals(false, runRemoval({ error("boom") }, c, "Removed").second)
         assertEquals("Couldn't remove it from here." to false, runRemoval(null, c, "Removed"))
     }
+
+    @Test fun anEpisodeWithItsShowOffersGoToShowAfterOpen() {
+        val episode = card("episode", series = "series:a").copy(seasonNumber = 3)
+        val entries = cardMenuEntries(episode, false)
+        assertEquals(entries.indexOf(CardMenuEntry.Open) + 1, entries.indexOf(CardMenuEntry.GoToShow))
+        assertEquals("Go to show", CardMenuEntry.GoToShow.label(episode))
+        assertEquals(false, CardMenuEntry.GoToShow in cardMenuEntries(card("episode"), false))
+        assertEquals(false, CardMenuEntry.GoToShow in cardMenuEntries(card("movie", series = "x"), false))
+    }
+
+    @Test fun cardsKeepTheEpisodesShowAndSeason() {
+        val fromSearch = org.siloserver.silo.model.catalog.BrowseItem(contentId = "e", type = "episode", title = "Pilot",
+            seriesId = "series:a", seriesTitle = "A", seasonNumber = 2).toCard()
+        assertEquals("series:a", fromSearch.seriesId)
+        assertEquals(2, fromSearch.seasonNumber)
+        val fromHome = org.siloserver.silo.model.section.SectionItem(contentId = "e", type = "episode", title = "Pilot",
+            seriesId = "series:a", seriesTitle = "A", seasonNumber = 4).toCard(landscape = true)
+        assertEquals(4, fromHome.seasonNumber)
+    }
 }

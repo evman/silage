@@ -81,12 +81,15 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
     onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> },
     onTrailer: (dev.silage.app.nav.Trailer) -> Unit = {},
     /** Opens another title's page (from More like this). */
-    onOpen: (contentId: String) -> Unit = {}) {
+    onOpen: (contentId: String) -> Unit = {},
+    /** A show's season to open on, and an episode of it to scroll to and mark ("Go to show"). */
+    initialSeason: Int? = null,
+    focusEpisode: String? = null) {
     val catalog = remember { koin.get<CatalogRepository>() }
     var item by remember(contentId) { mutableStateOf<ItemDetail?>(null) }
     var error by remember(contentId) { mutableStateOf<String?>(null) }
     var seasons by remember(contentId) { mutableStateOf(emptyList<Season>()) }
-    var season by rememberSaveable(contentId) { mutableStateOf<Int?>(null) }
+    var season by rememberSaveable(contentId) { mutableStateOf(initialSeason) }
     var episodes by remember(contentId) { mutableStateOf(emptyList<EpisodeListItem>()) }
     var attempt by remember { mutableStateOf(0) }
     // Bumped after marking an episode watched, to reload the season's episodes.
@@ -104,7 +107,8 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
             (catalog.getSeasons(contentId) as? ApiResult.Success)?.data?.seasons?.let { list ->
                 val plan = list.initialSeasonDisplayPlan(null)
                 seasons = plan.seasons
-                if (season == null) season = plan.selectedSeasonNumber
+                // A season asked for (or picked earlier) the show doesn't list falls back to the usual one.
+                if (season == null || plan.seasons.none { it.seasonNumber == season }) season = plan.selectedSeasonNumber
             }
         }
     }
@@ -119,7 +123,7 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
         error != null && d == null -> ErrorState(error!!) { attempt++ }
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
         else -> DetailContent(koin, d.toDetailModel(profileUi.spoilers, profileUi.showAdvisoryAge), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId,
-            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle, onTrailer = onTrailer, onOpen = onOpen)
+            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle, onTrailer = onTrailer, onOpen = onOpen, focusEpisode = focusEpisode)
     }
 }
 
@@ -139,7 +143,18 @@ private fun DetailContent(
     onShuffle: (contentId: String, shuffleId: String) -> Unit,
     onTrailer: (dev.silage.app.nav.Trailer) -> Unit,
     onOpen: (contentId: String) -> Unit,
+    focusEpisode: String?,
 ) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // "Go to show": once the season's episodes are in, scroll so the episode before it sits at the top.
+    var scrolledToEpisode by rememberSaveable(contentId) { mutableStateOf(false) }
+    LaunchedEffect(episodes, focusEpisode) {
+        if (focusEpisode == null || scrolledToEpisode) return@LaunchedEffect
+        val i = episodes.indexOfFirst { it.contentId == focusEpisode }
+        if (i < 0) return@LaunchedEffect
+        scrolledToEpisode = true
+        listState.animateScrollToItem(episodeScrollIndex(i))
+    }
     // Titles like this one, as Silo's web client shows them: loaded after the page itself.
     var similar by remember(contentId) { mutableStateOf(emptyList<dev.silage.app.browse.CardModel>()) }
     LaunchedEffect(contentId) {
@@ -180,14 +195,15 @@ private fun DetailContent(
     fun episodeFile(e: EpisodeListItem): Int? = chooseVersion(e.files.map { it.toOption() }, preferredShort, e.userData?.lastFileId?.takeIf { preferLast }, preferredFileId)?.fileId
     // A series' Play button appears once its episodes load; focus it then, once per visit
     // (picking another season keeps focus on the season pills).
-    val playFocus = rememberInitialFocus(!m.isSeries || next != null)
+    // Not when opened at an episode: focusing Play would scroll back to the top.
+    val playFocus = rememberInitialFocus(focusEpisode == null && (!m.isSeries || next != null))
 
     Box(Modifier.fillMaxSize().background(Silage.Black)) {
         Artwork(m.backdropUrl, m.backdropThumbhash, "", Modifier.fillMaxWidth().fillMaxHeight(0.85f).align(Alignment.TopEnd).then(if (m.blurBackdrop) Modifier.blur(40.dp) else Modifier), showTitleTile = false)
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black, 0.25f to Color.Black.copy(alpha = 0.92f), 0.65f to Color.Black.copy(alpha = 0.25f), 1f to Color.Transparent)))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 0.82f to Color.Black)))
 
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 96.dp)) {
             item {
                 Column(Modifier.padding(start = 64.dp, top = 120.dp, end = 64.dp).widthIn(max = 900.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     if (m.logoUrl != null) {
@@ -239,7 +255,7 @@ private fun DetailContent(
                     }
                 }
                 items(episodes, key = { it.contentId }) { e ->
-                    EpisodeRowView(e.toRow(dev.silage.app.settings.LocalProfileUi.current.spoilers), onToggleWatched = { now -> actions.setWatched(e.contentId, now).also { if (it) onEpisodesChanged() } }) {
+                    EpisodeRowView(e.toRow(dev.silage.app.settings.LocalProfileUi.current.spoilers), highlighted = e.contentId == focusEpisode, onToggleWatched = { now -> actions.setWatched(e.contentId, now).also { if (it) onEpisodesChanged() } }) {
                         onPlay(e.contentId, false, episodeFile(e))
                     }
                 }
@@ -330,13 +346,15 @@ private fun ToggleChip(icon: ImageVector, label: String, on: Boolean, onClick: (
 }
 
 @Composable
-private fun EpisodeRowView(e: EpisodeRow, onToggleWatched: suspend (Boolean) -> Boolean, onClick: () -> Unit) {
+private fun EpisodeRowView(e: EpisodeRow, highlighted: Boolean = false, onToggleWatched: suspend (Boolean) -> Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val active = interaction.isActive()
     val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier.padding(horizontal = 48.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(if (active) Color.White.copy(alpha = 0.10f) else Color.Transparent)
+            .background(if (active) Color.White.copy(alpha = 0.10f) else if (highlighted) Color.White.copy(alpha = 0.06f) else Color.Transparent)
+            // The episode "Go to show" came from.
+            .then(if (highlighted) Modifier.border(2.dp, Silage.Amber.copy(alpha = 0.8f), RoundedCornerShape(16.dp)) else Modifier)
             .hoverable(interaction).clickable(interaction, indication = null, onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -441,3 +459,10 @@ internal fun showsMoreLikeThis(type: String?): Boolean = type?.lowercase() in se
 /** The server's similar titles as poster cards, without the title whose page this is. */
 internal fun moreLikeThis(items: List<org.siloserver.silo.model.catalog.BrowseItem>, contentId: String): List<dev.silage.app.browse.CardModel> =
     items.filter { it.contentId != contentId }.distinctBy { it.contentId }.map { it.toCard() }
+
+/**
+ * The page's list position to scroll to for the season's episode [episodeIndex]: the episode before
+ * it, so what came before and after shows too; the season buttons for the first episode. The page
+ * lists its heading, then the season buttons, then the episodes.
+ */
+internal fun episodeScrollIndex(episodeIndex: Int): Int = if (episodeIndex <= 0) 1 else 1 + episodeIndex

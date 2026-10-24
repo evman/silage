@@ -16,4 +16,11 @@ class MoreLikeThisTest {
         assertEquals("a", cards.first().openTarget)
         assertEquals(false, cards.first().landscape)
     }
+
+    @Test fun goToShowScrollsToTheEpisodeBeforeIt() {
+        // 0 is the page heading, 1 the season buttons, 2 onwards the episodes.
+        assertEquals(1, episodeScrollIndex(0))
+        assertEquals(2, episodeScrollIndex(1))
+        assertEquals(5, episodeScrollIndex(4))
+    }
 }

@@ -47,6 +47,7 @@ fun AppShell(nav: AppNavigator, koin: Koin, current: Route, content: @Composable
             play = { nav.go(Route.Playing(it)) }, playFromStart = { nav.go(Route.Playing(it, fromStart = true)) }, open = { nav.go(Route.Detail(it)) },
             actions = dev.silage.app.detail.ItemActions(koin.get(), koin.get(), koin.get()), scope = scope,
             notify = { notice = it }, onWatchlistPage = current == Route.Watchlist,
+            goToShow = { series, season, episode -> nav.go(Route.Detail(series, season, episode)) },
         )
     }
 

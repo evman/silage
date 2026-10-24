@@ -27,6 +27,8 @@ data class CardModel(
     /** The anchors a Home dismissal needs: when the progress was saved, and the episode's series. */
     val progressUpdatedAt: String? = null,
     val seriesId: String? = null,
+    /** An episode's season, so "Go to show" opens the show on it. */
+    val seasonNumber: Int? = null,
     /** Why the server put it in Continue Watching: "in_progress", or "next_up" for the next episode of a show. */
     val itemSource: String? = null,
     /** Whether the title is on the profile's watchlist (the server's user state), for the right-click menu. */
@@ -101,7 +103,7 @@ fun SectionItem.toCard(landscape: Boolean): CardModel = card(
     userState?.played == true, landscape, inWatchlist = userState?.inWatchlist == true,
     badges = org.siloserver.silo.overlays.OverlayDataExtractor.fromSectionItem(this), favorite = userState?.isFavorite == true,
     imageIsStill = org.siloserver.silo.model.settings.EpisodeSpoilers.selectedImageIsStill(this).takeIf { landscape } ?: posterIsEpisodeStill,
-).copy(progressUpdatedAt = progressUpdatedAt, seriesId = seriesId, itemSource = itemSource)
+).copy(progressUpdatedAt = progressUpdatedAt, seriesId = seriesId, seasonNumber = seasonNumber, itemSource = itemSource)
 
 fun BrowseItem.toCard(): CardModel = card(
     contentId, type, title, seriesTitle, seasonNumber, episodeNumber, year, runtime, contentRating, overview,
@@ -109,4 +111,4 @@ fun BrowseItem.toCard(): CardModel = card(
     played = userState?.played == true, landscape = false, inWatchlist = userState?.inWatchlist == true,
     badges = org.siloserver.silo.overlays.OverlayDataExtractor.fromBrowseItem(this), favorite = userState?.isFavorite == true,
     imageIsStill = posterIsEpisodeStill,
-)
+).copy(seriesId = seriesId, seasonNumber = seasonNumber)

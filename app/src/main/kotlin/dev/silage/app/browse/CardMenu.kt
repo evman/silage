@@ -24,10 +24,12 @@ class CardMenu(
     private val dismiss: (suspend (CardModel) -> String?)? = null,
     /** Called after a change the page shows (progress reset), so it can reload. */
     private val changed: () -> Unit = {},
+    /** Opens an episode's show on the episode's season, at the episode. */
+    val goToShow: (seriesId: String, season: Int?, episodeId: String) -> Unit = { id, _, _ -> open(id) },
 ) {
     /** This menu on Home: removing from a row, and reloading Home after a change. */
     fun forHome(dismiss: suspend (CardModel) -> String?, changed: () -> Unit) =
-        CardMenu(play, playFromStart, open, actions, scope, notify, onWatchlistPage, dismiss, changed)
+        CardMenu(play, playFromStart, open, actions, scope, notify, onWatchlistPage, dismiss, changed, goToShow)
 
     /** The poster's shortcut buttons: save the change, and say so when it didn't take. */
     suspend fun quickFavorite(id: String, on: Boolean): Boolean =
@@ -42,6 +44,7 @@ class CardMenu(
                 CardMenuEntry.Play -> play(card.openTarget)
                 CardMenuEntry.PlayFromStart -> playFromStart(card.openTarget)
                 CardMenuEntry.Open -> open(card.openTarget)
+                CardMenuEntry.GoToShow -> card.seriesId?.let { goToShow(it, card.seasonNumber, card.id) }
                 CardMenuEntry.ResetProgress -> act("Progress reset") {
                     // Silo keeps no separate "clear progress": marking watched ends the
                     // saved position, and unmarking leaves the title unwatched from the start.
@@ -133,7 +136,7 @@ fun homeDismissal(card: CardModel): HomeDismissal? {
 }
 
 enum class CardMenuEntry(private val text: String) {
-    Play("Play"), PlayFromStart("Play from beginning"), Open("Open"), AddToWatchlist("Add to watchlist"),
+    Play("Play"), PlayFromStart("Play from beginning"), Open("Open"), GoToShow("Go to show"), AddToWatchlist("Add to watchlist"),
     RemoveFromWatchlist("Remove from watchlist"), MarkWatched("Mark as watched"), MarkUnwatched("Mark as unwatched"),
     ResetProgress("Reset progress"), RemoveFromRow("Remove from Continue Watching"),
     ;
@@ -158,6 +161,8 @@ fun cardMenuEntries(card: CardModel, onWatchlistPage: Boolean, canDismiss: Boole
             if (started) add(CardMenuEntry.PlayFromStart)
         }
         add(CardMenuEntry.Open)
+        // An episode can also open its show, on the episode's season.
+        if (kind == "episode" && !card.seriesId.isNullOrBlank()) add(CardMenuEntry.GoToShow)
         if (kind != "episode" && kind in watchable) add(if (WatchlistMemory.isOn(card, onWatchlistPage)) CardMenuEntry.RemoveFromWatchlist else CardMenuEntry.AddToWatchlist)
         if (kind in watchable) add(if (card.watched) CardMenuEntry.MarkUnwatched else CardMenuEntry.MarkWatched)
         if (started && kind in playable) add(CardMenuEntry.ResetProgress)

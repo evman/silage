@@ -349,7 +349,7 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         Route.Calendar -> AppShell(nav, koin, route) {
             dev.silage.app.calendar.CalendarScreen(koin, onOpen = { id -> nav.go(Route.Detail(id)) })
         }
-        is Route.Detail -> DetailScreen(koin, route.contentId,
+        is Route.Detail -> DetailScreen(koin, route.contentId, initialSeason = route.season, focusEpisode = route.episode,
             onPlay = { id, fromStart, fileId -> nav.go(Route.Playing(id, fromStart, fileId)) },
             onPerson = { id, name -> nav.go(Route.Person(id, name)) },
             onShuffle = { first, shuffleId -> nav.go(Route.Playing(first, shuffleId = shuffleId)) },
