@@ -196,8 +196,8 @@ holding isn't available to Silage.
 - **Settings → Video** also sets *Streaming quality* (Auto plays the original file whenever
   it can; a resolution caps it) and a *Maximum bitrate* the server must stay under; a file
   above it is converted to fit. Set it below your connection's speed if videos stop to buffer.
-- **Settings → Devices:** every device signed in to your account (Silage shows as "Silage on"
-  your PC's name), with where and when each was last used. Sign out one you no longer use,
+- **Settings → Devices:** every device signed in to your account (Silage shows under your
+  PC's name), with where and when each was last used. Sign out one you no longer use,
   or all the others at once.
 - **Settings → Subtitles:** size, background (shadow, outline, dark box or
   none), text color and position, with a preview. They apply from the next
