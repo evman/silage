@@ -117,6 +117,8 @@ PC or Windows account requires signing in again; interface settings still travel
   starts faster than the single-file one. A trailer plays at the best quality YouTube has,
   at any resolution. Silage looks up a trailer's streams as soon as its title page opens
   (and when you point at a trailer), so pressing play starts it almost at once.
+- More like this: movie and show pages end with a row of similar titles from your server
+  (the same ones Silo's web client shows), under the cast. Click one to open its page.
 - Back: pages that sit on top of another (a title, a person, a collection) have a
   **Back** button at the top left; Esc, Backspace, Alt+Left and the mouse's Back
   button do the same. Clicking the dimmed page behind a menu (the version list, a

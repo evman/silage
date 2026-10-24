@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.silage.app.browse.Pill
+import dev.silage.app.browse.toCard
 import dev.silage.app.home.ErrorState
 import dev.silage.app.ui.ArrowRow
 import dev.silage.app.ui.Artwork
@@ -78,7 +79,9 @@ import org.siloserver.silo.repository.CatalogRepository
 @Composable
 fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) -> Unit, onPerson: (Long, String) -> Unit = { _, _ -> },
     onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> },
-    onTrailer: (dev.silage.app.nav.Trailer) -> Unit = {}) {
+    onTrailer: (dev.silage.app.nav.Trailer) -> Unit = {},
+    /** Opens another title's page (from More like this). */
+    onOpen: (contentId: String) -> Unit = {}) {
     val catalog = remember { koin.get<CatalogRepository>() }
     var item by remember(contentId) { mutableStateOf<ItemDetail?>(null) }
     var error by remember(contentId) { mutableStateOf<String?>(null) }
@@ -116,7 +119,7 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
         error != null && d == null -> ErrorState(error!!) { attempt++ }
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
         else -> DetailContent(koin, d.toDetailModel(profileUi.spoilers, profileUi.showAdvisoryAge), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId,
-            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle, onTrailer = onTrailer)
+            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle, onTrailer = onTrailer, onOpen = onOpen)
     }
 }
 
@@ -135,7 +138,18 @@ private fun DetailContent(
     onEpisodesChanged: () -> Unit,
     onShuffle: (contentId: String, shuffleId: String) -> Unit,
     onTrailer: (dev.silage.app.nav.Trailer) -> Unit,
+    onOpen: (contentId: String) -> Unit,
 ) {
+    // Titles like this one, as Silo's web client shows them: loaded after the page itself.
+    var similar by remember(contentId) { mutableStateOf(emptyList<dev.silage.app.browse.CardModel>()) }
+    LaunchedEffect(contentId) {
+        if (!showsMoreLikeThis(item.type)) return@LaunchedEffect
+        val recommendations = koin.get<org.siloserver.silo.repository.RecommendationRepository>()
+        val owner = runCatching { recommendations.captureSimilarAuthority() }.getOrNull() ?: return@LaunchedEffect
+        runCatching {
+            recommendations.loadSimilarCards(contentId, owner, stillCurrent = { true }) { items -> similar = moreLikeThis(items, contentId) }
+        }
+    }
     // A YouTube trailer waiting for its helper programs to be downloaded (first time only).
     var settingUpTrailer by remember { mutableStateOf<dev.silage.app.nav.Trailer?>(null) }
     // Only a series shuffles from its page (movies have nothing to pick between).
@@ -251,6 +265,13 @@ private fun DetailContent(
                     Text("Cast", color = Silage.Text2, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 64.dp, top = 56.dp, bottom = 18.dp))
                     ArrowRow(contentPadding = PaddingValues(horizontal = 64.dp), horizontalArrangement = Arrangement.spacedBy(28.dp), arrowOffsetY = 20.dp) {
                         items(m.cast) { c -> CastView(c, onOpen = c.personId?.let { id -> { onPerson(id, c.name) } }) }
+                    }
+                }
+            }
+            if (similar.isNotEmpty()) {
+                item {
+                    Box(Modifier.padding(top = 56.dp)) {
+                        dev.silage.app.browse.CardRow("More like this", similar, onOpen = { onOpen(it.openTarget) }, onFocus = {})
                     }
                 }
             }
@@ -413,3 +434,10 @@ internal fun VersionPicker(options: List<VersionOption>, selectedId: Int, onPick
         }
     }
 }
+
+/** Movies and shows get a More like this row; episodes and other kinds don't. */
+internal fun showsMoreLikeThis(type: String?): Boolean = type?.lowercase() in setOf("movie", "series", "show")
+
+/** The server's similar titles as poster cards, without the title whose page this is. */
+internal fun moreLikeThis(items: List<org.siloserver.silo.model.catalog.BrowseItem>, contentId: String): List<dev.silage.app.browse.CardModel> =
+    items.filter { it.contentId != contentId }.distinctBy { it.contentId }.map { it.toCard() }

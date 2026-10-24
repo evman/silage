@@ -353,7 +353,8 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             onPlay = { id, fromStart, fileId -> nav.go(Route.Playing(id, fromStart, fileId)) },
             onPerson = { id, name -> nav.go(Route.Person(id, name)) },
             onShuffle = { first, shuffleId -> nav.go(Route.Playing(first, shuffleId = shuffleId)) },
-            onTrailer = { trailer -> nav.go(Route.Playing("trailer:${trailer.url}", trailer = trailer)) })
+            onTrailer = { trailer -> nav.go(Route.Playing("trailer:${trailer.url}", trailer = trailer)) },
+            onOpen = { id -> nav.go(Route.Detail(id)) })
         is Route.Person -> AppShell(nav, koin, route) {
             dev.silage.app.browse.PersonScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) })
         }
