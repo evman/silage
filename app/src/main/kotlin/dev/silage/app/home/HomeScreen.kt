@@ -62,13 +62,12 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
             // Straight to the server, so its answer can be shown. It drops the whole show from both
             // rows, which is why Home reloads afterwards.
             dismiss = { card ->
-                val nextUp = card.homeRow == "next_up" || card.homeRow == "up_next"
-                val anchor = (if (nextUp) card.seriesId else card.progressUpdatedAt)?.takeIf { it.isNotBlank() }
+                val target = dev.silage.app.browse.homeDismissal(card)
                 val owner = sections.captureHomeAuthority()
                 when {
-                    anchor == null -> "The server didn't say which entry this is."
+                    target == null -> "The server didn't say which entry this is."
                     owner == null -> "You're signed out."
-                    else -> when (val r = sections.dismissHomeItem(if (nextUp) "next_up" else "continue_watching", card.id, anchor, owner)) {
+                    else -> when (val r = sections.dismissHomeItem(target.surface, card.id, target.anchor, owner)) {
                         is org.siloserver.silo.network.ApiResult.Success -> { removed = removed + (card.seriesId ?: card.id); null }
                         is org.siloserver.silo.network.ApiResult.Error -> "Couldn't remove it: ${r.message}"
                         else -> "Can't reach the server."

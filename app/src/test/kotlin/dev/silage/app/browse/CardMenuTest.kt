@@ -69,4 +69,15 @@ class CardMenuTest {
         assertEquals(false, CardMenuEntry.RemoveFromRow in cardMenuEntries(card("episode", row = "next_up"), false, canDismiss = true))
         assertEquals("Play", CardMenuEntry.Play.label(nextUp))
     }
+
+    @Test fun aNextEpisodeIsDismissedByItsSeriesEvenInContinueWatching() {
+        // Silo puts the next episode of a show in Continue Watching (item_source next_up); it has no saved progress.
+        val merged = card("episode", row = "continue_watching", series = "series:a").copy(itemSource = "next_up")
+        assertEquals(HomeDismissal("next_up", "series:a"), homeDismissal(merged))
+        assertEquals(HomeDismissal("next_up", "series:a"), homeDismissal(card("episode", row = "next_up", series = "series:a", anchor = "t")))
+        assertEquals(HomeDismissal("continue_watching", "t"), homeDismissal(card("episode", row = "continue_watching", series = "series:a", anchor = "t")))
+        // An unstarted episode without the source still has its series to go by.
+        assertEquals(HomeDismissal("next_up", "series:a"), homeDismissal(card("episode", row = "continue_watching", series = "series:a")))
+        assertEquals(null, homeDismissal(card("movie", row = "continue_watching")))
+    }
 }

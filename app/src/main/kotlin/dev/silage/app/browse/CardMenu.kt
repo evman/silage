@@ -48,8 +48,7 @@ class CardMenu(
                     actions.setWatched(card.id, true) && actions.setWatched(card.id, false)
                 }
                 CardMenuEntry.RemoveFromRow -> when {
-                    isNextUp(card) -> removeFromRow(card, "Removed from Next Up")
-                    card.progressUpdatedAt != null -> removeFromRow(card, "Removed from Continue Watching")
+                    homeDismissal(card) != null -> removeFromRow(card, "Removed from ${entry.label(card).removePrefix("Remove from ")}")
                     // No dismissal anchor from this server: clearing the saved position takes
                     // the title off Continue Watching just the same.
                     else -> act("Removed from Continue Watching") {
@@ -100,6 +99,27 @@ object WatchlistMemory {
 
 private val progressRows = setOf("continue_watching", "in_progress", "next_up", "up_next")
 private fun isNextUp(card: CardModel) = card.homeRow == "next_up" || card.homeRow == "up_next"
+
+/** Which Home surface to dismiss a card from, and the anchor the server needs for it. */
+data class HomeDismissal(val surface: String, val anchor: String)
+
+/**
+ * How to take [card] off Home. A next episode (in Next Up, or one the server put in Continue
+ * Watching as `item_source: next_up`) has no saved progress, so it is dismissed by its series;
+ * a started title by when its progress was saved. Silo then drops the whole show from both rows.
+ * Null when the server sent neither anchor.
+ */
+fun homeDismissal(card: CardModel): HomeDismissal? {
+    val series = card.seriesId?.takeIf { it.isNotBlank() }
+    val saved = card.progressUpdatedAt?.takeIf { it.isNotBlank() }
+    val nextEpisode = isNextUp(card) || card.itemSource == "next_up"
+    return when {
+        nextEpisode && series != null -> HomeDismissal("next_up", series)
+        saved != null -> HomeDismissal("continue_watching", saved)
+        series != null -> HomeDismissal("next_up", series)
+        else -> null
+    }
+}
 
 enum class CardMenuEntry(private val text: String) {
     Play("Play"), PlayFromStart("Play from beginning"), Open("Open"), AddToWatchlist("Add to watchlist"),
