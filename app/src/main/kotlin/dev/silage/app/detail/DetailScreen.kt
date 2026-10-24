@@ -68,6 +68,7 @@ import org.siloserver.silo.model.catalog.EpisodeListItem
 import org.siloserver.silo.model.catalog.ItemDetail
 import org.siloserver.silo.model.catalog.Season
 import org.siloserver.silo.model.catalog.initialSeasonDisplayPlan
+import org.siloserver.silo.model.catalog.trailerRailEntries
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.repository.CatalogRepository
 
@@ -219,6 +220,15 @@ private fun DetailContent(
                     EpisodeRowView(e.toRow(), onToggleWatched = { now -> actions.setWatched(e.contentId, now).also { if (it) onEpisodesChanged() } }) {
                         onPlay(e.contentId, false, episodeFile(e))
                     }
+                }
+            }
+            val trailers = trailerRailEntries(item)
+            if (trailers.isNotEmpty()) {
+                item {
+                    var browserFailed by remember(contentId) { mutableStateOf(false) }
+                    TrailerRail(trailers, onPlayLocal = { id, file -> onPlay(id, false, file) },
+                        onOpenRemote = { url -> browserFailed = !openInBrowser(url) })
+                    if (browserFailed) Text("Couldn't open your browser.", color = Silage.Error, fontSize = 17.sp, modifier = Modifier.padding(start = 64.dp, top = 8.dp))
                 }
             }
             if (m.cast.isNotEmpty()) {

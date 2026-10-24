@@ -11,6 +11,8 @@ sealed interface Route {
     data object Home : Route
     data object Search : Route
     data object Watchlist : Route
+    data object Favorites : Route
+    data object History : Route
     data object ForYou : Route
     data object Calendar : Route
     data object Notifications : Route

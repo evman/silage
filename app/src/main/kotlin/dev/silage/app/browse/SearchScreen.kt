@@ -155,21 +155,36 @@ fun SearchField(text: String, onChange: (String) -> Unit, focusRequester: FocusR
 
 /** The profile's watchlist as a poster grid. */
 @Composable
-fun WatchlistScreen(koin: Koin, onOpen: (CardModel) -> Unit) {
+fun WatchlistScreen(koin: Koin, onOpen: (CardModel) -> Unit) =
+    PersonalListScreen(koin, "watchlist", "Watchlist", "Your watchlist is empty", onOpen)
+
+/** The titles the profile marked as favorites. */
+@Composable
+fun FavoritesScreen(koin: Koin, onOpen: (CardModel) -> Unit) =
+    PersonalListScreen(koin, "favorites", "Favorites", "You haven't marked any favorites yet", onOpen)
+
+/** What the profile watched lately, most recent first. */
+@Composable
+fun HistoryScreen(koin: Koin, onOpen: (CardModel) -> Unit) =
+    PersonalListScreen(koin, "history", "History", "Nothing watched yet", onOpen)
+
+/** One of the profile's own lists (the catalog's `source`) as a titled poster grid. */
+@Composable
+private fun PersonalListScreen(koin: Koin, source: String, title: String, emptyText: String, onOpen: (CardModel) -> Unit) {
     val catalog = remember { koin.get<CatalogRepository>() }
     val scope = rememberCoroutineScope()
     var focused by remember { mutableStateOf<CardModel?>(null) }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
-    val pager = rememberEntry("watchlist") { LibraryPager<CatalogContinuationV2> { c -> catalog.browse(source = "watchlist", continuation = c, limit = 60).toPage() } }
+    val pager = rememberEntry(source) { LibraryPager<CatalogContinuationV2> { c -> catalog.browse(source = source, continuation = c, limit = 60).toPage() } }
     val state by pager.state.collectAsState()
     LaunchedEffect(pager) { if (pager.state.value.items.isEmpty()) pager.loadMore() }
     val first = rememberInitialFocus(state.items.isNotEmpty())
     Box(Modifier.fillMaxSize()) {
         PageBackdrop(focused)
         PosterGrid(state, { scope.launch { pager.loadMore() } }, { scope.launch { pager.retry() } }, onOpen, { focused = it; lastFocused = it.id },
-            emptyText = "Your watchlist is empty", firstFocus = first, restoreId = lastFocused, header = {
+            emptyText = emptyText, firstFocus = first, restoreId = lastFocused, header = {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text("Watchlist", color = Silage.Text, fontSize = 48.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 56.dp, bottom = 12.dp))
+                    Text(title, color = Silage.Text, fontSize = 48.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 56.dp, bottom = 12.dp))
                 }
             })
     }

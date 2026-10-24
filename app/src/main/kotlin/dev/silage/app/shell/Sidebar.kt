@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.AddCircleOutline
@@ -113,6 +115,8 @@ fun Sidebar(
                 }
                 Box(Modifier.padding(vertical = 10.dp, horizontal = 12.dp).fillMaxWidth().height(1.dp).background(Silage.Hairline))
                 Entry(Icons.Outlined.BookmarkBorder, "Watchlist", current == Route.Watchlist, open) { onGo(Route.Watchlist) }
+                Entry(Icons.Outlined.FavoriteBorder, "Favorites", current == Route.Favorites, open) { onGo(Route.Favorites) }
+                Entry(Icons.Outlined.History, "History", current == Route.History, open) { onGo(Route.History) }
                 Entry(Icons.Outlined.CollectionsBookmark, "Collections", current == Route.Collections || current is Route.Collection, open) { onGo(Route.Collections) }
             }
             if (notificationsAvailable) {

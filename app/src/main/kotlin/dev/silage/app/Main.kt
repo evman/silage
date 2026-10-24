@@ -263,6 +263,8 @@ private suspend fun startRoute(koin: Koin): Route {
         if (dev == "connect") return Route.Connect
         if (dev == "search") return Route.Search
         if (dev == "watchlist") return Route.Watchlist
+        if (dev == "favorites") return Route.Favorites
+        if (dev == "history") return Route.History
         if (dev == "library") {
             val libs = koin.get<org.siloserver.silo.repository.PersonalDataRepository>().listUserLibraries()
             (libs as? ApiResult.Success)?.data?.firstOrNull()?.let { return Route.Library(it.id, it.name) }
@@ -362,6 +364,8 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             dev.silage.app.browse.CollectionsScreen(koin, onOpenCollection = { id, name -> nav.go(Route.Collection(id, name, personal = true)) })
         }
         Route.Watchlist -> AppShell(nav, koin, route) { WatchlistScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
+        Route.Favorites -> AppShell(nav, koin, route) { dev.silage.app.browse.FavoritesScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
+        Route.History -> AppShell(nav, koin, route) { dev.silage.app.browse.HistoryScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         Route.Settings -> AppShell(nav, koin, route) {
             SettingsScreen(koin, onSwitchProfile = { nav.root(Route.Profiles) }, onSwitchServer = { nav.root(Route.Connect) }, onSignedOut = { nav.root(Route.SignIn) })
         }

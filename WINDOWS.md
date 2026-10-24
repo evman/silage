@@ -106,6 +106,11 @@ PC or Windows account requires signing in again; interface settings still travel
   *Create subtitles with AI…*, which transcribes the audio (and translates
   it into your language if that differs). The chosen subtitles switch on by
   themselves; the video restarts where it was, which takes a moment.
+- Favorites and History: sidebar pages beside Watchlist, as poster grids of the
+  titles you marked as favorites and of what you watched lately.
+- Trailers & More: title pages show a rail of the title's trailers and extras.
+  Extras your server holds (featurettes, behind the scenes) play in Silage;
+  YouTube trailers open in your default browser.
 - Notifications: the bell in the sidebar shows how many are unread and opens
   the inbox (new episodes, fulfilled requests). While Silage is in the
   background, new ones also pop up as Windows notifications; clicking one
