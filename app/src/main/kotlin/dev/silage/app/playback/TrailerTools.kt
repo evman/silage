@@ -18,14 +18,24 @@ import java.util.zip.ZipFile
  * What playing a YouTube trailer needs. mpv opens the page through yt-dlp, which in turn needs a
  * JavaScript runtime (Deno) to read YouTube's pages. On Windows Silage downloads both, once, from
  * their official GitHub releases into its own data folder, checking each against the checksum the
- * release publishes. Elsewhere mpv uses whatever yt-dlp the system has.
+ * release publishes. The packaged app already carries both in its `tools` folder, so this is only a fallback. Elsewhere mpv uses whatever yt-dlp the system has.
  */
 object TrailerTools {
     private val windows get() = System.getProperty("os.name").orEmpty().startsWith("Windows")
 
+    /** Where tools downloaded by Silage itself go (and win over the bundled ones, so an update can replace them). */
     val dir: Path get() = XdgPaths.data.resolve("tools")
-    val ytdlp: Path get() = dir.resolve("yt-dlp.exe")
-    val deno: Path get() = dir.resolve("deno.exe")
+
+    /** The `tools` folder shipped beside silage.exe: yt-dlp and Deno come with the app. */
+    internal fun bundledDir(launcher: String? = System.getProperty("jpackage.app-path")): Path? =
+        launcher?.takeIf { it.isNotBlank() }?.let { Path.of(it).toAbsolutePath().parent?.resolve("tools") }
+
+    /** [name] from the downloaded copy if there is one, else the bundled one; null when neither exists. */
+    internal fun locate(name: String, downloaded: Path = dir, bundled: Path? = bundledDir()): Path? =
+        listOfNotNull(downloaded, bundled).map { it.resolve(name) }.firstOrNull { Files.isRegularFile(it) }
+
+    val ytdlp: Path get() = locate("yt-dlp.exe") ?: dir.resolve("yt-dlp.exe")
+    val deno: Path get() = locate("deno.exe") ?: dir.resolve("deno.exe")
 
     internal const val YtdlpExeUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
     internal const val YtdlpSumsUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS"
@@ -33,7 +43,7 @@ object TrailerTools {
     internal const val DenoSumUrl = "$DenoZipUrl.sha256sum"
 
     /** True when a trailer can play now. */
-    fun ready(): Boolean = !windows || (Files.isRegularFile(ytdlp) && Files.isRegularFile(deno))
+    fun ready(): Boolean = !windows || (locate("yt-dlp.exe") != null && locate("deno.exe") != null)
 
     /** mpv options that turn on its YouTube support, pointed at the downloaded programs on Windows. */
     fun mpvOptions(ytdlp: Path = this.ytdlp, deno: Path = this.deno, windows: Boolean = this.windows): Map<String, String> = buildMap {
@@ -90,15 +100,15 @@ object TrailerTools {
                 return if (into == null) response.body() as String else null
             }
             Files.createDirectories(dir)
-            if (!Files.isRegularFile(ytdlp)) {
+            if (locate("yt-dlp.exe") == null) {
                 status("Downloading yt-dlp…")
                 val want = parseChecksum(get(YtdlpSumsUrl)!!, "yt-dlp.exe") ?: error("yt-dlp's checksum could not be found.")
                 val part = dir.resolve("yt-dlp.exe.part")
                 get(YtdlpExeUrl, part)
                 check(sha256(part) == want) { "The yt-dlp download did not match its checksum, so it was not used." }
-                Files.move(part, ytdlp, StandardCopyOption.REPLACE_EXISTING)
+                Files.move(part, dir.resolve("yt-dlp.exe"), StandardCopyOption.REPLACE_EXISTING)
             }
-            if (!Files.isRegularFile(deno)) {
+            if (locate("deno.exe") == null) {
                 status("Downloading Deno…")
                 val want = parseChecksum(get(DenoSumUrl)!!, null) ?: error("Deno's checksum could not be found.")
                 val zip = dir.resolve("deno.zip.part")
@@ -106,7 +116,7 @@ object TrailerTools {
                 try {
                     check(sha256(zip) == want) { "The Deno download did not match its checksum, so it was not used." }
                     extract(zip, "deno.exe", dir.resolve("deno.exe.part"))
-                    Files.move(dir.resolve("deno.exe.part"), deno, StandardCopyOption.REPLACE_EXISTING)
+                    Files.move(dir.resolve("deno.exe.part"), dir.resolve("deno.exe"), StandardCopyOption.REPLACE_EXISTING)
                 } finally { Files.deleteIfExists(zip) }
             }
         }.fold({ null }, { it.message ?: "Something went wrong while downloading." })

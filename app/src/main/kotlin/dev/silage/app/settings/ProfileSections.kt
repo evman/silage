@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.silage.app.browse.Pill
@@ -57,7 +58,6 @@ private fun SaveProblem(store: ProfileUiStore) {
     problem?.let { Text(it, color = Color(0xFFFF8A80), fontSize = 17.sp, modifier = Modifier.padding(bottom = 16.dp)) }
 }
 
-private typealias Color = androidx.compose.ui.graphics.Color
 
 /** Settings → Title pages: what an episode or title page reveals. Saved on the profile, shared with Silo's web app. */
 @Composable

@@ -42,6 +42,9 @@ copy /y "native\Copyright-mpv.txt" "dist\Silage\" >> "%LOG%" 2>&1 || goto restor
 robocopy "native\fallback" "dist\Silage\fallback" /E /NFL /NDL /NJH /NJS >> "%LOG%" 2>&1
 if errorlevel 8 goto restore
 copy /y "WINDOWS.md" "dist\Silage\" >> "%LOG%" 2>&1 || goto restore
+echo Adding yt-dlp and Deno for trailers... >> "%LOG%"
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "scripts\fetch-trailer-tools.ps1" -Out "dist\Silage\tools" >> "%LOG%" 2>&1
+if errorlevel 1 ( echo Adding the trailer tools failed - see package-windows.log & goto restore )
 
 echo [4/7] Checking the packaged app finds its bundled mpv...
 set "JAVA_TOOL_OPTIONS="

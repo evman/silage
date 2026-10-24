@@ -47,4 +47,21 @@ class TrailerToolsTest {
             assertEquals("9095bdb859308b62acf04036ffd4adfe366d7f737d276eb6c46ae434f3816c9b", TrailerTools.sha256(out))
         } finally { dir.toFile().deleteRecursively() }
     }
+
+    @Test fun bundledToolsAreFoundBesideTheLauncherAndDownloadedOnesWin() {
+        val root = java.nio.file.Files.createTempDirectory("tt")
+        try {
+            val app = root.resolve("Silage"); val data = root.resolve("data")
+            java.nio.file.Files.createDirectories(app.resolve("tools")); java.nio.file.Files.createDirectories(data)
+            val launcher = app.resolve("silage.exe").toString()
+            val bundled = TrailerTools.bundledDir(launcher)
+            assertEquals(app.resolve("tools"), bundled)
+            assertNull(TrailerTools.locate("yt-dlp.exe", data, bundled))
+            java.nio.file.Files.writeString(app.resolve("tools/yt-dlp.exe"), "b")
+            assertEquals(app.resolve("tools/yt-dlp.exe"), TrailerTools.locate("yt-dlp.exe", data, bundled))
+            java.nio.file.Files.writeString(data.resolve("yt-dlp.exe"), "d")
+            assertEquals(data.resolve("yt-dlp.exe"), TrailerTools.locate("yt-dlp.exe", data, bundled))
+            assertNull(TrailerTools.bundledDir(null))
+        } finally { root.toFile().deleteRecursively() }
+    }
 }

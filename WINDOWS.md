@@ -110,19 +110,10 @@ PC or Windows account requires signing in again; interface settings still travel
   titles you marked as favorites and of what you watched lately.
 - Trailers & More: title pages show a rail of the title's trailers and extras, all
   played inside Silage. Extras your server holds (featurettes, behind the scenes) play
-  directly. The first YouTube trailer asks once to download two helper programs,
-  yt-dlp and Deno, from their official GitHub releases (checked against the checksums
-  published there) into Silage's own `userdata\Data\tools` folder.
-- Right-click **Remove from Continue Watching / Next Up** on Home asks the server to drop the
-  show from both rows (its Home dismissal) and says what the server answered; Home reloads
-  once the server accepts it.
-- Poster badges and shortcut buttons: the labels Silo's web app puts on posters (quality, ratings,
-  year, studio and more), with its style presets and each badge's corner, colour and icon, plus
-  favorite and watched buttons that appear when you point at a poster. *Under each poster* picks
-  the poster size and whether the title and details are written below.
-- Title page settings: blur the picture and hide the description of episodes you haven't started
-  (cards, the episode list, the episode's own page), and show the recommended age (13+) beside the
-  content rating.
+  directly. YouTube trailers use yt-dlp and Deno, which the packaged app carries in its
+  `tools` folder (official release builds, checked against the checksums published with them
+  when the app is built). A copy downloaded into `userdata\Data\tools` takes precedence, and a
+  build without the folder asks once to download them.
 - Back: pages that sit on top of another (a title, a person, a collection) have a
   **Back** button at the top left; Esc, Backspace, Alt+Left and the mouse's Back
   button do the same. Clicking the dimmed page behind a menu (the version list, a

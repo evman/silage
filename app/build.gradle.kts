@@ -67,8 +67,8 @@ compose.desktop {
         )
         nativeDistributions {
             targetFormats(if (System.getProperty("os.name").startsWith("Windows")) TargetFormat.Exe else TargetFormat.AppImage)
-            // From suggestRuntimeModules, plus EC crypto (HTTPS servers) and naming.
-            modules("java.instrument", "java.management", "jdk.security.auth", "jdk.unsupported", "jdk.crypto.ec", "java.naming")
+            // From suggestRuntimeModules, plus EC crypto (HTTPS servers), naming and the HTTP client (trailer tools).
+            modules("java.instrument", "java.management", "jdk.security.auth", "jdk.unsupported", "jdk.crypto.ec", "java.naming", "java.net.http")
             if (!System.getProperty("os.name").startsWith("Windows")) modules("jdk.net")
             packageName = "silage"
             windows { iconFile.set(rootProject.file("packaging/windows/silage.ico")) }

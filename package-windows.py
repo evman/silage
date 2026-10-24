@@ -35,6 +35,8 @@ try:
         shutil.copy2(root / 'native' / name, target / name)
     shutil.copytree(root / 'native/fallback', target / 'fallback')
     shutil.copy2(root / 'WINDOWS.md', target / 'WINDOWS.md')
+    subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                    '-File', str(root / 'scripts/fetch-trailer-tools.ps1'), '-Out', str(target / 'tools')], check=True)
     # Verification must not rely on developer-only JNA paths or Java.
     env = os.environ.copy()
     env.pop('JAVA_TOOL_OPTIONS', None)
