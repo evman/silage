@@ -91,6 +91,13 @@ PC or Windows account requires signing in again; interface settings still travel
   Subtitles chooses whether subtitles start off, on or forced-only, and in
   which language. Unset, both follow your Silo profile.
 - Video settings during playback: Fit/Fill, aspect ratio and zoom.
+- Player shortcuts: M mute, + / − (or 0 / 9) volume, S and A step through subtitles and
+  audio tracks, [ and ] change speed, N goes to the next episode. Each shows a short
+  message. Volume and mute carry over to the next video.
+- Sync (player button): move the audio or the subtitles later or earlier in 0.1 s steps,
+  for this video.
+- Sleep timer (player button): pause at the end of this video (at the credits when the
+  server marked them), or in 30, 60 or 90 minutes.
 - Quality during playback: the player's Quality button lists the qualities the server
   offers for the video (Original, then smaller sizes with their bitrates); picking one
   restarts the video where it was, at that quality, for this video only.
@@ -117,6 +124,10 @@ PC or Windows account requires signing in again; interface settings still travel
 - Favorites and History: sidebar pages beside Watchlist, as poster grids of the
   titles you marked as favorites and of what you watched lately. Right-click a title in
   History for Remove from history (a show goes with all of its episodes).
+- Title pages have a Trailer button that plays the title's trailer (YouTube or a trailer
+  file on the server), and series pages a *Mark season watched* button after the season
+  buttons. Right-click an episode for *Mark watched up to here* (earlier seasons too).
+- Search shows your recent searches (ones that led to a title) while the box is empty.
 - Title pages have an Info button: the full details, cast and crew, and the file that
   would play: its size, bitrate, and each video, audio and subtitle track.
 - Trailers & More: title pages show a rail of the title's trailers and extras, all

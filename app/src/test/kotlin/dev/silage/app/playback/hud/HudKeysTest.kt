@@ -14,7 +14,38 @@ class HudKeysTest {
         assertEquals(HudKey.Left, HudKey.ofMpv("LEFT"))
         assertEquals(HudKey.Enter, HudKey.ofAwt(KeyEvent.VK_ENTER))
         assertEquals(HudKey.Info, HudKey.ofMpv("i"))
-        assertEquals(null, HudKey.ofAwt(KeyEvent.VK_A))
+        assertEquals(null, HudKey.ofAwt(KeyEvent.VK_B))
+    }
+
+    @Test fun shortcutKeysActWhereverTheFocusIsWithoutRevealingTheHud() {
+        assertEquals(HudKey.CycleAudio, HudKey.ofAwt(KeyEvent.VK_A))
+        assertEquals(HudKey.CycleSubtitles, HudKey.ofMpv("s"))
+        assertEquals(HudKey.Mute, HudKey.ofAwt(KeyEvent.VK_M))
+        assertEquals(HudKey.VolumeUp, HudKey.ofMpv("+"))
+        assertEquals(HudKey.VolumeDown, HudKey.ofAwt(KeyEvent.VK_MINUS))
+        assertEquals(HudKey.FasterSpeed, HudKey.ofMpv("]"))
+        assertEquals(HudKey.NextEpisode, HudKey.ofAwt(KeyEvent.VK_N))
+        assertEquals(hidden to HudEffect.Volume(1), hidden.on(HudKey.VolumeUp))
+        assertEquals(HudEffect.Speed(-1), shown.on(HudKey.SlowerSpeed).second)
+        assertEquals(HudEffect.CycleSubtitles, shown.copy(menu = HudMenu.Audio).on(HudKey.CycleSubtitles).second)
+        // Every mpv name the HUD binds maps to a key.
+        HudKey.MPV_KEYS.forEach { assertEquals(true, HudKey.ofMpv(it) != null, it) }
+    }
+
+    @Test fun theSyncPanelAdjustsWithLeftAndRight() {
+        val nav = HudNav(menu = HudMenu.Sync, menuIndex = SyncControls.SubtitleIndex, menuSize = SyncControls.RowCount)
+        assertEquals(HudEffect.AdjustSync(SyncControls.SubtitleIndex, -1), nav.on(HudKey.Left).second)
+        assertEquals(HudEffect.AdjustSync(SyncControls.SubtitleIndex, 1), nav.on(HudKey.Right).second)
+        assertEquals(Sleep, shown.copy(focus = Sync).on(HudKey.Right).first.focus)
+        assertEquals(Fullscreen, shown.copy(focus = Sleep).on(HudKey.Right).first.focus)
+    }
+
+    @Test fun syncSpeedsAndCyclesStepAsExpected() {
+        assertEquals(0.3, SyncControls.adjust(0.2, 1)); assertEquals(-0.1, SyncControls.adjust(0.0, -1)); assertEquals(10.0, SyncControls.adjust(10.0, 1))
+        assertEquals("In sync", SyncControls.label(0.0)); assertEquals("+0.3 s later", SyncControls.label(0.3)); assertEquals("1.2 s earlier", SyncControls.label(-1.2))
+        assertEquals(1.25, nextSpeed(SPEEDS, 1.0, 1)); assertEquals(0.5, nextSpeed(SPEEDS, 0.5, -1)); assertEquals(2.0, nextSpeed(SPEEDS, 2.0, 1))
+        assertEquals(5, nextInCycle(listOf<Int?>(null, 4, 5), 4)); assertEquals(null, nextInCycle(listOf<Int?>(null, 4, 5), 5)); assertEquals(4, nextInCycle(listOf<Int?>(null, 4, 5), null))
+        assertEquals(1200.0, sleepEndPoint(1300.0, 1200.0)); assertEquals(1297.0, sleepEndPoint(1300.0, null)); assertEquals(null, sleepEndPoint(0.0, null))
     }
 
     private val hidden = HudNav(visible = false)

@@ -41,6 +41,7 @@ import org.koin.core.Koin
 import org.siloserver.silo.network.apiv2.CatalogContinuationV2
 import org.siloserver.silo.repository.CatalogRepository
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import dev.silage.app.requests.RequestSearch
 import dev.silage.app.requests.openRequestCard
 import dev.silage.app.requests.requestCardId
@@ -71,6 +72,12 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit, onOpenRequest: (mediaT
     }
     val requestResults by requestSearch.results.collectAsState()
     var text by rememberSaveable { mutableStateOf("") }
+    // The last few searches that led somewhere (a result opened), offered while the box is empty.
+    val prefs = remember { koin.get<dev.silage.app.ui.UiPrefs>() }
+    var recent by remember { mutableStateOf(prefs.recentSearches) }
+    fun rememberSearch(q: String) { recent = RecentSearches.add(recent, q); prefs.recentSearches = recent }
+    val openResult: (CardModel) -> Unit = { card -> rememberSearch(text); onOpen(card) }
+    fun search(q: String) { text = q; query.onInput(q); if (requestsEnabled) requestSearch.onInput(q) }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
     var focused by remember { mutableStateOf<CardModel?>(null) }
     val field = remember { FocusRequester() }
@@ -91,12 +98,23 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit, onOpenRequest: (mediaT
         PageBackdrop(focused)
         PosterGrid(
             state = if (results == SearchResults.Idle) PagerState(endReached = true) else state,
-            onLoadMore = {}, onRetry = { query.onInput(text) }, onOpen = onOpen, onFocus = { focused = it; lastFocused = it.id },
+            onLoadMore = {}, onRetry = { query.onInput(text) }, onOpen = openResult, onFocus = { focused = it; lastFocused = it.id },
             firstFocus = restore, restoreId = lastFocused,
             emptyText = if (results == SearchResults.Idle) "Search your movies and shows" else "No results for “$text” in your library",
             header = {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    SearchField(text, { text = it; query.onInput(it); if (requestsEnabled) requestSearch.onInput(it) }, field)
+                    SearchField(text, { search(it) }, field)
+                }
+                if (text.isBlank() && recent.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Column(Modifier.padding(bottom = 24.dp)) {
+                            Text("Recent searches", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.padding(bottom = 12.dp))
+                            dev.silage.app.ui.ArrowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(recent, key = { it }) { q -> Pill(q) { search(q) } }
+                                item(key = "clear-recent") { Pill("Clear") { recent = emptyList(); prefs.recentSearches = emptyList() } }
+                            }
+                        }
+                    }
                 }
             },
             footer = {
@@ -109,7 +127,7 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit, onOpenRequest: (mediaT
                     }
                     items(requestResults, key = { requestCardId(it.mediaType, it.tmdbId) }) { r ->
                         val card = remember(r) { r.toRequestCard() }
-                        MediaCard(card, 200.dp, onOpen = { lastFocused = card.id; openRequestCard(card, { onOpen(card.copy(openTarget = it)) }, onOpenRequest) },
+                        MediaCard(card, 200.dp, onOpen = { lastFocused = card.id; rememberSearch(text); openRequestCard(card, { onOpen(card.copy(openTarget = it)) }, onOpenRequest) },
                             onFocus = { focused = card })
                     }
                 }
@@ -214,3 +232,13 @@ private fun PersonalListScreen(koin: Koin, source: String, title: String, emptyT
 /** The grid without the cards in [removed] (by id). */
 internal fun withoutRemoved(state: PagerState, removed: Set<String>): PagerState =
     if (removed.isEmpty()) state else state.copy(items = state.items.filterNot { it.id in removed })
+
+/** The searches Search offers again: newest first, each once (ignoring case), at most [Max]. */
+object RecentSearches {
+    const val Max = 8
+
+    fun add(recent: List<String>, query: String): List<String> {
+        val q = query.trim().takeIf { it.length >= 2 } ?: return recent
+        return (listOf(q) + recent.filterNot { it.equals(q, ignoreCase = true) }).take(Max)
+    }
+}

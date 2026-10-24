@@ -50,6 +50,11 @@ private data class UiPrefsFile(
     val qualityPreference: String = "auto",
     /** The most the server may send, in kbps; null for no limit. */
     val maxBitrateKbps: Int? = null,
+    /** The player's volume (0–130) and mute, as last set with the keyboard; null volume is mpv's default. */
+    val playerVolume: Int? = null,
+    val playerMuted: Boolean = false,
+    /** The last few searches, newest first. */
+    val recentSearches: List<String> = emptyList(),
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -129,6 +134,16 @@ class UiPrefs(private val path: Path) {
     var preferredVersion: String
         get() = read().preferredVersion
         set(value) = write { it.copy(preferredVersion = value) }
+
+    /** Volume and mute carried from one video to the next. */
+    var playerVolume: Pair<Int?, Boolean>
+        get() = read().let { it.playerVolume to it.playerMuted }
+        set(value) = write { it.copy(playerVolume = value.first?.coerceIn(0, 130), playerMuted = value.second) }
+
+    /** Searches typed in Search, newest first (at most [RecentSearches.Max]). */
+    var recentSearches: List<String>
+        get() = read().recentSearches
+        set(value) = write { it.copy(recentSearches = value) }
 
     /** Streaming quality and bitrate limit (Settings → Video). */
     var quality: dev.silage.app.playback.QualityPrefs

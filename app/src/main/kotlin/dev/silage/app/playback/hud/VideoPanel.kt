@@ -57,3 +57,35 @@ private fun VideoStep(text: String, label: String, action: () -> Unit) {
         .background(Color.White.copy(alpha = 0.10f), RoundedCornerShape(8.dp)).clickable(onClick = action),
         contentAlignment = Alignment.Center) { Text(text, color = Color.White, fontSize = 22.sp) }
 }
+
+/** Audio and subtitle timing for this video: each tap moves one 0.1 s later (+) or earlier (−). */
+@Composable
+internal fun SyncPanel(ui: HudUi, act: HudActions) {
+    Column(Modifier.width(490.dp)
+        .background(Color(0xF2171717), RoundedCornerShape(14.dp))
+        .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(14.dp))
+        .padding(20.dp)) {
+        Text("SYNC", color = Color.White, fontSize = 18.sp)
+        Text("This video only · + plays it later, − earlier", color = Color.LightGray, fontSize = 13.sp,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
+        listOf(ui.audioDelay, ui.subtitleDelay).forEachIndexed { i, value ->
+            val label = SyncControls.labels[i]
+            Row(Modifier.fillMaxWidth().heightIn(min = 58.dp)
+                .background(if (ui.focus != null && ui.menuIndex == i) Color.White.copy(alpha = 0.16f) else Color.Transparent),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(label, color = Color.White, fontSize = 17.sp)
+                    Text(SyncControls.label(value), color = Color(0xFFE8B86E), fontSize = 14.sp)
+                }
+                VideoStep("−", "$label earlier") { act.sync(i, -1) }
+                Spacer(Modifier.width(8.dp))
+                VideoStep("+", "$label later") { act.sync(i, 1) }
+            }
+        }
+        Text("Reset both", color = Color.White, fontSize = 17.sp,
+            modifier = Modifier.padding(top = 10.dp).fillMaxWidth()
+                .background(Color.White.copy(alpha = if (ui.focus != null && ui.menuIndex == SyncControls.ResetIndex) 0.24f else 0.10f), RoundedCornerShape(8.dp))
+                .clickable { act.sync(SyncControls.ResetIndex, 0) }.padding(14.dp))
+        Text("↑↓ select · ←→ adjust · Escape close", color = Color.LightGray, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
+    }
+}

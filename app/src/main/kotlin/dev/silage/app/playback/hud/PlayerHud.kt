@@ -73,6 +73,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     qualities: List<QualityRow> = emptyList(),
     /** Restarts playback at the picked quality. */
     private val selectQuality: ((String) -> Unit)? = null,
+    /** Told the volume (0–130) and mute after a shortcut changes them, so the next video starts the same. */
+    private val onVolumeChange: (volume: Int, muted: Boolean) -> Unit = { _, _ -> },
 ) : AutoCloseable {
     private val ui = mutableStateOf(HudUi(meta = meta, hasSubtitleTools = subtitleTools != null, qualities = if (selectQuality != null) qualities else emptyList()))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
@@ -180,6 +182,23 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                 }
             }
         }
+        override fun sync(index: Int, step: Int) {
+            val u = ui.value
+            val (audio, subtitles) = when (index) {
+                SyncControls.ResetIndex -> 0.0 to 0.0
+                SyncControls.AudioIndex -> SyncControls.adjust(u.audioDelay, step) to u.subtitleDelay
+                else -> u.audioDelay to SyncControls.adjust(u.subtitleDelay, step)
+            }
+            mpv.setProperty("audio-delay", "%.1f".format(java.util.Locale.ROOT, audio))
+            mpv.setProperty("sub-delay", "%.1f".format(java.util.Locale.ROOT, subtitles))
+            ui.value = u.copy(audioDelay = audio, subtitleDelay = subtitles)
+        }
+        override fun sleep(choice: SleepChoice) {
+            sleepAt = choice.minutes?.let { System.currentTimeMillis() + it * 60_000L }
+            ui.value = ui.value.copy(sleep = choice, sleepDetail = sleepDetail(choice))
+            nav = nav.copy(menu = HudMenu.None)
+            if (choice != SleepChoice.Off) toast("Sleep timer: ${choice.label.replaceFirstChar { it.lowercase() }}")
+        }
         override fun quality(id: String) {
             nav = nav.copy(menu = HudMenu.None)
             selectQuality?.invoke(id)
@@ -201,6 +220,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         HudMenu.AiSubtitles -> if (ui.value.finder.aiProgress == null) ui.value.finder.aiOptions.map { false } else emptyList()
         HudMenu.Speed -> SPEEDS.map { it == ui.value.speed }
         HudMenu.Quality -> ui.value.qualities.map { it.selected }
+        HudMenu.Sync -> List(SyncControls.RowCount) { false }
+        HudMenu.Sleep -> SleepChoice.entries.map { it == ui.value.sleep }
         HudMenu.Video -> List(VideoControls.RowCount) { false }
         HudMenu.Chapters -> Chapter.indexAt(ui.value.chapters, mpv.state.value.positionSeconds).let { current ->
             ui.value.chapters.indices.map { it == current }
@@ -227,6 +248,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             HudMenu.AiSubtitles -> actions.pickAi(index)
             HudMenu.Speed -> SPEEDS.getOrNull(index)?.let(actions::speed)
             HudMenu.Quality -> ui.value.qualities.getOrNull(index)?.let { actions.quality(it.id) }
+            HudMenu.Sleep -> SleepChoice.entries.getOrNull(index)?.let { actions.sleep(it) }
             HudMenu.Chapters -> actions.chapter(index)
             else -> Unit
         }
@@ -286,6 +308,15 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                 is HudEffect.AdjustVideo -> actions.video(effect.index, effect.step)
                 is HudEffect.SeekBy -> actions.seekBy(effect.seconds)
                 is HudEffect.SelectRow -> selectRow(effect.menu, effect.index)
+                is HudEffect.AdjustSync -> actions.sync(effect.index, effect.step)
+                is HudEffect.Volume -> changeVolume(effect.step)
+                HudEffect.Mute -> toggleMute()
+                HudEffect.CycleSubtitles -> cycleSubtitles()
+                HudEffect.CycleAudio -> cycleAudio()
+                is HudEffect.Speed -> nextSpeed(SPEEDS, ui.value.speed, effect.step).let { s ->
+                    actions.speed(s); toast(if (s == 1.0) "Normal speed" else "Speed ${s}×")
+                }
+                HudEffect.NextEpisode -> if (onNextEpisode != null && hasNextEpisode()) actions.nextEpisode() else toast("No next episode")
                 is HudEffect.Activate -> when (effect.control) {
                     HudFocus.Skip -> ui.value.skip?.let { if (it.kind == SkipPrompt.Kind.NextEpisode) actions.nextEpisode() else actions.seekTo(it.target) }
                     HudFocus.Seek, HudFocus.PlayPause -> actions.togglePause()
@@ -298,6 +329,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                     HudFocus.Chapters -> actions.openMenu(HudMenu.Chapters)
                     HudFocus.Info -> actions.openMenu(HudMenu.Info)
                     HudFocus.Video -> actions.openMenu(HudMenu.Video)
+                    HudFocus.Sync -> actions.openMenu(HudMenu.Sync)
+                    HudFocus.Sleep -> actions.openMenu(HudMenu.Sleep)
                     HudFocus.Fullscreen -> actions.fullscreen()
                 }
             }
@@ -403,6 +436,74 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         return if (osdW > 0 && osdH > 0) Offset(x * b.width / osdW, y * b.height / osdH) else Offset(x, y)
     }
 
+    // Shortcut feedback and the sleep timer (HUD thread).
+    private var toastUntil = 0L
+    private var sleepAt: Long? = null
+
+    private fun toast(message: String) {
+        toastUntil = System.currentTimeMillis() + 1_600
+        ui.value = ui.value.copy(toast = message)
+    }
+
+    private fun sleepDetail(choice: SleepChoice): String? = when {
+        choice == SleepChoice.EndOfVideo -> "pauses at the end"
+        sleepAt != null -> "pauses at " + java.time.format.DateTimeFormatter.ofPattern("H:mm")
+            .format(java.time.LocalTime.now().plusMinutes(choice.minutes!!.toLong()))
+        else -> null
+    }
+
+    private fun volumeNow(): Int = mpv.getProperty("volume")?.toDoubleOrNull()?.let { kotlin.math.round(it).toInt() } ?: 100
+    private fun mutedNow(): Boolean = mpv.getProperty("mute") == "yes"
+
+    private fun changeVolume(step: Int) {
+        if (step > 0 && mutedNow()) mpv.setProperty("mute", "no")
+        val target = (volumeNow() + 5 * step).coerceIn(0, 130)
+        mpv.setProperty("volume", target.toString())
+        toast("Volume $target%")
+        onVolumeChange(target, mutedNow())
+    }
+
+    private fun toggleMute() {
+        mpv.command("cycle", "mute")
+        val muted = mutedNow()
+        toast(if (muted) "Muted" else "Sound on · ${volumeNow()}%")
+        onVolumeChange(volumeNow(), muted)
+    }
+
+    private fun cycleSubtitles() {
+        refreshTracks()
+        val subs = ui.value.tracks.subtitles
+        if (subs.isEmpty()) { toast("No subtitles"); return }
+        val next = nextInCycle(listOf<Int?>(null) + subs.map { it.id }, subs.firstOrNull { it.selected }?.id)
+        actions.subtitle(next)
+        toast(subs.firstOrNull { it.id == next }?.let { "Subtitles: ${it.label}" } ?: "Subtitles off")
+    }
+
+    private fun cycleAudio() {
+        refreshTracks()
+        val audio = ui.value.tracks.audio
+        if (audio.size < 2) { toast("Only one audio track"); return }
+        val next = nextInCycle(audio.map { it.id }, audio.firstOrNull { it.selected }?.id ?: audio.first().id)
+        actions.audio(next)
+        toast("Audio: ${audio.first { it.id == next }.label}")
+    }
+
+    /** Pauses when the sleep timer is up: at its time, or at the end of the video (the credits, if marked). */
+    private fun checkSleep(position: Double, duration: Double, paused: Boolean, now: Long) {
+        val choice = ui.value.sleep
+        if (choice == SleepChoice.Off || paused) return
+        val due = when (choice) {
+            SleepChoice.EndOfVideo -> sleepEndPoint(duration, ui.value.meta.credits?.start)?.let { position >= it } ?: false
+            else -> sleepAt?.let { now >= it } ?: false
+        }
+        if (!due) return
+        mpv.setProperty("pause", "yes")
+        sleepAt = null
+        ui.value = ui.value.copy(sleep = SleepChoice.Off, sleepDetail = null)
+        nav = nav.copy(visible = true)
+        toast("Paused by the sleep timer")
+    }
+
     private fun refreshTracks() {
         val mounted = Tracks.parse(mpv.getProperty("track-list") ?: "[]")
         ui.value = ui.value.copy(tracks = mounted.copy(audio = audioRows?.invoke(mounted.audio) ?: mounted.audio))
@@ -444,6 +545,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             autoSkipped += if (kind == SkipPrompt.Kind.NextEpisode) SkipPrompt.Kind.Credits else kind
             if (kind == SkipPrompt.Kind.NextEpisode) actions.nextEpisode() else actions.seekTo(skip!!.target)
         }
+        checkSleep(s.positionSeconds, knownDuration ?: s.durationSeconds, s.paused, now)
+        if (ui.value.toast != null && now > toastUntil) ui.value = ui.value.copy(toast = null)
         if (nav.visible && !visibility.visible(now, s.paused, nav.menu != HudMenu.None)) nav = nav.copy(visible = false, focus = HudFocus.PlayPause)
         nav = nav.copy(hasSkip = skip != null, focus = if (skip == null && nav.focus == HudFocus.Skip) HudFocus.Seek else nav.focus)
         val visible = nav.visible
@@ -475,7 +578,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         val sc = scene ?: return
         if (sc.hasInvalidations() || !overlayShown && visible) {
             render(sc, w, h)
-        } else if (!visible && next.skip == null && !next.buffering && overlayShown && !sc.hasInvalidations()) {
+        } else if (!visible && next.skip == null && !next.buffering && next.toast == null && overlayShown && !sc.hasInvalidations()) {
             mpv.command("overlay-remove", "0")
             overlayShown = false
         }

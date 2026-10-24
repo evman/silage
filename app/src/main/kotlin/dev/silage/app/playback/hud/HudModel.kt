@@ -144,7 +144,9 @@ object HudCommands {
 }
 
 enum class HudKey {
-    Back, Escape, PlayPause, Left, Right, Up, Down, Enter, Info, Fullscreen;
+    Back, Escape, PlayPause, Left, Right, Up, Down, Enter, Info, Fullscreen,
+    // Shortcuts: they act at once, with a short message, wherever the focus is.
+    Mute, VolumeUp, VolumeDown, CycleSubtitles, CycleAudio, SlowerSpeed, FasterSpeed, NextEpisode;
 
     companion object {
         fun ofAwt(code: Int): HudKey? = when (code) {
@@ -158,6 +160,14 @@ enum class HudKey {
             java.awt.event.KeyEvent.VK_ENTER -> Enter
             java.awt.event.KeyEvent.VK_I -> Info
             java.awt.event.KeyEvent.VK_F -> Fullscreen
+            java.awt.event.KeyEvent.VK_M -> Mute
+            java.awt.event.KeyEvent.VK_EQUALS, java.awt.event.KeyEvent.VK_PLUS, java.awt.event.KeyEvent.VK_ADD, java.awt.event.KeyEvent.VK_0 -> VolumeUp
+            java.awt.event.KeyEvent.VK_MINUS, java.awt.event.KeyEvent.VK_SUBTRACT, java.awt.event.KeyEvent.VK_9 -> VolumeDown
+            java.awt.event.KeyEvent.VK_S -> CycleSubtitles
+            java.awt.event.KeyEvent.VK_A -> CycleAudio
+            java.awt.event.KeyEvent.VK_OPEN_BRACKET -> SlowerSpeed
+            java.awt.event.KeyEvent.VK_CLOSE_BRACKET -> FasterSpeed
+            java.awt.event.KeyEvent.VK_N -> NextEpisode
             else -> null
         }
 
@@ -173,15 +183,37 @@ enum class HudKey {
             "ENTER" -> Enter
             "i" -> Info
             "f", "F" -> Fullscreen
+            "m", "M" -> Mute
+            "+", "=", "KP_ADD", "0" -> VolumeUp
+            "-", "KP_SUBTRACT", "9" -> VolumeDown
+            "s", "S" -> CycleSubtitles
+            "a", "A" -> CycleAudio
+            "[" -> SlowerSpeed
+            "]" -> FasterSpeed
+            "n", "N" -> NextEpisode
             else -> null
         }
 
-        val MPV_KEYS = listOf("ESC", "BS", "q", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F")
+        val MPV_KEYS = listOf("ESC", "BS", "q", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F",
+            "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N")
+
+        /** The shortcut keys and what each does, whatever the HUD shows. */
+        internal fun shortcut(key: HudKey): HudEffect? = when (key) {
+            Mute -> HudEffect.Mute
+            VolumeUp -> HudEffect.Volume(+1)
+            VolumeDown -> HudEffect.Volume(-1)
+            CycleSubtitles -> HudEffect.CycleSubtitles
+            CycleAudio -> HudEffect.CycleAudio
+            SlowerSpeed -> HudEffect.Speed(-1)
+            FasterSpeed -> HudEffect.Speed(+1)
+            NextEpisode -> HudEffect.NextEpisode
+            else -> null
+        }
     }
 }
 
 /** The HUD controls reachable with the arrow keys. */
-enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Quality, Chapters, Video, Fullscreen, Info }
+enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Quality, Chapters, Video, Sync, Sleep, Fullscreen, Info }
 
 sealed interface HudEffect {
     data object None : HudEffect
@@ -192,6 +224,13 @@ sealed interface HudEffect {
     data class SeekBy(val seconds: Double) : HudEffect
     data class Activate(val control: HudFocus) : HudEffect
     data class SelectRow(val menu: HudMenu, val index: Int) : HudEffect
+    data class AdjustSync(val index: Int, val step: Int) : HudEffect
+    data class Volume(val step: Int) : HudEffect
+    data object Mute : HudEffect
+    data object CycleSubtitles : HudEffect
+    data object CycleAudio : HudEffect
+    data class Speed(val step: Int) : HudEffect
+    data object NextEpisode : HudEffect
 }
 
 /**
@@ -216,10 +255,13 @@ data class HudNav(
 
     fun on(key: HudKey): Pair<HudNav, HudEffect> {
         if (key == HudKey.Fullscreen) return copy(visible = true) to HudEffect.ToggleFullscreen
+        HudKey.shortcut(key)?.let { return this to it }
         if (key == HudKey.Escape) return if (menu != HudMenu.None) copy(menu = HudMenu.None) to HudEffect.None
             else this to HudEffect.Exit
         if (menu == HudMenu.Video && key in listOf(HudKey.Left, HudKey.Right, HudKey.Enter))
             return this to HudEffect.AdjustVideo(menuIndex, if (key == HudKey.Left) -1 else 1)
+        if (menu == HudMenu.Sync && key in listOf(HudKey.Left, HudKey.Right, HudKey.Enter))
+            return this to HudEffect.AdjustSync(menuIndex, if (key == HudKey.Left) -1 else 1)
         if (key == HudKey.PlayPause) return copy(visible = true) to HudEffect.TogglePause
         if (key == HudKey.Info) return copy(visible = true, menu = if (menu == HudMenu.Info) HudMenu.None else HudMenu.Info) to HudEffect.None
         if (!visible) return when (key) {
@@ -262,7 +304,7 @@ data class HudNav(
     }
 
     companion object {
-        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Quality, HudFocus.Chapters, HudFocus.Info, HudFocus.Video, HudFocus.Fullscreen)
+        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Quality, HudFocus.Chapters, HudFocus.Info, HudFocus.Video, HudFocus.Sync, HudFocus.Sleep, HudFocus.Fullscreen)
     }
 }
 
@@ -358,3 +400,41 @@ object InfoRows {
         }
     }
 }
+
+/** Audio and subtitle timing in the player's Sync panel: each step is 0.1 seconds. */
+object SyncControls {
+    const val Step = 0.1
+    const val AudioIndex = 0
+    const val SubtitleIndex = 1
+    const val ResetIndex = 2
+    const val RowCount = 3
+    val labels = listOf("Audio", "Subtitles")
+
+    /** The delay after [step] steps, rounded to the tenth and kept within ±10 s. */
+    fun adjust(current: Double, step: Int): Double = (Math.round((current + step * Step) * 10) / 10.0).coerceIn(-10.0, 10.0)
+
+    /** "+0.3 s", "−1.2 s", "In sync". Positive is later. */
+    fun label(seconds: Double): String = when {
+        kotlin.math.abs(seconds) < 0.05 -> "In sync"
+        seconds > 0 -> "+%.1f s later".format(Locale.ROOT, seconds)
+        else -> "%.1f s earlier".format(Locale.ROOT, -seconds)
+    }
+}
+
+/** The player's sleep timer choices; [minutes] null pauses at the end of the video (before any credits). */
+enum class SleepChoice(val label: String, val minutes: Int?) {
+    Off("Off", null), EndOfVideo("End of this video", null), Min30("In 30 minutes", 30), Min60("In 1 hour", 60), Min90("In 90 minutes", 90);
+}
+
+/** Where the "end of this video" timer pauses: the credits when the server marked them, else 3 s before the end. */
+fun sleepEndPoint(duration: Double, creditsStart: Double?): Double? =
+    creditsStart?.takeIf { it > 0 } ?: duration.takeIf { it > 3 }?.minus(3.0)
+
+/** The next of [speeds] in [step]'s direction from [current], staying at the ends. */
+fun nextSpeed(speeds: List<Double>, current: Double, step: Int): Double {
+    val i = speeds.indexOfFirst { kotlin.math.abs(it - current) < 0.001 }.takeIf { it >= 0 } ?: speeds.indexOf(1.0)
+    return speeds[(i + step).coerceIn(0, speeds.lastIndex)]
+}
+
+/** The track after the selected one in [ids] (null meaning off, when offered), wrapping round. */
+fun <T> nextInCycle(ids: List<T>, selected: T): T = ids[(ids.indexOf(selected) + 1).mod(ids.size)]

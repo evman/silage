@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.HighQuality
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
@@ -71,7 +73,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 
-enum class HudMenu { None, Audio, Subtitles, Speed, Quality, Chapters, Info, Video, FindSubtitles, AiSubtitles }
+enum class HudMenu { None, Audio, Subtitles, Speed, Quality, Chapters, Info, Video, Sync, Sleep, FindSubtitles, AiSubtitles }
 
 /** One row of the player's Quality menu: a `quality_preference` [id], its name and bitrate. */
 data class QualityRow(val id: String, val label: String, val detail: String?, val selected: Boolean)
@@ -101,6 +103,14 @@ data class HudUi(
     val finder: FinderUi = FinderUi(),
     /** The server's quality choices for this video; empty hides the Quality button. */
     val qualities: List<QualityRow> = emptyList(),
+    /** Audio and subtitle delay in seconds (positive is later), from the Sync panel. */
+    val audioDelay: Double = 0.0,
+    val subtitleDelay: Double = 0.0,
+    /** The sleep timer's choice, and when it pauses (shown in its menu). */
+    val sleep: SleepChoice = SleepChoice.Off,
+    val sleepDetail: String? = null,
+    /** A short message from a shortcut ("Volume 70%"), shown for a moment even with the HUD hidden. */
+    val toast: String? = null,
 )
 
 interface HudActions {
@@ -125,6 +135,9 @@ interface HudActions {
     fun pickAi(index: Int) {}
     /** Restarts playback at a quality from the Quality menu. */
     fun quality(id: String) {}
+    /** Nudges the audio ([SyncControls.AudioIndex]) or subtitles later or earlier; [SyncControls.ResetIndex] puts both back. */
+    fun sync(index: Int, step: Int) {}
+    fun sleep(choice: SleepChoice) {}
 }
 
 val SPEEDS = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
@@ -171,6 +184,12 @@ fun HudContent(ui: HudUi, act: HudActions) {
             exit = fadeOut(tween(150)) + slideOutVertically { it / 8 },
         ) { Box(Modifier.pointerInput(Unit) { detectTapGestures { } }) { MenuPanel(ui, act) } }
         if (ui.menu == HudMenu.Info) InfoPanel(ui.info, Modifier.align(Alignment.TopEnd).padding(40.dp))
+        ui.toast?.let { message ->
+            Box(Modifier.align(Alignment.TopCenter).padding(top = 64.dp).clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.78f))
+                .padding(horizontal = 26.dp, vertical = 14.dp)) {
+                Text(message, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }
 
@@ -211,6 +230,8 @@ private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
                 Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(28.dp).background(Color.White.copy(alpha = 0.14f)))
                 UtilityButton(Icons.Outlined.Info, active = ui.menu == HudMenu.Info, focused = ui.focus == HudFocus.Info) { act.openMenu(HudMenu.Info) }
                 UtilityButton(Icons.Outlined.Tune, label = "Video settings", caption = "Video", active = ui.menu == HudMenu.Video, focused = ui.focus == HudFocus.Video) { act.openMenu(HudMenu.Video) }
+                UtilityButton(Icons.Outlined.Sync, label = "Audio and subtitle sync", caption = "Sync", active = ui.menu == HudMenu.Sync, focused = ui.focus == HudFocus.Sync) { act.openMenu(HudMenu.Sync) }
+                UtilityButton(Icons.Outlined.Bedtime, label = "Sleep timer", caption = "Sleep", active = ui.menu == HudMenu.Sleep || ui.sleep != SleepChoice.Off, focused = ui.focus == HudFocus.Sleep) { act.openMenu(HudMenu.Sleep) }
                 UtilityButton(if (ui.fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
                     label = if (ui.fullscreen) "Exit fullscreen (F)" else "Enter fullscreen (F)", caption = "Fullscreen", focused = ui.focus == HudFocus.Fullscreen, onClick = act::fullscreen)
             }
@@ -332,6 +353,7 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
     if (ui.menu == HudMenu.Video) { VideoPanel(ui, act); return }
     if (ui.menu == HudMenu.FindSubtitles || ui.menu == HudMenu.AiSubtitles) { FinderPanel(ui, act); return }
     if (ui.menu == HudMenu.Quality) { QualityPanel(ui, act); return }
+    if (ui.menu == HudMenu.Sync) { SyncPanel(ui, act); return }
     Column(
         Modifier.width(400.dp).heightIn(max = 620.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
@@ -348,6 +370,8 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
                     }
                 )
             HudMenu.Speed -> "Speed" to SPEEDS.map { s -> Triple(if (s == 1.0) "Normal" else "${s}×", ui.speed == s) { act.speed(s) } }
+            HudMenu.Sleep -> (ui.sleepDetail?.let { "Sleep timer · $it" } ?: "Sleep timer") to
+                SleepChoice.entries.map { c -> Triple(c.label, ui.sleep == c) { act.sleep(c) } }
             HudMenu.Chapters -> {
                 val current = Chapter.indexAt(ui.chapters, ui.position)
                 "Chapters" to ui.chapters.mapIndexed { i, c -> Triple("${formatTime(c.start)}   ${c.title}", i == current) { act.chapter(i) } }

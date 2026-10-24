@@ -72,7 +72,13 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
-    val mpv = MpvPlayer(playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1") +
+    // The volume and mute the last video was left at (keyboard shortcuts set them).
+    val (savedVolume, savedMute) = koin.get<dev.silage.app.ui.UiPrefs>().playerVolume
+    val remembered = buildMap {
+        savedVolume?.let { put("volume", it.toString()) }
+        if (savedMute) put("mute", "yes")
+    }
+    val mpv = MpvPlayer(remembered + playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1") +
         koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle.mpvOptions() + extraOptions)
     // The chosen audio output, if it is still connected; otherwise the Windows default.
     koin.get<dev.silage.app.ui.UiPrefs>().audioDevice?.let { device ->
@@ -98,6 +104,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         onNextEpisode = if (onNextEpisode != null) ({ onNextEpisode(); mpv.command("stop"); Unit }) else null,
         audioRows = { mounted -> audioMenuTracks(ready.sourceAudio, mounted, ready.direct, ready.selectedAudioOrdinal) },
         qualities = if (onQuality == null) emptyList() else qualityRows(ready.qualities, ready.activeQuality),
+        onVolumeChange = { volume, muted -> koin.get<dev.silage.app.ui.UiPrefs>().playerVolume = volume to muted },
         selectQuality = onQuality?.let { restart -> { id: String ->
             if (id != ready.activeQuality) {
                 restart(id, ready.sourcePositionSeconds(mpv.state.value.positionSeconds), mpv.state.value.paused)
