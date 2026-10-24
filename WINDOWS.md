@@ -113,7 +113,10 @@ PC or Windows account requires signing in again; interface settings still travel
   directly. YouTube trailers use yt-dlp and Deno, which the packaged app carries in its
   `tools` folder (official release builds, checked against the checksums published with them
   when the app is built). A copy downloaded into `userdata\Data\tools` takes precedence, and a
-  build without the folder asks once to download them.
+  build without the folder asks once to download them. yt-dlp is its folder build, which
+  starts faster than the single-file one. A trailer plays at the best quality YouTube has,
+  at any resolution. Silage looks up a trailer's streams as soon as its title page opens
+  (and when you point at a trailer), so pressing play starts it almost at once.
 - Back: pages that sit on top of another (a title, a person, a collection) have a
   **Back** button at the top left; Esc, Backspace, Alt+Left and the mouse's Back
   button do the same. Clicking the dimmed page behind a menu (the version list, a

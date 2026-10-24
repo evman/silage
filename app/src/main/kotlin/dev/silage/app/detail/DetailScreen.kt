@@ -233,7 +233,14 @@ private fun DetailContent(
             val trailers = trailerRailEntries(item)
             if (trailers.isNotEmpty()) {
                 item {
-                    TrailerRail(trailers, onPlayLocal = { id, file -> onPlay(id, false, file) }, onPlayRemote = { entry ->
+                    // Look up the first YouTube trailer's streams now, so it starts at once when played.
+                    androidx.compose.runtime.LaunchedEffect(trailers) {
+                        trailers.firstNotNullOfOrNull { it as? org.siloserver.silo.model.catalog.TrailerRailEntry.Remote }
+                            ?.let { dev.silage.app.playback.TrailerPrefetch.prefetch(youtubeWatchUrl(it.video.siteKey)) }
+                    }
+                    TrailerRail(trailers, onPlayLocal = { id, file -> onPlay(id, false, file) },
+                        onPointRemote = { entry -> dev.silage.app.playback.TrailerPrefetch.prefetch(youtubeWatchUrl(entry.video.siteKey)) },
+                        onPlayRemote = { entry ->
                         val trailer = dev.silage.app.nav.Trailer(youtubeWatchUrl(entry.video.siteKey), entry.title)
                         if (dev.silage.app.playback.TrailerTools.ready()) onTrailer(trailer) else settingUpTrailer = trailer
                     })

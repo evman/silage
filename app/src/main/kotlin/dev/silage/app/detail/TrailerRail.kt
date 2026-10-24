@@ -53,12 +53,14 @@ internal fun trailerCaption(entry: TrailerRailEntry): String =
  * "Trailers & More": provider trailers (YouTube) and the server's own extras, all played in Silage.
  */
 @Composable
-internal fun TrailerRail(entries: List<TrailerRailEntry>, onPlayLocal: (contentId: String, fileId: Int?) -> Unit, onPlayRemote: (TrailerRailEntry.Remote) -> Unit) {
+internal fun TrailerRail(entries: List<TrailerRailEntry>, onPlayLocal: (contentId: String, fileId: Int?) -> Unit, onPlayRemote: (TrailerRailEntry.Remote) -> Unit,
+    /** A YouTube trailer's card is pointed at or focused, so its streams can be looked up ahead of a click. */
+    onPointRemote: (TrailerRailEntry.Remote) -> Unit = {}) {
     Text("Trailers & More", color = Silage.Text2, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(start = 64.dp, top = 56.dp, bottom = 18.dp))
     ArrowRow(contentPadding = PaddingValues(horizontal = 64.dp), horizontalArrangement = Arrangement.spacedBy(24.dp), arrowOffsetY = 28.dp) {
         items(entries, key = { it.key }) { entry ->
-            TrailerCard(entry) {
+            TrailerCard(entry, onPoint = { if (entry is TrailerRailEntry.Remote) onPointRemote(entry) }) {
                 when (entry) {
                     is TrailerRailEntry.Remote -> onPlayRemote(entry)
                     is TrailerRailEntry.Local -> onPlayLocal(entry.extra.contentId, entry.extra.fileId)
@@ -69,9 +71,11 @@ internal fun TrailerRail(entries: List<TrailerRailEntry>, onPlayLocal: (contentI
 }
 
 @Composable
-private fun TrailerCard(entry: TrailerRailEntry, onClick: () -> Unit) {
+private fun TrailerCard(entry: TrailerRailEntry, onPoint: () -> Unit, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val active = interaction.isActive()
+    // Only a card that stays pointed at, not every card the pointer passes over.
+    androidx.compose.runtime.LaunchedEffect(active) { if (active) { kotlinx.coroutines.delay(300); onPoint() } }
     val shape = RoundedCornerShape(12.dp)
     Column(
         Modifier.width(320.dp).hoverable(interaction).pointerHoverIcon(PointerIcon.Hand).clickable(interaction, indication = null, onClick = onClick),

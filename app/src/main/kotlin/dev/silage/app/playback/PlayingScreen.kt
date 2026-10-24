@@ -199,15 +199,30 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         // time, mpv falls back to its own fullscreen window.
         val shown = withTimeoutOrNull(3_000) { surface.await() }
         if (trailer != null) {
-            // A provider trailer: mpv opens the YouTube page itself (through yt-dlp); the server is not involved.
-            val session = PlaybackSession(
-                launch = { LaunchResult.Ready(sessionId = "trailer", url = trailer.url, headers = emptyMap(), startSeconds = null,
-                    meta = PlaybackMeta(title = trailer.title, line = "Trailer")) },
-                openPlayer = { ready -> openMpv(koin, shown, ready, false, fullscreen, video, extraOptions = TrailerTools.mpvOptions()) { _, _, _ -> } },
-                progress = { _, _, _ -> },
-                stopSession = { },
-            )
-            val outcome = withContext(Dispatchers.IO) { session.play(trailer.url) }
+            // A provider trailer: yt-dlp finds the YouTube streams (usually already, while the title page
+            // was open) and mpv plays them; the server is not involved. Should that lookup fail, mpv
+            // opens the YouTube page itself through yt-dlp.
+            var playedDirect = false
+            fun trailerSession(direct: Boolean): PlaybackSession {
+                var found: TrailerPrefetch.Streams? = null
+                return PlaybackSession(
+                    launch = {
+                        found = if (direct) TrailerPrefetch.streams(trailer.url).await() else null
+                        playedDirect = found != null
+                        LaunchResult.Ready(sessionId = "trailer", url = found?.playUrl ?: trailer.url, headers = emptyMap(), startSeconds = null,
+                            meta = PlaybackMeta(title = trailer.title, line = "Trailer"))
+                    },
+                    openPlayer = { ready ->
+                        val options = found?.let(TrailerTools::directOptions) ?: TrailerTools.mpvOptions()
+                        openMpv(koin, shown, ready, false, fullscreen, video, extraOptions = options) { _, _, _ -> }
+                    },
+                    progress = { _, _, _ -> },
+                    stopSession = { },
+                )
+            }
+            var outcome = withContext(Dispatchers.IO) { trailerSession(direct = true).play(trailer.url) }
+            // Streams found earlier that won't play (say, a link YouTube has since refused): let mpv look again.
+            if (outcome is PlayOutcome.Failed && playedDirect) outcome = withContext(Dispatchers.IO) { trailerSession(direct = false).play(trailer.url) }
             fullscreen?.leave()
             if (outcome is PlayOutcome.Failed) error = "Couldn't play this trailer. ${outcome.message}" else onDone()
             return@LaunchedEffect

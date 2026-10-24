@@ -64,4 +64,57 @@ class TrailerToolsTest {
             assertNull(TrailerTools.bundledDir(null))
         } finally { root.toFile().deleteRecursively() }
     }
+
+    @Test fun theFolderBuildOfYtdlpIsPreferredOverTheSingleFile() {
+        val root = java.nio.file.Files.createTempDirectory("tt")
+        try {
+            val data = root.resolve("data"); val bundled = root.resolve("tools")
+            java.nio.file.Files.createDirectories(data); java.nio.file.Files.createDirectories(bundled.resolve("yt-dlp"))
+            assertNull(TrailerTools.locateYtdlp(data, bundled))
+            java.nio.file.Files.writeString(data.resolve("yt-dlp.exe"), "old")
+            assertEquals(data.resolve("yt-dlp.exe"), TrailerTools.locateYtdlp(data, bundled))
+            java.nio.file.Files.writeString(bundled.resolve("yt-dlp/yt-dlp.exe"), "folder")
+            assertEquals(bundled.resolve("yt-dlp/yt-dlp.exe"), TrailerTools.locateYtdlp(data, bundled))
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test fun aWholeZipIsUnpackedButNothingOutsideItsFolder() {
+        val dir = Files.createTempDirectory("tt")
+        try {
+            val zip = dir.resolve("y.zip")
+            ZipOutputStream(Files.newOutputStream(zip)).use { z ->
+                z.putNextEntry(ZipEntry("_internal/lib.pyd")); z.write("lib".toByteArray()); z.closeEntry()
+                z.putNextEntry(ZipEntry("yt-dlp.exe")); z.write("exe".toByteArray()); z.closeEntry()
+            }
+            TrailerTools.extractAll(zip, dir.resolve("out"))
+            assertEquals("exe", Files.readString(dir.resolve("out/yt-dlp.exe")))
+            assertEquals("lib", Files.readString(dir.resolve("out/_internal/lib.pyd")))
+            val bad = dir.resolve("bad.zip")
+            ZipOutputStream(Files.newOutputStream(bad)).use { z -> z.putNextEntry(ZipEntry("../escape.txt")); z.write("x".toByteArray()); z.closeEntry() }
+            kotlin.test.assertFails { TrailerTools.extractAll(bad, dir.resolve("out2")) }
+            kotlin.test.assertFalse(Files.exists(dir.resolve("escape.txt")))
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
+    @Test fun trailersAskForTheBestQualityWithoutACap() {
+        assertEquals("bestvideo*+bestaudio/best", TrailerTools.mpvOptions(windows = false)["ytdl-format"])
+        val cmd = TrailerTools.ytdlpCommand(Paths.get("C:\\t\\yt-dlp\\yt-dlp.exe"), Paths.get("C:\\t\\deno.exe"), windows = true)
+        assertEquals(listOf("--js-runtimes", "deno:C:\\t\\deno.exe"), cmd.drop(1))
+        val direct = TrailerTools.directOptions(TrailerPrefetch.Streams("https://v", "https://a", "UA/1"))
+        assertEquals(mapOf("ytdl" to "no", "user-agent" to "UA/1"), direct)
+    }
+
+    @Test fun ytdlpsAnswerGivesThePictureAndSoundStreams() {
+        val json = """{"id":"x","http_headers":{"User-Agent":"Root/1"},"requested_formats":[
+            {"format_id":"401","vcodec":"av01.0.12M.08","acodec":"none","url":"https://g/v?a=1&b=2","http_headers":{"User-Agent":"Fmt/2"}},
+            {"format_id":"251","vcodec":"none","acodec":"opus","url":"https://g/a"}]}"""
+        val s = TrailerPrefetch.parse(json)!!
+        assertEquals(TrailerPrefetch.Streams("https://g/v?a=1&b=2", "https://g/a", "Fmt/2"), s)
+        assertEquals("edl://!no_clip;!no_chapters;%19%https://g/v?a=1&b=2;!new_stream;!no_clip;!no_chapters;%11%https://g/a", s.playUrl)
+        val single = TrailerPrefetch.parse("""{"url":"https://g/both","http_headers":{"User-Agent":"Root/1"}}""")!!
+        assertEquals("https://g/both", single.playUrl)
+        assertEquals("Root/1", single.userAgent)
+        assertNull(TrailerPrefetch.parse("not json"))
+        assertNull(TrailerPrefetch.parse("{}"))
+    }
 }

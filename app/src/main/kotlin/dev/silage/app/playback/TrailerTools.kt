@@ -34,22 +34,47 @@ object TrailerTools {
     internal fun locate(name: String, downloaded: Path = dir, bundled: Path? = bundledDir()): Path? =
         listOfNotNull(downloaded, bundled).map { it.resolve(name) }.firstOrNull { Files.isRegularFile(it) }
 
-    val ytdlp: Path get() = locate("yt-dlp.exe") ?: dir.resolve("yt-dlp.exe")
+    /**
+     * yt-dlp's folder build (`yt-dlp\yt-dlp.exe` beside its `_internal` folder). It starts in a
+     * fraction of the time of the single-file `yt-dlp.exe`, which unpacks itself to a temporary
+     * folder (and gets scanned there) every time it runs. An older single-file copy still works.
+     */
+    internal const val YtdlpFolder = "yt-dlp"
+    internal fun locateYtdlp(downloaded: Path = dir, bundled: Path? = bundledDir()): Path? =
+        locate("$YtdlpFolder/yt-dlp.exe", downloaded, bundled) ?: locate("yt-dlp.exe", downloaded, bundled)
+
+    val ytdlp: Path get() = locateYtdlp() ?: dir.resolve(YtdlpFolder).resolve("yt-dlp.exe")
     val deno: Path get() = locate("deno.exe") ?: dir.resolve("deno.exe")
 
-    internal const val YtdlpExeUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+    internal const val YtdlpZip = "yt-dlp_win.zip"
+    internal const val YtdlpZipUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/$YtdlpZip"
     internal const val YtdlpSumsUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS"
     internal const val DenoZipUrl = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip"
     internal const val DenoSumUrl = "$DenoZipUrl.sha256sum"
 
     /** True when a trailer can play now. */
-    fun ready(): Boolean = !windows || (locate("yt-dlp.exe") != null && locate("deno.exe") != null)
+    fun ready(): Boolean = !windows || (locateYtdlp() != null && locate("deno.exe") != null)
+
+    /**
+     * The best picture and sound YouTube has for the video, at any resolution, joined together;
+     * else the best single stream. yt-dlp ranks by resolution, then frame rate, HDR and codec.
+     */
+    internal const val Format = "bestvideo*+bestaudio/best"
+
+    /** yt-dlp as a command, with Deno for YouTube's pages on Windows. */
+    internal fun ytdlpCommand(ytdlp: Path = this.ytdlp, deno: Path = this.deno, windows: Boolean = this.windows): List<String> =
+        if (windows) listOf(ytdlp.toString(), "--js-runtimes", "deno:" + deno) else listOf("yt-dlp")
+
+    /** mpv options for streams yt-dlp already found (see [TrailerPrefetch]): mpv needn't look them up again. */
+    fun directOptions(streams: TrailerPrefetch.Streams): Map<String, String> = buildMap {
+        put("ytdl", "no")
+        streams.userAgent?.let { put("user-agent", it) }
+    }
 
     /** mpv options that turn on its YouTube support, pointed at the downloaded programs on Windows. */
     fun mpvOptions(ytdlp: Path = this.ytdlp, deno: Path = this.deno, windows: Boolean = this.windows): Map<String, String> = buildMap {
         put("ytdl", "yes")
-        // Trailers are short: the best picture up to 1080p, else whatever single stream there is.
-        put("ytdl-format", "bestvideo[height<=?1080]+bestaudio/best")
+        put("ytdl-format", Format)
         if (windows) {
             put("script-opts", "ytdl_hook-ytdl_path=" + literal(slashes(ytdlp)))
             put("ytdl-raw-options", "js-runtimes=" + literal("deno:" + slashes(deno)))
@@ -90,6 +115,25 @@ object TrailerTools {
         }
     }
 
+    /** Unpacks the whole of [zip] into [target], which must not exist yet. */
+    internal fun extractAll(zip: Path, target: Path) {
+        val root = target.toAbsolutePath().normalize()
+        ZipFile(zip.toFile()).use { z ->
+            for (e in z.entries()) {
+                val out = root.resolve(e.name).normalize()
+                check(out.startsWith(root)) { "The download contains an unsafe path." }
+                if (e.isDirectory) { Files.createDirectories(out); continue }
+                Files.createDirectories(out.parent)
+                z.getInputStream(e).use { Files.copy(it, out, StandardCopyOption.REPLACE_EXISTING) }
+            }
+        }
+    }
+
+    private fun deleteTree(path: Path) {
+        if (!Files.exists(path)) return
+        Files.walk(path).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) } }
+    }
+
     /** Downloads what is missing; returns null when done, or what went wrong. [status] is told each step. */
     suspend fun install(status: (String) -> Unit): String? = withContext(Dispatchers.IO) {
         runCatching {
@@ -102,13 +146,20 @@ object TrailerTools {
                 return if (into == null) response.body() as String else null
             }
             Files.createDirectories(dir)
-            if (locate("yt-dlp.exe") == null) {
+            if (locateYtdlp() == null) {
                 status("Downloading yt-dlp…")
-                val want = parseChecksum(get(YtdlpSumsUrl)!!, "yt-dlp.exe") ?: error("yt-dlp's checksum could not be found.")
-                val part = dir.resolve("yt-dlp.exe.part")
-                get(YtdlpExeUrl, part)
-                check(sha256(part) == want) { "The yt-dlp download did not match its checksum, so it was not used." }
-                Files.move(part, dir.resolve("yt-dlp.exe"), StandardCopyOption.REPLACE_EXISTING)
+                val want = parseChecksum(get(YtdlpSumsUrl)!!, YtdlpZip) ?: error("yt-dlp's checksum could not be found.")
+                val zip = dir.resolve("$YtdlpZip.part")
+                val unpacked = dir.resolve("$YtdlpFolder.part")
+                get(YtdlpZipUrl, zip)
+                try {
+                    check(sha256(zip) == want) { "The yt-dlp download did not match its checksum, so it was not used." }
+                    deleteTree(unpacked)
+                    extractAll(zip, unpacked)
+                    check(Files.isRegularFile(unpacked.resolve("yt-dlp.exe"))) { "yt-dlp.exe is not in the download" }
+                    deleteTree(dir.resolve(YtdlpFolder))
+                    Files.move(unpacked, dir.resolve(YtdlpFolder))
+                } finally { Files.deleteIfExists(zip); deleteTree(unpacked) }
             }
             if (locate("deno.exe") == null) {
                 status("Downloading Deno…")
