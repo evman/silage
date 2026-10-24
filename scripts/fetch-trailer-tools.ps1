@@ -9,10 +9,15 @@ $cache = Join-Path $root 'native\tools'
 New-Item -ItemType Directory -Force $cache, $Out | Out-Null
 
 function Get-Sum([string]$Url, [string]$Name) {
-    foreach ($line in (Invoke-WebRequest $Url -UseBasicParsing).Content -split "`n") {
-        if ($line.Trim() -match '^([0-9a-fA-F]{64})(?:\s+\*?(.+))?$' -and (-not $Name -or $Matches[2] -eq $Name)) { return $Matches[1].ToLowerInvariant() }
-    }
-    throw "No checksum found at $Url"
+    # Saved to a file and read as text: Windows PowerShell returns octet-stream downloads as bytes.
+    $tmp = [System.IO.Path]::GetTempFileName()
+    try {
+        Invoke-WebRequest $Url -OutFile $tmp -UseBasicParsing
+        foreach ($line in (Get-Content -LiteralPath $tmp)) {
+            if ($line.Trim() -match '^([0-9a-fA-F]{64})(?:\s+\*?(.+))?$' -and (-not $Name -or $Matches[2].Trim() -eq $Name)) { return $Matches[1].ToLowerInvariant() }
+        }
+    } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+    throw "No checksum for '$Name' found at $Url"
 }
 function Assert-Hash([string]$Path, [string]$Want) {
     if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Want) { throw "SHA256 mismatch: $Path" }
