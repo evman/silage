@@ -205,7 +205,7 @@ fun main(args: Array<String>) {
                             val profileUi = remember { koin.get<dev.silage.app.settings.ProfileUiStore>() }
                             val ui by profileUi.state.collectAsState()
                             val signedIn = route !in setOf(Route.Connect, Route.SignIn, Route.Profiles)
-                            LaunchedEffect(signedIn) { if (signedIn) profileUi.load() }
+                            LaunchedEffect(signedIn) { if (signedIn) profileUi.load() else koin.get<dev.silage.app.shell.SidebarStore>().clear() }
                             CompositionLocalProvider(dev.silage.app.settings.LocalProfileUi provides ui) {
                             KeyRoot(route, onBack = nav::back, onQuit = closeSilage,
                                 onFullscreen = if (isWindows) ({ playbackFullscreen.toggle() }) else null, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }

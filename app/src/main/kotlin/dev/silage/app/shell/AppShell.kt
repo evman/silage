@@ -23,12 +23,15 @@ import org.siloserver.silo.repository.ProfileRepository
 fun AppShell(nav: AppNavigator, koin: Koin, current: Route, content: @Composable () -> Unit) {
     val prefs = remember { koin.get<UiPrefs>() }
     val prefsVersion by prefs.changes.collectAsState()
-    var serverLibraries by remember { mutableStateOf(emptyList<org.siloserver.silo.model.personal.UserLibrary>()) }
-    var profile by remember { mutableStateOf<SidebarProfile?>(null) }
+    // Shown at once from the last page's sidebar, then refreshed.
+    val store = remember { koin.get<SidebarStore>() }
+    val profile by store.profile.collectAsState()
+    val cachedLibraries by store.libraries.collectAsState()
+    val serverLibraries = cachedLibraries.orEmpty()
     LaunchedEffect(Unit) {
         val personal = koin.get<PersonalDataRepository>()
-        (personal.listUserLibraries() as? ApiResult.Success)?.let { serverLibraries = personal.withoutHidden(it.data) }
-        koin.get<ProfileRepository>().getActiveProfile()?.let { profile = SidebarProfile(it.name, it.avatarUrl, it.avatar) }
+        (personal.listUserLibraries() as? ApiResult.Success)?.let { store.setLibraries(personal.withoutHidden(it.data)) }
+        koin.get<ProfileRepository>().getActiveProfile()?.let { store.setProfile(SidebarProfile(it.name, it.avatarUrl, it.avatar)) }
     }
     val libraries = remember(serverLibraries, prefsVersion) { SidebarEntries.libraries(serverLibraries, prefs.sidebar) }
     LaunchedEffect(Unit) { koin.get<LiveFeatures>().start() }
