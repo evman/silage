@@ -54,6 +54,9 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
     // Home's right-click menu can also remove a card from Continue Watching / Next Up.
     val base = dev.silage.app.browse.LocalCardMenu.current
     val sections = remember { koin.get<org.siloserver.silo.repository.SectionRepository>() }
+    // Shows the server accepted a removal for: hidden from the progress rows at once, whether or not
+    // the reload that follows is served stale.
+    var removed by remember { mutableStateOf(emptySet<String>()) }
     val menu = remember(base, vm) {
         base?.forHome(
             // Straight to the server, so its answer can be shown. It drops the whole show from both
@@ -66,7 +69,7 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
                     anchor == null -> "The server didn't say which entry this is."
                     owner == null -> "You're signed out."
                     else -> when (val r = sections.dismissHomeItem(if (nextUp) "next_up" else "continue_watching", card.id, anchor, owner)) {
-                        is org.siloserver.silo.network.ApiResult.Success -> null
+                        is org.siloserver.silo.network.ApiResult.Success -> { removed = removed + (card.seriesId ?: card.id); null }
                         is org.siloserver.silo.network.ApiResult.Error -> "Couldn't remove it: ${r.message}"
                         else -> "Can't reach the server."
                     }
@@ -76,9 +79,19 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
         )
     }
     androidx.compose.runtime.CompositionLocalProvider(dev.silage.app.browse.LocalCardMenu provides menu) {
-        SectionRowsScreen(state.sections, state.isLoading, state.error, onRetry = { vm.refresh() }, emptyText = "Nothing on Home yet", onOpen = onOpen, onPlay = onPlay)
+        val shown = remember(state.sections, removed) { withoutRemovedShows(state.sections, removed) }
+        SectionRowsScreen(shown, state.isLoading, state.error, onRetry = { vm.refresh() }, emptyText = "Nothing on Home yet", onOpen = onOpen, onPlay = onPlay)
     }
 }
+
+/** The progress rows (Continue Watching, Next Up) without the shows in [removed] (series ids, or the item's own id). */
+internal fun withoutRemovedShows(
+    sections: List<org.siloserver.silo.model.section.ResolvedSection>, removed: Set<String>,
+): List<org.siloserver.silo.model.section.ResolvedSection> =
+    if (removed.isEmpty()) sections else sections.map { section ->
+        if (!isProgressRow(section.sectionType)) section
+        else section.copy(items = section.items.filterNot { (it.seriesId ?: it.contentId) in removed })
+    }
 
 /** For You: the server's personal recommendation rows, laid out like Home. */
 @Composable
