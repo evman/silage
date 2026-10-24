@@ -49,7 +49,7 @@ import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.repository.AuthRepository
 import org.siloserver.silo.repository.PersonalDataRepository
 
-private enum class Section(val label: String) { Interface("Interface"), Playback("Playback"), Video("Video"), Subtitles("Subtitles"), Account("Account"), About("About") }
+private enum class Section(val label: String) { Interface("Interface"), Posters("Posters"), TitlePages("Title pages"), Playback("Playback"), Video("Video"), Subtitles("Subtitles"), Account("Account"), About("About") }
 
 /** Settings: sections on the left, the chosen section's rows on the right. */
 @Composable
@@ -67,6 +67,8 @@ fun SettingsScreen(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServer: () -
         Box(Modifier.padding(start = 56.dp, top = 112.dp).weight(1f)) {
             when (section) {
                 Section.Interface -> InterfaceSection(koin)
+                Section.Posters -> PostersSection(koin)
+                Section.TitlePages -> TitlePagesSection(koin)
                 Section.Playback -> PlaybackSection(koin)
                 Section.Video -> VideoSection(koin)
                 Section.Subtitles -> SubtitlesSection(koin)
@@ -90,7 +92,7 @@ private fun SectionEntry(label: String, selected: Boolean, modifier: Modifier, o
 }
 
 @Composable
-private fun Heading(text: String, sub: String? = null) {
+internal fun Heading(text: String, sub: String? = null) {
     Text(text, color = Silage.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
     sub?.let { Text(it, color = Silage.Text2, fontSize = 18.sp, modifier = Modifier.padding(top = 6.dp)) }
     Spacer(Modifier.height(24.dp))

@@ -201,8 +201,15 @@ fun main(args: Array<String>) {
                                 }
                             }
                             val route by nav.route.collectAsState()
+                            // The profile's interface settings (badges, spoilers…), loaded once signed in to a profile.
+                            val profileUi = remember { koin.get<dev.silage.app.settings.ProfileUiStore>() }
+                            val ui by profileUi.state.collectAsState()
+                            val signedIn = route !in setOf(Route.Connect, Route.SignIn, Route.Profiles)
+                            LaunchedEffect(signedIn) { if (signedIn) profileUi.load() }
+                            CompositionLocalProvider(dev.silage.app.settings.LocalProfileUi provides ui) {
                             KeyRoot(route, onBack = nav::back, onQuit = closeSilage,
                                 onFullscreen = if (isWindows) ({ playbackFullscreen.toggle() }) else null, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
+                            }
                         }
                         if (!splashDone) SplashScreen(ready = navigator != null) { splashDone = true }
                         if (System.getProperty("os.name").startsWith("Windows")) {

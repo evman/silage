@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
@@ -51,9 +52,10 @@ fun Pill(label: String, selected: Boolean = false, onClick: () -> Unit) {
 /** The focused item's backdrop, faint behind a page. */
 @Composable
 fun PageBackdrop(card: CardModel?) {
+    val hide = card?.hidesImage(dev.silage.app.settings.LocalProfileUi.current.spoilers) == true
     Box(Modifier.fillMaxSize()) {
         Crossfade(card?.backdropUrl, animationSpec = tween(400), modifier = Modifier.align(Alignment.TopEnd)) { url ->
-            Artwork(url, null, "", Modifier.fillMaxWidth(0.75f).fillMaxHeight(0.7f), contentScale = ContentScale.Crop, showTitleTile = false)
+            Artwork(url, null, "", Modifier.fillMaxWidth(0.75f).fillMaxHeight(0.7f).then(if (hide) Modifier.blur(40.dp) else Modifier), contentScale = ContentScale.Crop, showTitleTile = false)
         }
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black, 0.35f to Color.Black, 1f to Color.Black.copy(alpha = 0.55f))))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.2f to Color.Black.copy(alpha = 0.3f), 0.7f to Color.Black)))
@@ -81,6 +83,7 @@ fun PosterGrid(
 ) {
     val grid = rememberLazyGridState()
     val items = state.items
+    val cardWidth = 200.dp * dev.silage.app.settings.LocalProfileUi.current.presentation.posterSize.posterScale
     LaunchedEffect(grid, items.size, state.endReached) {
         snapshotFlow { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }.collect { last ->
             if (!state.endReached && !state.loading && state.error == null && last >= items.size - 14) onLoadMore()
@@ -88,7 +91,7 @@ fun PosterGrid(
     }
     Box(Modifier.fillMaxSize()) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(200.dp),
+        columns = GridCells.Adaptive(cardWidth),
         state = grid,
         contentPadding = PaddingValues(start = 64.dp, end = 64.dp, top = 12.dp, bottom = 80.dp),
         horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -98,7 +101,7 @@ fun PosterGrid(
         header()
         val target = restoreId?.takeIf { id -> items.any { it.id == id } } ?: items.firstOrNull()?.id
         itemsIndexed(items, key = { _, c -> c.id }) { _, card ->
-            MediaCard(card, 200.dp, onOpen = { onOpen(card) }, onFocus = { onFocus(card) }, focusRequester = if (card.id == target) firstFocus else null)
+            MediaCard(card, cardWidth, onOpen = { onOpen(card) }, onFocus = { onFocus(card) }, focusRequester = if (card.id == target) firstFocus else null)
         }
         item(span = { GridItemSpan(maxLineSpan) }) {
             Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {

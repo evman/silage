@@ -187,6 +187,8 @@ data class ItemDetail(
     val tagline: String? = null,
     val runtime: Int = 0,
     @SerialName("content_rating") val contentRating: String? = null,
+    /** Recommended minimum viewer age from an advisory service (e.g. 13), when the server has one. */
+    @SerialName("advisory_age") val advisoryAge: Int? = null,
     val genres: List<String> = emptyList(),
     @SerialName("rating_imdb") val ratingImdb: Double? = null,
     @SerialName("rating_tmdb") val ratingTmdb: Double? = null,

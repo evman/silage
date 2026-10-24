@@ -13,6 +13,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import dev.silage.app.browse.hidesImage
+import dev.silage.app.browse.hidesOverview
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -50,11 +53,24 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
     val state by vm.uiState.collectAsState()
     // Home's right-click menu can also remove a card from Continue Watching / Next Up.
     val base = dev.silage.app.browse.LocalCardMenu.current
+    val sections = remember { koin.get<org.siloserver.silo.repository.SectionRepository>() }
     val menu = remember(base, vm) {
         base?.forHome(
+            // Straight to the server, so its answer can be shown. It drops the whole show from both
+            // rows, which is why Home reloads afterwards.
             dismiss = { card ->
-                if (card.homeRow == "next_up" || card.homeRow == "up_next") card.seriesId?.let { vm.dismissNextUp(card.id, it) }
-                else card.progressUpdatedAt?.let { vm.dismissContinueWatching(card.id, it) }
+                val nextUp = card.homeRow == "next_up" || card.homeRow == "up_next"
+                val anchor = (if (nextUp) card.seriesId else card.progressUpdatedAt)?.takeIf { it.isNotBlank() }
+                val owner = sections.captureHomeAuthority()
+                when {
+                    anchor == null -> "The server didn't say which entry this is."
+                    owner == null -> "You're signed out."
+                    else -> when (val r = sections.dismissHomeItem(if (nextUp) "next_up" else "continue_watching", card.id, anchor, owner)) {
+                        is org.siloserver.silo.network.ApiResult.Success -> null
+                        is org.siloserver.silo.network.ApiResult.Error -> "Couldn't remove it: ${r.message}"
+                        else -> "Can't reach the server."
+                    }
+                }
             },
             changed = { vm.refresh() },
         )
@@ -155,9 +171,11 @@ private fun FocusedMarquee(focused: State<CardModel?>, fallback: CardModel?, col
 @Composable
 private fun Marquee(card: CardModel?, collapse: Float = 0f) {
     fun l(a: Float, b: Float) = a + (b - a) * collapse
+    val spoilers = dev.silage.app.settings.LocalProfileUi.current.spoilers
+    val hideBackdrop = card?.hidesImage(spoilers) == true
     Box(Modifier.fillMaxWidth().height(l(560f, 300f).dp)) {
         Crossfade(card?.backdropUrl to card?.backdropThumbhash, animationSpec = tween(350), modifier = Modifier.align(Alignment.TopEnd)) { (url, hash) ->
-            Artwork(url, hash, "", Modifier.fillMaxWidth(0.78f).fillMaxHeight(), contentScale = ContentScale.Crop, showTitleTile = false)
+            Artwork(url, hash, "", Modifier.fillMaxWidth(0.78f).fillMaxHeight().then(if (hideBackdrop) Modifier.blur(40.dp) else Modifier), contentScale = ContentScale.Crop, showTitleTile = false)
         }
         // Fade the backdrop into black on the left and bottom so text and rows stay legible.
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black, 0.30f to Color.Black, 0.62f to Color.Black.copy(alpha = 0.35f), 1f to Color.Transparent)))
@@ -171,7 +189,7 @@ private fun Marquee(card: CardModel?, collapse: Float = 0f) {
                 }
                 val meta = listOfNotNull(card.caption?.takeIf { card.landscape }, card.metaLine.ifBlank { null }).joinToString("  ·  ")
                 if (meta.isNotBlank()) Text(meta, color = Silage.Text2, fontSize = l(18f, 16f).sp)
-                card.overview?.let {
+                card.overview?.takeIf { !card.hidesOverview(spoilers) }?.let {
                     Text(
                         it, color = Silage.Text, fontSize = 17.sp, lineHeight = 25.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.foldAway(collapse),

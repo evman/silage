@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -110,10 +111,11 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
     }
 
     val d = item
+    val profileUi = dev.silage.app.settings.LocalProfileUi.current
     when {
         error != null && d == null -> ErrorState(error!!) { attempt++ }
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
-        else -> DetailContent(koin, d.toDetailModel(), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId,
+        else -> DetailContent(koin, d.toDetailModel(profileUi.spoilers, profileUi.showAdvisoryAge), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId,
             onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle, onTrailer = onTrailer)
     }
 }
@@ -167,7 +169,7 @@ private fun DetailContent(
     val playFocus = rememberInitialFocus(!m.isSeries || next != null)
 
     Box(Modifier.fillMaxSize().background(Silage.Black)) {
-        Artwork(m.backdropUrl, m.backdropThumbhash, "", Modifier.fillMaxWidth().fillMaxHeight(0.85f).align(Alignment.TopEnd), showTitleTile = false)
+        Artwork(m.backdropUrl, m.backdropThumbhash, "", Modifier.fillMaxWidth().fillMaxHeight(0.85f).align(Alignment.TopEnd).then(if (m.blurBackdrop) Modifier.blur(40.dp) else Modifier), showTitleTile = false)
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black, 0.25f to Color.Black.copy(alpha = 0.92f), 0.65f to Color.Black.copy(alpha = 0.25f), 1f to Color.Transparent)))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 0.82f to Color.Black)))
 
@@ -223,7 +225,7 @@ private fun DetailContent(
                     }
                 }
                 items(episodes, key = { it.contentId }) { e ->
-                    EpisodeRowView(e.toRow(), onToggleWatched = { now -> actions.setWatched(e.contentId, now).also { if (it) onEpisodesChanged() } }) {
+                    EpisodeRowView(e.toRow(dev.silage.app.settings.LocalProfileUi.current.spoilers), onToggleWatched = { now -> actions.setWatched(e.contentId, now).also { if (it) onEpisodesChanged() } }) {
                         onPlay(e.contentId, false, episodeFile(e))
                     }
                 }
@@ -311,7 +313,7 @@ private fun EpisodeRowView(e: EpisodeRow, onToggleWatched: suspend (Boolean) -> 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(320.dp, 180.dp).then(if (active) Modifier.border(3.dp, Color.White, shape) else Modifier).clip(shape)) {
-            Artwork(e.stillUrl, e.stillThumbhash, e.title, Modifier.fillMaxSize())
+            Artwork(e.stillUrl, e.stillThumbhash, e.title, Modifier.fillMaxSize().then(if (e.blurStill) Modifier.blur(28.dp) else Modifier))
             e.progress?.let { p ->
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(5.dp).background(Color.Black.copy(alpha = 0.55f))) {
                     Box(Modifier.fillMaxWidth(p).fillMaxHeight().background(Silage.Amber))

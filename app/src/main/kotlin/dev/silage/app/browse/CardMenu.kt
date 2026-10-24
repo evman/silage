@@ -17,14 +17,24 @@ class CardMenu(
     private val notify: (String) -> Unit,
     /** The cards are the watchlist itself, so the menu offers to remove. */
     val onWatchlistPage: Boolean = false,
-    /** Removes a card from its Home row (Continue Watching, Next Up); only Home offers it. */
-    private val dismiss: ((CardModel) -> Unit)? = null,
+    /**
+     * Removes a card from its Home row (Continue Watching, Next Up); only Home offers it.
+     * Returns null when the server accepted it, else what went wrong.
+     */
+    private val dismiss: (suspend (CardModel) -> String?)? = null,
     /** Called after a change the page shows (progress reset), so it can reload. */
     private val changed: () -> Unit = {},
 ) {
     /** This menu on Home: removing from a row, and reloading Home after a change. */
-    fun forHome(dismiss: (CardModel) -> Unit, changed: () -> Unit) =
+    fun forHome(dismiss: suspend (CardModel) -> String?, changed: () -> Unit) =
         CardMenu(play, playFromStart, open, actions, scope, notify, onWatchlistPage, dismiss, changed)
+
+    /** The poster's shortcut buttons: save the change, and say so when it didn't take. */
+    suspend fun quickFavorite(id: String, on: Boolean): Boolean =
+        runCatching { actions.setFavorite(id, on) }.getOrDefault(false).also { if (!it) notify("Couldn't save that change. Try again.") }
+
+    suspend fun quickWatched(id: String, on: Boolean): Boolean =
+        runCatching { actions.setWatched(id, on) }.getOrDefault(false).also { if (!it) notify("Couldn't save that change. Try again.") }
 
     fun items(card: CardModel): List<ContextMenuItem> = cardMenuEntries(card, onWatchlistPage, canDismiss = dismiss != null).map { entry ->
         ContextMenuItem(entry.label(card)) {
@@ -38,8 +48,8 @@ class CardMenu(
                     actions.setWatched(card.id, true) && actions.setWatched(card.id, false)
                 }
                 CardMenuEntry.RemoveFromRow -> when {
-                    isNextUp(card) -> { dismiss?.invoke(card); notify("Removed from Next Up") }
-                    card.progressUpdatedAt != null -> { dismiss?.invoke(card); notify("Removed from Continue Watching") }
+                    isNextUp(card) -> removeFromRow(card, "Removed from Next Up")
+                    card.progressUpdatedAt != null -> removeFromRow(card, "Removed from Continue Watching")
                     // No dismissal anchor from this server: clearing the saved position takes
                     // the title off Continue Watching just the same.
                     else -> act("Removed from Continue Watching") {
@@ -55,6 +65,15 @@ class CardMenu(
                 CardMenuEntry.MarkWatched -> act("Marked as watched") { actions.setWatched(card.id, true) }
                 CardMenuEntry.MarkUnwatched -> act("Marked as unwatched") { actions.setWatched(card.id, false) }
             }
+        }
+    }
+
+    /** Asks the server, and says what it answered: the row reloads only once it accepted (it drops the whole show). */
+    private fun removeFromRow(card: CardModel, done: String) {
+        scope.launch {
+            val problem = runCatching { dismiss?.invoke(card) ?: "Couldn't remove it from here." }.getOrElse { "Couldn't remove it: ${it.message}" }
+            notify(problem ?: done)
+            if (problem == null) changed()
         }
     }
 

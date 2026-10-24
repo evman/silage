@@ -59,4 +59,37 @@ class DetailModelTest {
         assertEquals("e1", nextEpisode(listOf(ep(1, played = true), ep(2, played = true)))?.contentId)
         assertNull(nextEpisode(emptyList()))
     }
+
+    @Test fun ageGuidanceJoinsTheContentRatingOnlyWhenAsked() {
+        val d = ItemDetail(contentId = "m", type = "movie", title = "X", year = 2020, contentRating = "PG-13", advisoryAge = 13)
+        assertEquals("2020 · PG-13", d.toDetailModel().metaLine)
+        assertEquals("2020 · PG-13 · 13+", d.toDetailModel(showAdvisoryAge = true).metaLine)
+        assertEquals("2020", ItemDetail(contentId = "m", type = "movie", title = "X", year = 2020).toDetailModel(showAdvisoryAge = true).metaLine)
+    }
+
+    @Test fun spoilerSettingsHideAnUnwatchedEpisodesStillAndDescription() {
+        val e = EpisodeListItem(contentId = "e", seasonNumber = 1, episodeNumber = 2, overview = "He dies.", stillIsEpisodeStill = true)
+        val hide = org.siloserver.silo.model.settings.EpisodeSpoilerPrefs(hideImages = true, hideOverviews = true)
+        assertEquals("He dies.", e.toRow().overview)
+        assertEquals(false, e.toRow().blurStill)
+        assertNull(e.toRow(hide).overview)
+        assertEquals(true, e.toRow(hide).blurStill)
+    }
+
+    @Test fun aWatchedOrStartedEpisodeIsShownInFull() {
+        val hide = org.siloserver.silo.model.settings.EpisodeSpoilerPrefs(hideImages = true, hideOverviews = true)
+        val watched = EpisodeListItem(contentId = "e", seasonNumber = 1, episodeNumber = 2, overview = "Text", userData = LeafItemUserData(played = true)).toRow(hide)
+        assertEquals("Text", watched.overview)
+        assertEquals(false, watched.blurStill)
+        val started = EpisodeListItem(contentId = "e", seasonNumber = 1, episodeNumber = 2, overview = "Text",
+            userData = LeafItemUserData(played = false, isInProgress = true, positionSeconds = 60.0)).toRow(hide)
+        assertEquals("Text", started.overview)
+    }
+
+    @Test fun anEpisodePageHidesItsOwnDescriptionWhileUnwatched() {
+        val hide = org.siloserver.silo.model.settings.EpisodeSpoilerPrefs(hideOverviews = true)
+        val d = ItemDetail(contentId = "e", type = "episode", title = "Pilot", overview = "Spoiler")
+        assertNull(d.toDetailModel(hide).overview)
+        assertEquals("Spoiler", ItemDetail(contentId = "m", type = "movie", title = "Pilot", overview = "Spoiler").toDetailModel(hide).overview)
+    }
 }
