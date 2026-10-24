@@ -85,7 +85,13 @@ fun Sidebar(
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     var focused by remember { mutableStateOf(false) }
-    val open = hovered || focused
+    // After choosing a page the sidebar folds away at once, even with the pointer still over it,
+    // so it never sits over the page just opened (search results, say); moving off re-arms it.
+    var dismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(hovered, focused) { if (!hovered && !focused) dismissed = false }
+    val open = (hovered || focused) && !dismissed
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val go: (Route) -> Unit = { target -> dismissed = true; focusManager.clearFocus(); onGo(target) }
     val width by animateDpAsState(if (open) SidebarOpen else SidebarRail, tween(180))
 
     Box(
@@ -97,34 +103,34 @@ fun Sidebar(
                     1f to Color.Transparent,
                 ),
             )
-            .hoverable(hover)
             .onFocusChanged { focused = it.hasFocus },
     ) {
-        Column(Modifier.width(width).fillMaxHeight().padding(vertical = 36.dp, horizontal = 16.dp)) {
+        // Only the rail itself reacts to the pointer: the soft edge beside it belongs to the page.
+        Column(Modifier.width(width).fillMaxHeight().hoverable(hover).padding(vertical = 36.dp, horizontal = 16.dp)) {
             ProfileEntry(profile, open, onProfile)
             Spacer(Modifier.height(28.dp))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Entry(Icons.Outlined.Search, "Search", current == Route.Search, open) { onGo(Route.Search) }
-                Entry(Icons.Outlined.Home, "Home", current == Route.Home, open) { onGo(Route.Home) }
-                Entry(Icons.Outlined.AutoAwesome, "For You", current == Route.ForYou, open) { onGo(Route.ForYou) }
-                Entry(Icons.Outlined.CalendarMonth, "Calendar", current == Route.Calendar, open) { onGo(Route.Calendar) }
-                if (requestsEnabled) Entry(Icons.Outlined.AddCircleOutline, "Requests", current == Route.Requests, open) { onGo(Route.Requests) }
+                Entry(Icons.Outlined.Search, "Search", current == Route.Search, open) { go(Route.Search) }
+                Entry(Icons.Outlined.Home, "Home", current == Route.Home, open) { go(Route.Home) }
+                Entry(Icons.Outlined.AutoAwesome, "For You", current == Route.ForYou, open) { go(Route.ForYou) }
+                Entry(Icons.Outlined.CalendarMonth, "Calendar", current == Route.Calendar, open) { go(Route.Calendar) }
+                if (requestsEnabled) Entry(Icons.Outlined.AddCircleOutline, "Requests", current == Route.Requests, open) { go(Route.Requests) }
                 if (libraries.isNotEmpty()) Box(Modifier.padding(vertical = 10.dp, horizontal = 12.dp).fillMaxWidth().height(1.dp).background(Silage.Hairline))
                 libraries.filter { it.visible }.forEach { lib ->
-                    Entry(lib.kind.icon(), lib.name, current is Route.Library && current.id == lib.id, open) { onGo(Route.Library(lib.id, lib.name)) }
+                    Entry(lib.kind.icon(), lib.name, current is Route.Library && current.id == lib.id, open) { go(Route.Library(lib.id, lib.name)) }
                 }
                 Box(Modifier.padding(vertical = 10.dp, horizontal = 12.dp).fillMaxWidth().height(1.dp).background(Silage.Hairline))
-                Entry(Icons.Outlined.BookmarkBorder, "Watchlist", current == Route.Watchlist, open) { onGo(Route.Watchlist) }
-                Entry(Icons.Outlined.FavoriteBorder, "Favorites", current == Route.Favorites, open) { onGo(Route.Favorites) }
-                Entry(Icons.Outlined.History, "History", current == Route.History, open) { onGo(Route.History) }
-                Entry(Icons.Outlined.CollectionsBookmark, "Collections", current == Route.Collections || current is Route.Collection, open) { onGo(Route.Collections) }
+                Entry(Icons.Outlined.BookmarkBorder, "Watchlist", current == Route.Watchlist, open) { go(Route.Watchlist) }
+                Entry(Icons.Outlined.FavoriteBorder, "Favorites", current == Route.Favorites, open) { go(Route.Favorites) }
+                Entry(Icons.Outlined.History, "History", current == Route.History, open) { go(Route.History) }
+                Entry(Icons.Outlined.CollectionsBookmark, "Collections", current == Route.Collections || current is Route.Collection, open) { go(Route.Collections) }
             }
             if (notificationsAvailable) {
                 Entry(Icons.Outlined.Notifications, if (unread > 0) "Notifications ($unread)" else "Notifications", current == Route.Notifications, open,
-                    badge = unread) { onGo(Route.Notifications) }
+                    badge = unread) { go(Route.Notifications) }
                 Spacer(Modifier.height(6.dp))
             }
-            Entry(Icons.Outlined.Settings, "Settings", current == Route.Settings, open) { onGo(Route.Settings) }
+            Entry(Icons.Outlined.Settings, "Settings", current == Route.Settings, open) { go(Route.Settings) }
         }
     }
 }

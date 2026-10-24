@@ -66,11 +66,12 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     dvAuthorization: DvHelperAuthorization? = null,
     hasNextEpisode: () -> Boolean = { false }, onNextEpisode: (() -> Unit)? = null,
     subtitleTools: ((MpvPlayer) -> dev.silage.app.playback.hud.SubtitleTools)? = null,
+    extraOptions: Map<String, String> = emptyMap(),
     onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
     val mpv = MpvPlayer(playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1") +
-        koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle.mpvOptions())
+        koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle.mpvOptions() + extraOptions)
     // The chosen audio output, if it is still connected; otherwise the Windows default.
     koin.get<dev.silage.app.ui.UiPrefs>().audioDevice?.let { device ->
         if (AudioDevices.parse(mpv.getProperty("audio-device-list")).any { it.name == device }) mpv.setProperty("audio-device", device)
@@ -161,6 +162,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
 @Composable
 fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fileId: Int? = null, onDone: () -> Unit,
     shuffleId: String? = null,
+    trailer: dev.silage.app.nav.Trailer? = null,
     onPlayNext: (contentId: String, shuffleId: String?) -> Unit = { _, _ -> }) {
     val fullscreen = LocalPlaybackFullscreen.current
     val dvAuthorization = LocalDvHelperAuthorization.current
@@ -196,6 +198,20 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         // The canvas gets its native window on the next frame; without one in
         // time, mpv falls back to its own fullscreen window.
         val shown = withTimeoutOrNull(3_000) { surface.await() }
+        if (trailer != null) {
+            // A provider trailer: mpv opens the YouTube page itself (through yt-dlp); the server is not involved.
+            val session = PlaybackSession(
+                launch = { LaunchResult.Ready(sessionId = "trailer", url = trailer.url, headers = emptyMap(), startSeconds = null,
+                    meta = PlaybackMeta(title = trailer.title, line = "Trailer")) },
+                openPlayer = { ready -> openMpv(koin, shown, ready, false, fullscreen, video, extraOptions = TrailerTools.mpvOptions()) { _, _, _ -> } },
+                progress = { _, _, _ -> },
+                stopSession = { },
+            )
+            val outcome = withContext(Dispatchers.IO) { session.play(trailer.url) }
+            fullscreen?.leave()
+            if (outcome is PlayOutcome.Failed) error = "Couldn't play this trailer. ${outcome.message}" else onDone()
+            return@LaunchedEffect
+        }
         // A packaged stream can contain only one audio track. Stop that session
         // before requesting another source ordinal using the existing start API.
         // Also a stored subtitle to switch to (found or AI-made): the new session's plan lists it.

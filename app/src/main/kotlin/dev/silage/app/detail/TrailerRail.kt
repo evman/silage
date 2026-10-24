@@ -41,7 +41,7 @@ import org.siloserver.silo.model.catalog.TrailerRailEntry
 import org.siloserver.silo.model.catalog.trailerRailDurationLabel
 import org.siloserver.silo.model.catalog.youtubeThumbnailUrl
 
-/** Where a provider trailer plays: YouTube in the default browser (mpv here has no YouTube support). */
+/** The page mpv opens (through yt-dlp) to play a provider trailer. */
 internal fun youtubeWatchUrl(siteKey: String): String =
     "https://www.youtube.com/watch?v=" + java.net.URLEncoder.encode(siteKey, "UTF-8")
 
@@ -49,28 +49,18 @@ internal fun youtubeWatchUrl(siteKey: String): String =
 internal fun trailerCaption(entry: TrailerRailEntry): String =
     listOfNotNull(org.siloserver.silo.model.catalog.extraKindLabel(entry.kind), trailerRailDurationLabel(entry)).joinToString(" · ")
 
-/** Opens [url] in the default browser; false when this PC has none to open it. */
-internal fun openInBrowser(url: String): Boolean = runCatching {
-    if (!java.awt.Desktop.isDesktopSupported()) return false
-    val desktop = java.awt.Desktop.getDesktop()
-    if (!desktop.isSupported(java.awt.Desktop.Action.BROWSE)) return false
-    desktop.browse(java.net.URI(url))
-    true
-}.getOrDefault(false)
-
 /**
- * "Trailers & More": provider trailers (opened in the browser) and the server's own
- * extras (played in Silage).
+ * "Trailers & More": provider trailers (YouTube) and the server's own extras, all played in Silage.
  */
 @Composable
-internal fun TrailerRail(entries: List<TrailerRailEntry>, onPlayLocal: (contentId: String, fileId: Int?) -> Unit, onOpenRemote: (String) -> Unit) {
+internal fun TrailerRail(entries: List<TrailerRailEntry>, onPlayLocal: (contentId: String, fileId: Int?) -> Unit, onPlayRemote: (TrailerRailEntry.Remote) -> Unit) {
     Text("Trailers & More", color = Silage.Text2, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(start = 64.dp, top = 56.dp, bottom = 18.dp))
     ArrowRow(contentPadding = PaddingValues(horizontal = 64.dp), horizontalArrangement = Arrangement.spacedBy(24.dp), arrowOffsetY = 28.dp) {
         items(entries, key = { it.key }) { entry ->
             TrailerCard(entry) {
                 when (entry) {
-                    is TrailerRailEntry.Remote -> onOpenRemote(youtubeWatchUrl(entry.video.siteKey))
+                    is TrailerRailEntry.Remote -> onPlayRemote(entry)
                     is TrailerRailEntry.Local -> onPlayLocal(entry.extra.contentId, entry.extra.fileId)
                 }
             }

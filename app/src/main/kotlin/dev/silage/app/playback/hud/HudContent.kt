@@ -130,6 +130,8 @@ private val Panel = Color(0xF2171717)
 @Composable
 fun HudContent(ui: HudUi, act: HudActions) {
     Box(Modifier.fillMaxSize()) {
+        // Clicking the picture away from an open menu closes it (the controls above still work).
+        if (ui.menu != HudMenu.None) Box(Modifier.fillMaxSize().pointerInput(ui.menu) { detectTapGestures { act.openMenu(ui.menu) } })
         AnimatedVisibility(ui.visible, enter = fadeIn(tween(200)), exit = fadeOut(tween(300))) {
             Box(Modifier.fillMaxSize()) {
                 // Top scrim with the back button, bottom scrim behind the HUD.
@@ -159,7 +161,7 @@ fun HudContent(ui: HudUi, act: HudActions) {
             Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = 150.dp),
             enter = fadeIn(tween(150)) + slideInVertically { it / 8 },
             exit = fadeOut(tween(150)) + slideOutVertically { it / 8 },
-        ) { MenuPanel(ui, act) }
+        ) { Box(Modifier.pointerInput(Unit) { detectTapGestures { } }) { MenuPanel(ui, act) } }
         if (ui.menu == HudMenu.Info) InfoPanel(ui.info, Modifier.align(Alignment.TopEnd).padding(40.dp))
     }
 }

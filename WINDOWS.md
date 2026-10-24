@@ -108,9 +108,15 @@ PC or Windows account requires signing in again; interface settings still travel
   themselves; the video restarts where it was, which takes a moment.
 - Favorites and History: sidebar pages beside Watchlist, as poster grids of the
   titles you marked as favorites and of what you watched lately.
-- Trailers & More: title pages show a rail of the title's trailers and extras.
-  Extras your server holds (featurettes, behind the scenes) play in Silage;
-  YouTube trailers open in your default browser.
+- Trailers & More: title pages show a rail of the title's trailers and extras, all
+  played inside Silage. Extras your server holds (featurettes, behind the scenes) play
+  directly. The first YouTube trailer asks once to download two helper programs,
+  yt-dlp and Deno, from their official GitHub releases (checked against the checksums
+  published there) into Silage's own `userdata\Data\tools` folder.
+- Back: pages that sit on top of another (a title, a person, a collection) have a
+  **Back** button at the top left; Esc, Backspace, Alt+Left and the mouse's Back
+  button do the same. Clicking the dimmed page behind a menu (the version list, a
+  player menu) closes it.
 - Notifications: the bell in the sidebar shows how many are unread and opens
   the inbox (new episodes, fulfilled requests). While Silage is in the
   background, new ones also pop up as Windows notifications; clicking one

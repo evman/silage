@@ -3,6 +3,7 @@ package dev.silage.app.detail
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
 import androidx.compose.animation.animateContentSize
 import androidx.compose.material.icons.filled.Bookmark
@@ -75,7 +76,8 @@ import org.siloserver.silo.repository.CatalogRepository
 /** Movie, episode or series detail. [onPlay] gets a content id, whether to start over, and the chosen copy. */
 @Composable
 fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) -> Unit, onPerson: (Long, String) -> Unit = { _, _ -> },
-    onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> }) {
+    onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> },
+    onTrailer: (dev.silage.app.nav.Trailer) -> Unit = {}) {
     val catalog = remember { koin.get<CatalogRepository>() }
     var item by remember(contentId) { mutableStateOf<ItemDetail?>(null) }
     var error by remember(contentId) { mutableStateOf<String?>(null) }
@@ -112,7 +114,7 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
         error != null && d == null -> ErrorState(error!!) { attempt++ }
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
         else -> DetailContent(koin, d.toDetailModel(), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId,
-            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle)
+            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle, onTrailer = onTrailer)
     }
 }
 
@@ -130,7 +132,10 @@ private fun DetailContent(
     onPerson: (Long, String) -> Unit,
     onEpisodesChanged: () -> Unit,
     onShuffle: (contentId: String, shuffleId: String) -> Unit,
+    onTrailer: (dev.silage.app.nav.Trailer) -> Unit,
 ) {
+    // A YouTube trailer waiting for its helper programs to be downloaded (first time only).
+    var settingUpTrailer by remember { mutableStateOf<dev.silage.app.nav.Trailer?>(null) }
     // Only a series shuffles from its page (movies have nothing to pick between).
     val shuffle = if (m.isSeries) dev.silage.app.playback.rememberShuffleStart(koin, org.siloserver.silo.model.shuffle.ShuffleScopeKind.SERIES, contentId, onShuffle) else null
     val actions = remember { ItemActions(koin.get(), koin.get(), koin.get()) }
@@ -178,7 +183,8 @@ private fun DetailContent(
                     m.tagline?.let { Text(it, color = Silage.Text, fontSize = 20.sp, fontStyle = FontStyle.Italic) }
                     m.overview?.let { Text(it, color = Silage.Text, fontSize = 19.sp, lineHeight = 29.sp, maxLines = 4, overflow = TextOverflow.Ellipsis) }
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // The buttons may be wider than the text column above them: squeezed, a chip's label wrapped letter by letter.
+                    Row(Modifier.wrapContentWidth(Alignment.Start, unbounded = true), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         if (m.isSeries) {
                             if (next != null) {
                                 val resume = next.userData.resumePosition() != null
@@ -225,10 +231,10 @@ private fun DetailContent(
             val trailers = trailerRailEntries(item)
             if (trailers.isNotEmpty()) {
                 item {
-                    var browserFailed by remember(contentId) { mutableStateOf(false) }
-                    TrailerRail(trailers, onPlayLocal = { id, file -> onPlay(id, false, file) },
-                        onOpenRemote = { url -> browserFailed = !openInBrowser(url) })
-                    if (browserFailed) Text("Couldn't open your browser.", color = Silage.Error, fontSize = 17.sp, modifier = Modifier.padding(start = 64.dp, top = 8.dp))
+                    TrailerRail(trailers, onPlayLocal = { id, file -> onPlay(id, false, file) }, onPlayRemote = { entry ->
+                        val trailer = dev.silage.app.nav.Trailer(youtubeWatchUrl(entry.video.siteKey), entry.title)
+                        if (dev.silage.app.playback.TrailerTools.ready()) onTrailer(trailer) else settingUpTrailer = trailer
+                    })
                 }
             }
             if (m.cast.isNotEmpty()) {
@@ -239,6 +245,9 @@ private fun DetailContent(
                     }
                 }
             }
+        }
+        settingUpTrailer?.let { trailer ->
+            TrailerSetupDialog(onReady = { settingUpTrailer = null; onTrailer(trailer) }, onCancel = { settingUpTrailer = null })
         }
         if (selected != null) {
             VersionPicker(options, selected.fileId, onPick = {
@@ -261,7 +270,7 @@ internal fun ActionButton(icon: ImageVector, label: String, modifier: Modifier =
     ) {
         Icon(icon, null, tint = if (active) Color.Black else Color.White, modifier = Modifier.size(30.dp))
         Spacer(Modifier.width(10.dp))
-        Text(label, color = if (active) Color.Black else Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = if (active) Color.Black else Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
     }
 }
 
@@ -285,7 +294,7 @@ private fun ToggleChip(icon: ImageVector, label: String, on: Boolean, onClick: (
         Icon(icon, null, tint = when { active -> Color.Black; on -> Silage.Amber; else -> Color.White }, modifier = Modifier.size(30.dp))
         if (active) {
             Spacer(Modifier.width(10.dp))
-            Text(label, color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 8.dp))
+            Text(label, color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false, modifier = Modifier.padding(end = 8.dp))
         }
     }
 }
@@ -365,12 +374,13 @@ internal fun VersionPicker(options: List<VersionOption>, selectedId: Int, onPick
         },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.fillMaxSize().pointerInput(Unit) {
-            awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
-        })
+        // Clicking the dimmed page behind the list closes it.
+        Box(Modifier.fillMaxSize().pointerInput(onDismiss) { detectTapGestures { onDismiss() } })
         Column(
             Modifier.width(820.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xF2171717))
-                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)).padding(vertical = 14.dp),
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
+                // A click on the list's own edges must not fall through to the page behind.
+                .pointerInput(Unit) { detectTapGestures { } }.padding(vertical = 14.dp),
         ) {
             Text("VERSION", color = Silage.Text3, fontSize = 15.sp, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp))
             options.forEach { o ->

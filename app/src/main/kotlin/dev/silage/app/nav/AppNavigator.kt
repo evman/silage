@@ -25,8 +25,13 @@ sealed interface Route {
     data class Person(val id: Long, val name: String) : Route
     data class Detail(val contentId: String) : Route
     data class RequestDetail(val mediaType: String, val tmdbId: Int) : Route
-    data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null, val shuffleId: String? = null) : Route
+    /** [trailer]: a provider trailer (YouTube) played in the same player, rather than a title from the server. */
+    data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null, val shuffleId: String? = null,
+        val trailer: Trailer? = null) : Route
 }
+
+/** A trailer to play: the page mpv's YouTube support opens, and its name for the player. */
+data class Trailer(val url: String, val title: String)
 
 private val authRoutes = setOf(Route.Connect, Route.SignIn, Route.Profiles)
 

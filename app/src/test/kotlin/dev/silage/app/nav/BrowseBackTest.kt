@@ -46,6 +46,25 @@ class BrowseBackTest {
         onNodeWithText("Back").performClick()
         assertEquals(Route.Library(1, "Movies"), nav.route.value)
     }
+    @Test fun onlyPagesOnTopOfAnotherOfferTheBackButton() {
+        assertTrue(showsBackButton(Route.Detail("m")))
+        assertTrue(showsBackButton(Route.Person(1, "A")))
+        assertTrue(showsBackButton(Route.Collection("c", "C")))
+        assertFalse(showsBackButton(Route.Watchlist))
+        assertFalse(showsBackButton(Route.Search))
+        assertFalse(showsBackButton(Route.Library(1, "Movies")))
+        // Pages inside the sidebar shell keep their title clear of the button.
+        assertTrue(backButtonSharesShell(Route.Person(1, "A")))
+        assertFalse(backButtonSharesShell(Route.Detail("m")))
+    }
+
+    @Test fun sidebarPagesShowNoBackButton() = runComposeUiTest {
+        val nav = AppNavigator(Route.Home)
+        nav.go(Route.Watchlist)
+        setContent { MaterialTheme { BrowseNavigation(nav) { Text("Content") } } }
+        onNodeWithText("Back").assertDoesNotExist()
+    }
+
     @Test fun altLeftReturnsToPreviousScreen() = runComposeUiTest {
         val nav = AppNavigator(Route.Home)
         nav.go(Route.Search)
