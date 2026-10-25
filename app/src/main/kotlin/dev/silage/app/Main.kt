@@ -244,7 +244,9 @@ private fun BorderlessStartup(window: java.awt.Frame, isWindows: Boolean, border
     // moving it with Win+Shift+Arrow, or a display change, would otherwise leave the old size.
     if (isWindows) DisposableEffect(window) {
         val follow = dev.silage.app.playback.WindowsMonitors.followMonitor(window)
-        onDispose { follow.close() }
+        // Moving to a monitor scaled differently: redraw at the new size (see ScreenScaleRefresh).
+        val scale = ScreenScaleRefresh.follow(window)
+        onDispose { follow.close(); scale.close() }
     }
 }
 

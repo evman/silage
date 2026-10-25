@@ -42,3 +42,54 @@ internal object WindowsChrome {
         }.getOrDefault(false)
     }
 }
+
+/**
+ * Redraws the window at the right size after it moves to a monitor with a different scale.
+ *
+ * Compose draws into a Skia layer that resizes itself when the Java runtime reports a scale
+ * change. The JetBrains Runtime reports one; the runtime Silage ships with only reports a new
+ * screen, so a window moved between monitors scaled differently (say 150% and 100%) kept
+ * drawing at the old size, leaving the rest of the window white. On a screen change this
+ * nudges each Skia layer's size, which makes it measure the window and its scale again.
+ */
+internal object ScreenScaleRefresh {
+    /** Skia layers anywhere under [root]: matched by class name, as skiko is not on the app's API. */
+    internal fun skiaLayers(root: java.awt.Component): List<java.awt.Component> = buildList {
+        fun walk(c: java.awt.Component) {
+            if (generateSequence<Class<*>>(c.javaClass) { it.superclass }.any { it.simpleName == "SkiaLayer" }) add(c)
+            (c as? java.awt.Container)?.components?.forEach(::walk)
+        }
+        walk(root)
+    }
+
+    private fun refresh(window: java.awt.Window) {
+        if (!window.isShowing) return
+        window.invalidate()
+        window.validate()
+        skiaLayers(window).forEach { layer ->
+            val b = layer.bounds
+            if (b.width > 1 && b.height > 1) {
+                layer.setBounds(b.x, b.y, b.width, b.height - 1)
+                layer.setBounds(b.x, b.y, b.width, b.height)
+            }
+            layer.revalidate()
+            layer.repaint()
+        }
+        window.repaint()
+    }
+
+    /** Watches [window] for screen changes until closed. */
+    fun follow(window: java.awt.Window): AutoCloseable {
+        // Windows resizes the window for the new scale just after the screen change: refresh then, and once more after.
+        val later = javax.swing.Timer(300) { runCatching { refresh(window) } }.apply { isRepeats = false }
+        val listener = java.beans.PropertyChangeListener {
+            javax.swing.SwingUtilities.invokeLater { runCatching { refresh(window) } }
+            later.restart()
+        }
+        window.addPropertyChangeListener("graphicsConfiguration", listener)
+        return AutoCloseable {
+            later.stop()
+            window.removePropertyChangeListener("graphicsConfiguration", listener)
+        }
+    }
+}

@@ -154,7 +154,8 @@ PC or Windows account requires signing in again; interface settings still travel
   borderless window and back; it is never exclusive fullscreen, so Alt+Tab and other
   windows behave normally. *Settings → Interface → Window → Fullscreen* opens Silage
   borderless every time instead. Fullscreen refits to the monitor it is on when moved
-  there (Win+Shift+Arrow). Escape goes back through pages, then offers **Quit Silage?**
+  there (Win+Shift+Arrow). Moved to a monitor with a different Windows scale (say 150%
+  and 100%), the window redraws at the new size. Escape goes back through pages, then offers **Quit Silage?**
   when there is no previous page. **Cancel** is focused first; use arrows or Tab to
   choose, Enter/Space to activate, or click either button. Escape cancels the
   dialog. Alt+F4 closes Silage. The Silage icon is embedded in both the portable EXE
