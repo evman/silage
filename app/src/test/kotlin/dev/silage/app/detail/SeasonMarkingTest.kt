@@ -34,4 +34,12 @@ class RecentSearchesTest {
         assertEquals(dev.silage.app.browse.RecentSearches.Max, full.size)
         assertEquals("q20", full.first())
     }
+
+    @Test fun typingOnReplacesTheNewestSearchAndDeletingBackAddsNothing() {
+        val add = dev.silage.app.browse.RecentSearches::add
+        assertEquals(listOf("dune", "Alien"), add(listOf("dun", "Alien"), "dune"))
+        assertEquals(listOf("dune", "Alien"), add(listOf("dune", "Alien"), "dun"))
+        assertEquals(listOf("Alien", "dune"), add(listOf("dune", "Alien"), "Alien"))
+        assertEquals(listOf("alien", "Dune"), add(listOf("Dune", "Alien"), "alien"))
+    }
 }

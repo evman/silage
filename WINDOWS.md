@@ -117,7 +117,8 @@ PC or Windows account requires signing in again; interface settings still travel
   History for Remove from history (a show goes with all of its episodes).
 - Series pages have a *Mark season watched* button after the season buttons. Right-click
   an episode for *Mark watched up to here* (earlier seasons too).
-- Search shows your recent searches (ones that led to a title) while the box is empty.
+- Search shows your recent searches while the box is empty: a search counts once it finds
+  something and you pause typing, or when you open a result.
 - Title pages have an Info button: the full details, cast and crew, and the file that
   would play: its size, bitrate, and each video, audio and subtitle track.
 - Trailers & More: title pages show a rail of the title's trailers and extras, all

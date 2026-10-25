@@ -72,12 +72,20 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit, onOpenRequest: (mediaT
     }
     val requestResults by requestSearch.results.collectAsState()
     var text by rememberSaveable { mutableStateOf("") }
-    // The last few searches that led somewhere (a result opened), offered while the box is empty.
+    // The last few searches, offered while the box is empty: one counts once it finds something and
+    // typing pauses, or when a result is opened.
     val prefs = remember { koin.get<dev.silage.app.ui.UiPrefs>() }
     var recent by remember { mutableStateOf(prefs.recentSearches) }
-    fun rememberSearch(q: String) { recent = RecentSearches.add(recent, q); prefs.recentSearches = recent }
+    fun rememberSearch(q: String) {
+        val next = RecentSearches.add(recent, q)
+        if (next != recent) { recent = next; prefs.recentSearches = next }
+    }
     val openResult: (CardModel) -> Unit = { card -> rememberSearch(text); onOpen(card) }
     fun search(q: String) { text = q; query.onInput(q); if (requestsEnabled) requestSearch.onInput(q) }
+    val found = (results as? SearchResults.Done)?.cards?.isNotEmpty() == true
+    LaunchedEffect(text, found) {
+        if (found && text.isNotBlank()) { kotlinx.coroutines.delay(RecentSearches.PauseMs); rememberSearch(text) }
+    }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
     var focused by remember { mutableStateOf<CardModel?>(null) }
     val field = remember { FocusRequester() }
@@ -236,9 +244,19 @@ internal fun withoutRemoved(state: PagerState, removed: Set<String>): PagerState
 /** The searches Search offers again: newest first, each once (ignoring case), at most [Max]. */
 object RecentSearches {
     const val Max = 8
+    /** How long typing pauses, with results showing, before a search counts. */
+    const val PauseMs = 1500L
 
+    /**
+     * [recent] with [query] first. Typing on from the newest search replaces it ("dun" then "dune"
+     * keeps "dune"), and a shorter start of the newest (deleting back) adds nothing.
+     */
     fun add(recent: List<String>, query: String): List<String> {
         val q = query.trim().takeIf { it.length >= 2 } ?: return recent
-        return (listOf(q) + recent.filterNot { it.equals(q, ignoreCase = true) }).take(Max)
+        val newest = recent.firstOrNull()
+        if (newest != null && newest.startsWith(q, ignoreCase = true) && !newest.equals(q, ignoreCase = true)) return recent
+        val rest = recent.filterNot { it.equals(q, ignoreCase = true) }
+            .let { if (newest != null && q.startsWith(newest, ignoreCase = true)) it.filterNot { r -> r == newest } else it }
+        return (listOf(q) + rest).take(Max)
     }
 }
