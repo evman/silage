@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0 — 2026-10-25
+
+- Add Favorites and History pages; remove a title from History by right-clicking it.
+- Add Trailers & More (YouTube trailers and the server's extras, played in Silage),
+  More like this and an Info dialog with full details, cast, crew and file tracks
+  to title pages. Trailers bundle yt-dlp and Deno on Windows and are looked up only
+  when played.
+- Add Go to show, Mark season watched and Mark watched up to here. Fix removing
+  shows from Continue Watching and Next Up.
+- Play Dolby Vision files directly on Windows, and keep the original file when a
+  non-default audio track is chosen. Add streaming quality and maximum bitrate
+  settings and a Quality menu in the player.
+- Add player shortcuts (mute, volume, subtitles, audio, speed, next episode),
+  audio and subtitle sync, a sleep timer and remembered volume.
+- Add recent searches and a Devices page for signing other devices out.
+- Open Windows as a normal window with optional fullscreen; add a Back button,
+  keep the sidebar's profile between pages, resize artwork smoothly and redraw
+  correctly after moving to a monitor with a different scale.
+
 ## Installer update — 2026-10-19
 
 - Migrate the three unowned DV helper files left by portable setup or development

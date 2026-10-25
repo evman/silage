@@ -46,6 +46,12 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.4.0" date="2026-10-25">
+      <description>
+        <p>Favorites and History pages, Trailers &amp; More, More like this and a title Info dialog join season marking, Go to show, recent searches and a Devices page for signing other devices out.</p>
+        <p>The player adds keyboard shortcuts, audio and subtitle sync, a sleep timer, remembered volume and a Quality menu with streaming quality settings. Windows plays Dolby Vision files directly, opens as a normal window and redraws correctly when moved between monitors with different scales.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-10-19">
       <description>
         <p>Linux downloads include an experimental Dolby Vision helper and private playback renderer, with a Video setting and helper-only administrator authorization at startup. The tested Intel Arc A380 and ASUS DisplayPort setup supports Profile 5, 8.1 and Profile 7 MEL/FEL processing; full Dolby color accuracy remains unverified.</p>
