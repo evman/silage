@@ -22,9 +22,19 @@ function Get-Sum([string]$Url, [string]$Name) {
     } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
     throw "No checksum for '$Name' found at $Url"
 }
-function Assert-Hash([string]$Path, [string]$Want) {
-    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Want) { throw "SHA256 mismatch: $Path" }
+# Hashing and unzipping use .NET directly, not Get-FileHash or Expand-Archive: Windows PowerShell started
+# from PowerShell 7 (as GitHub's Windows runners do) inherits PowerShell 7's module path and can't load them.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+function Get-Sha256([string]$Path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($Path)
+    try { return (($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) -join '') }
+    finally { $stream.Dispose(); $sha.Dispose() }
 }
+function Assert-Hash([string]$Path, [string]$Want) {
+    if ((Get-Sha256 $Path) -ne $Want) { throw "SHA256 mismatch: $Path" }
+}
+function Expand-Zip([string]$Zip, [string]$To) { [System.IO.Compression.ZipFile]::ExtractToDirectory($Zip, $To) }
 
 try {
     $temp = Join-Path ([System.IO.Path]::GetTempPath()) ('silage-tools-' + [Guid]::NewGuid())
@@ -35,7 +45,7 @@ try {
         $ytZip = Join-Path $temp 'yt-dlp_win.zip'
         Invoke-WebRequest "$base/yt-dlp_win.zip" -OutFile $ytZip -UseBasicParsing
         Assert-Hash $ytZip $want
-        Expand-Archive -LiteralPath $ytZip -DestinationPath (Join-Path $temp 'yt-dlp')
+        Expand-Zip $ytZip (Join-Path $temp 'yt-dlp')
         if (-not (Test-Path (Join-Path $temp 'yt-dlp\yt-dlp.exe'))) { throw 'yt-dlp.exe is not in yt-dlp_win.zip' }
 
         $zipUrl = 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip'
@@ -43,7 +53,7 @@ try {
         $zip = Join-Path $temp 'deno.zip'
         Invoke-WebRequest $zipUrl -OutFile $zip -UseBasicParsing
         Assert-Hash $zip $want
-        Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $temp 'deno')
+        Expand-Zip $zip (Join-Path $temp 'deno')
 
         $cachedYt = Join-Path $cache 'yt-dlp'
         if (Test-Path $cachedYt) { Remove-Item -Recurse -Force $cachedYt }

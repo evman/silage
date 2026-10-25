@@ -2,6 +2,9 @@
 rem Builds dist\Silage-Portable.exe plus a portable folder and ZIP (no Python needed).
 rem The previous dist\Silage and ZIP are moved to dist\backups\before-package-<time> first.
 setlocal
+rem Started from PowerShell 7 (GitHub's runners), its module path would hide Windows PowerShell's own
+rem modules from the powershell steps below; without the variable, Windows PowerShell uses its defaults.
+set "PSModulePath="
 set "NEWZIP="
 set "NEWEXE="
 cd /d "%~dp0"
