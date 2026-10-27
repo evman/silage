@@ -59,6 +59,10 @@ class Updater(
     private val work: CoroutineContext = scope.coroutineContext.minusKey(Job)
     private val lock = Mutex()
     private var pending: Release? = null
+
+    /** The signed SHA256SUMS the pending file was verified against, to verify it again before use. */
+    private class Proof(val sums: ByteArray, val signature: String, val name: String)
+    private var proof: Proof? = null
     private var started = false
 
     private val updates get() = type !is InstallType.Development
@@ -88,7 +92,16 @@ class Updater(
     suspend fun fetchPending(): Path? = withContext(work) {
         lock.withLock {
             val ready = _state.value as? UpdateState.Ready ?: return@withLock null
-            ready.file?.takeIf { Files.isRegularFile(it) } ?: pending?.let { fetch(it) }
+            val release = pending ?: return@withLock null
+            // The cache is writable by anything the user runs: check the file again before handing it out.
+            val file = ready.file
+            val proof = proof
+            if (file != null && proof != null && Files.isRegularFile(file) &&
+                verifier.verify(proof.sums, proof.signature, proof.name, file)
+            ) {
+                return@withLock file
+            }
+            fetch(release)
         }
     }
 
@@ -147,18 +160,23 @@ class Updater(
             _state.value = UpdateState.Failed("Silage ${release.version} has no download for this copy")
             return null
         }
+        deleteDownloads()
+        proof = null
         _state.value = UpdateState.Downloading(release.version, 0f)
         val part = updatesDir.resolve("$name.part")
         val sumsFile = updatesDir.resolve("$SUMS.part")
         val signatureFile = updatesDir.resolve("$SUMS_SIGNATURE.part")
         var file: Path? = null
+        var verified: Proof? = null
         try {
             Files.createDirectories(updatesDir)
             download(sumsUrl, sumsFile) {}
             download(signatureUrl, signatureFile) {}
             download(assetUrl, part) { _state.value = UpdateState.Downloading(release.version, it.coerceIn(0f, 1f)) }
-            if (verifier.verify(Files.readAllBytes(sumsFile), Files.readString(signatureFile), name, part)) {
+            val candidate = Proof(Files.readAllBytes(sumsFile), Files.readString(signatureFile), name)
+            if (verifier.verify(candidate.sums, candidate.signature, name, part)) {
                 file = Files.move(part, updatesDir.resolve(name), StandardCopyOption.REPLACE_EXISTING)
+                verified = candidate
             }
         } catch (e: CancellationException) {
             throw e
@@ -176,6 +194,7 @@ class Updater(
             _state.value = UpdateState.Failed("The download of Silage ${release.version} didn't match its signature")
             return null
         }
+        proof = verified
         _state.value = UpdateState.Ready(release.version, file)
         return file
     }
@@ -194,6 +213,11 @@ class Updater(
     /** Forgets the offered update and deletes everything downloaded for it. */
     private fun discardPending() {
         pending = null
+        proof = null
+        deleteDownloads()
+    }
+
+    private fun deleteDownloads() {
         if (!Files.isDirectory(updatesDir)) return
         Files.list(updatesDir).use { files -> files.forEach { Files.deleteIfExists(it) } }
     }

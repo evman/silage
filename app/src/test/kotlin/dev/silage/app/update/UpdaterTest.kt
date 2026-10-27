@@ -146,6 +146,29 @@ class UpdaterTest {
         }
     }
 
+    @Test fun aCachedFileChangedAfterVerificationIsNotHandedOut() = runTest {
+        val updater = updater()
+        val deb = publish("0.5.1")
+        check(updater)
+        val file = updatesDir.resolve("silage_0.5.1_amd64.deb")
+        assertEquals(UpdateState.Ready(Version(0, 5, 1), file), updater.state.value)
+
+        // Replaced in the cache after it was verified: it is downloaded and verified again.
+        file.writeBytes("replaced".toByteArray())
+        requested.clear()
+        assertEquals(file, updater.fetchPending())
+        assertContentEquals(deb, file.readBytes())
+        assertTrue(requested.isNotEmpty())
+        assertEquals(UpdateState.Ready(Version(0, 5, 1), file), updater.state.value)
+
+        // And when the fresh download can't be had, nothing is handed out or kept.
+        file.writeBytes("replaced".toByteArray())
+        served.remove(source.release!!.assets.getValue("silage_0.5.1_amd64.deb"))
+        assertEquals(null, updater.fetchPending())
+        assertIs<UpdateState.Failed>(updater.state.value)
+        assertEquals(emptyList(), updatesDir.listDirectoryEntries())
+    }
+
     @Test fun failedVerificationDeletesTheFileAndIsNotReady() = runTest {
         val updater = updater()
         publish("0.5.1", tamperDeb = true)
