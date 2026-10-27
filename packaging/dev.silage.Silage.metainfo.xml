@@ -46,6 +46,11 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.4.1" date="2026-10-27">
+      <description>
+        <p>Sign in with a code or QR code, approving on a phone or browser, so accounts that use single sign-on can sign in. Remote and mouse Back buttons now go back everywhere, the pointer hides over playing video, and each library remembers its sort and filters.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-10-25">
       <description>
         <p>Favorites and History pages, Trailers &amp; More, More like this and a title Info dialog join season marking, Go to show, recent searches and a Devices page for signing other devices out.</p>

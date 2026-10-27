@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1 — 2026-10-27
+
+- Add sign-in with a code or QR code next to the password form, so accounts that
+  use single sign-on (such as Discord) can sign in by approving on a phone or
+  browser. Hidden when the server doesn't offer device sign-in.
+- Make remotes' Back / Browser Back button and the mouse's Back button go back
+  on pages, in dialogs and in the player, including Browser Back app commands on
+  Windows (issue #3).
+- Hide the mouse pointer over playing video along with the player controls.
+- Remember each library's sort, order and filters on this device.
+
 ## 0.4.0 — 2026-10-25
 
 - Add Favorites and History pages; remove a title from History by right-clicking it.

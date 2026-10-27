@@ -258,9 +258,9 @@ it also links that JDK under `toolchains` (otherwise unpack a portable JDK there
 |---|---|
 | `test-windows.cmd` | runs the app, player and shared test suites; output in `test-windows.log` |
 | `build-windows.cmd <tasks>` | runs any Gradle task with the portable JDK, e.g. `build-windows.cmd :app:run` |
-| `package-windows.cmd -PappVersion=0.4.0` | builds `dist\Silage-Portable.exe`, plus the folder and ZIP alternatives, checks bundled mpv, and keeps the previous build in `dist\backups` |
+| `package-windows.cmd -PappVersion=0.4.1` | builds `dist\Silage-Portable.exe`, plus the folder and ZIP alternatives, checks bundled mpv, and keeps the previous build in `dist\backups` |
 
-`build-windows.py` and `package-windows.py -PappVersion=0.4.0` do the same with Python. The version flag is forwarded to Gradle, so the app and release metadata agree.
+`build-windows.py` and `package-windows.py -PappVersion=0.4.1` do the same with Python. The version flag is forwarded to Gradle, so the app and release metadata agree.
 Both packaging scripts preserve `dist\Silage\userdata` when rebuilding and
 back up the previous build. Release ZIPs exclude personal data. When updating
 an extracted app, close it and replace the app files while keeping `userdata`.

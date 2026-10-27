@@ -1,17 +1,15 @@
 ## Silage @VERSION@ — Linux and Windows
 
-This release brings a large set of browsing, playback and player features to
-Linux and Windows, plus Windows window and Dolby Vision improvements.
+This release adds sign-in with a code or QR code, fixes remote controls'
+Back button and the pointer over playing video, and makes libraries remember
+their sort and filters.
 
 ### What's new
 
-- **Favorites and History** pages. Right-click a title in History to remove it.
-- **Title pages** gain Trailers & More (YouTube trailers and your server's extras, played inside Silage), More like this, and an Info dialog with full details, cast, crew and the file's video, audio and subtitle tracks.
-- **Shows:** Go to show opens an episode's show at the right season. Mark season watched, and Mark watched up to here from an episode's right-click menu. Removing shows from Continue Watching and Next Up now sticks.
-- **Playback:** Windows plays Dolby Vision files directly instead of converting them, and choosing a non-default audio track keeps the original file. Settings → Video adds streaming quality and maximum bitrate, and the player adds a Quality menu.
-- **Player:** keyboard shortcuts (M mute, + / − volume, S subtitles, A audio, [ ] speed, N next episode), audio and subtitle sync, a sleep timer, and remembered volume.
-- **Search** shows your recent searches. **Settings → Devices** lists where your account is signed in and signs other devices out.
-- **Windows:** opens as a normal window with optional fullscreen (F11), a Back button, smoother artwork, a steadier sidebar, and correct redrawing after moving between monitors with different scales. YouTube trailers use the bundled yt-dlp and Deno.
+- **Sign in with a code or QR code.** The sign-in screen shows a QR code and a short code next to the password form. Scan it or go to `<your server>/activate` on your phone or browser, sign in there (including single sign-on such as Discord) and approve. Servers that don't offer device sign-in show the password form as before.
+- **Remote Back button.** The Back / Browser Back button on remotes and air mice (for example the G60S Pro), and the mouse's Back button, now go back everywhere: pages, dialogs and the player. On Windows, Browser Back sent as an app command is caught too. If your remote's Back still does nothing, please say so in issue #3.
+- **Pointer over video.** The mouse pointer hides with the player controls after 3 seconds of no movement and comes back when you move the mouse.
+- **Libraries remember sort and filters.** Each library keeps its sort, order and filters on this device, between visits and after restarting.
 
 ### Experimental Dolby Vision limitations
 
