@@ -11,6 +11,46 @@ individual users as bypass actors, so this is by role.
 the ruleset is edited (Settings, Rules, Rulesets). Today that is `evman`
 (admin) and `minimalhandle` (write) only.
 
+## Cutting a release
+
+1. On `main`, update the `CHANGELOG.md` section, the metainfo release entry,
+   `pkgver` in `packaging/aur/PKGBUILD` and `.SRCINFO`, and the `0.X.Y-dev`
+   default in `app/build.gradle.kts`, and commit. The release build takes its
+   version from the tag.
+2. Tag the merged commit and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+   Push the tag only after the commit is on `main`, so the release and the
+   repositories describe the code users get.
+3. The `release` workflow builds Windows and Linux, signs `SHA256SUMS` and the
+   repositories, and checks the signature against the bundled `update-key.pub`
+   (a mismatched key fails here, before anything is public). It publishes the
+   release as not-latest, runs the install/upgrade tests on Ubuntu, Debian,
+   Fedora, Arch and Windows against it, and only then the `promote` job marks it
+   **Latest** and deploys the dnf repository to Pages.
+4. A tag containing `-` (for example `v0.6.0-rc.1`) is a rehearsal: everything
+   runs except `promote`, so users never see it. Delete the release and tag afterwards.
+
+If a test job fails, nothing reaches users: fix on `main`, delete the release
+and tag, and tag again.
+
+### Pages deployment policy
+
+The `github-pages` environment only accepts deployments from tags matching
+`v*` (Settings, Environments, github-pages). Without that rule the `promote`
+job cannot deploy the dnf repository from a tag.
+
+### After promote: smoke check
+
+```sh
+base=https://github.com/evman/silage/releases/latest/download
+for f in InRelease silage.db Silage-Setup.exe SHA256SUMS SHA256SUMS.sig; do
+  curl -fsIL -o /dev/null -w "%{http_code} $f\n" "$base/$f"
+done
+curl -fsSL https://evman.github.io/silage/rpm/silage.repo
+```
+
+Every line should print `200`. Then check Settings, About, Check now on an
+installed copy of the previous version.
+
 ## Secrets
 
 Repository secrets used by the release workflows:
