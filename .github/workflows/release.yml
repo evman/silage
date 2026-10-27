@@ -237,7 +237,7 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Install the repository and release tools
-        run: pacman -Syu --noconfirm --needed git github-cli apt createrepo_c
+        run: pacman -Syu --noconfirm --needed git github-cli apt createrepo_c openssl
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
@@ -269,6 +269,13 @@ jobs:
           scripts/build-repos.sh dist "$v" pages
           # Last, so SHA256SUMS lists every asset.
           scripts/sign-release.sh dist
+      - name: Check the signature against the key built into the app
+        # A secret that doesn't match update-key.pub would make every install reject all future updates.
+        run: |
+          sig="$RUNNER_TEMP/SHA256SUMS.sig.bin"
+          base64 -d dist/SHA256SUMS.sig > "$sig"
+          openssl pkeyutl -verify -pubin -inkey app/src/main/resources/update-key.pub -rawin \
+            -in dist/SHA256SUMS -sigfile "$sig"
       - uses: actions/upload-artifact@v7
         with:
           name: pages
