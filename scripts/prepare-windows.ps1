@@ -14,6 +14,21 @@ if (-not (Get-ChildItem (Join-Path $root 'toolchains\jdk-*') -Directory -ErrorAc
     throw 'Set JAVA_HOME to JDK 21 or unpack it under toolchains\jdk-*'
 }
 
+# Inno Setup 6 compiles the installer (packaging\windows\silage.iss).
+$iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+if (-not $iscc) {
+    $iscc = @(${env:ProgramFiles(x86)}, $env:ProgramFiles, (Join-Path $env:LOCALAPPDATA 'Programs')) |
+        Where-Object { $_ } | ForEach-Object { Join-Path $_ 'Inno Setup 6\ISCC.exe' } |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if ($iscc) {
+    Write-Output "Inno Setup found: $iscc"
+} else {
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) { throw 'Install Inno Setup 6 (https://jrsoftware.org/isinfo.php)' }
+    choco install innosetup --version 6.7.1 -y --no-progress
+    if ($LASTEXITCODE -ne 0) { throw 'Installing Inno Setup failed' }
+}
+
 $native = Join-Path $root 'native'
 New-Item -ItemType Directory -Force $native | Out-Null
 $expected = @{
@@ -49,7 +64,7 @@ try {
     Invoke-WebRequest 'https://raw.githubusercontent.com/mpv-player/mpv/a2cd83c56d/LICENSE.GPL' -OutFile (Join-Path $temp 'LICENSE-mpv-GPL.txt')
     Invoke-WebRequest 'https://raw.githubusercontent.com/mpv-player/mpv/a2cd83c56d/Copyright' -OutFile (Join-Path $temp 'Copyright-mpv.txt')
     # The mpv DLL imports Vulkan even for D3D11 playback. Keep a fallback loader
-    # so machines without a Vulkan driver/runtime still run the portable app.
+    # so machines without a Vulkan driver/runtime still run the app.
     $vulkan = Join-Path $temp 'vulkan.zip'
     Invoke-WebRequest 'https://sdk.lunarg.com/sdk/download/1.4.341.0/windows/VulkanRT-X64-1.4.341.0-Components.zip' -OutFile $vulkan
     Assert-Hash $vulkan '20571dcc8292b80a47d68bbbfa4094d87044041f50f4e2e1f326a01e3732b226'

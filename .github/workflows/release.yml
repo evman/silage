@@ -86,7 +86,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s scripts/tests -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build portable Windows EXE and ZIP
+      - name: Build the Windows installer
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
@@ -99,15 +99,16 @@ jobs:
           if ($reported -ne "Silage $version") { throw "Unexpected build version: $reported" }
           $check = Start-Process ./dist/Silage/silage.exe -ArgumentList '--check' -Wait -PassThru
           if ($check.ExitCode -ne 0) { throw 'Bundled playback check failed' }
-          Copy-Item dist/Silage-Portable.exe "dist/Silage-$version-Windows-x64.exe"
-          Copy-Item dist/Silage-Windows-x64.zip "dist/Silage-$version-Windows-x64.zip"
+          foreach ($name in "Silage-$version-Setup.exe", 'Silage-Setup.exe') {
+            if (-not (Test-Path "dist/$name")) { throw "Installer missing: dist/$name" }
+          }
       - uses: actions/upload-artifact@v7
         with:
           name: windows
           compression-level: 0
           path: |
-            dist/*.exe
-            dist/*.zip
+            dist/Silage-*-Setup.exe
+            dist/Silage-Setup.exe
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
@@ -226,9 +227,9 @@ jobs:
           cp "dist/silage-${v}-1.x86_64.rpm" dist/silage.x86_64.rpm
           cp "dist/silage-${v}-linux-x86_64.tar.gz" dist/silage-linux-x86_64.tar.gz
           cp dist/silage-bin-"${v}"-*-x86_64.pkg.tar.zst dist/silage-bin-x86_64.pkg.tar.zst
-          (cd dist && sha256sum ./*.tar.gz ./*.deb ./*.rpm ./*.pkg.tar.zst ./*.exe ./*.zip PKGBUILD | sed 's| \./| |' > SHA256SUMS)
+          (cd dist && sha256sum ./*.tar.gz ./*.deb ./*.rpm ./*.pkg.tar.zst ./Silage-*-Setup.exe ./Silage-Setup.exe PKGBUILD | sed 's| \./| |' > SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "Silage $v" --notes-file /tmp/notes.md \
-            dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/*.exe dist/*.zip dist/PKGBUILD dist/SHA256SUMS
+            dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/Silage-*-Setup.exe dist/Silage-Setup.exe dist/PKGBUILD dist/SHA256SUMS
 
   # Releases made with GITHUB_TOKEN don't trigger other workflows, so the
   # README installer is tested here, against the release just published.
@@ -253,28 +254,75 @@ jobs:
           silage --version
           silage --check
 
+
+  # Installs the published setup the way a person (or the in-app updater) does,
+  # upgrades over it, then uninstalls it and checks the settings are kept.
   install-windows:
     needs: release
     runs-on: windows-2022
     steps:
-      - name: Check the published portable download
+      - name: Download the published installer and verify its checksum
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern Silage-Portable.exe --pattern SHA256SUMS --dir download
+          $setup = "Silage-$version-Setup.exe"
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern $setup --pattern SHA256SUMS --dir download
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $entry = Get-Content download/SHA256SUMS | Where-Object { $_ -match '  Silage-Portable\.exe$' }
-          if (-not $entry) { throw 'Portable EXE checksum missing' }
-          $actual = (Get-FileHash download/Silage-Portable.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne ($entry -split '\s+')[0]) { throw 'Portable EXE checksum mismatch' }
-          $check = Start-Process download/Silage-Portable.exe -ArgumentList '--check' -Wait -PassThru
-          if ($check.ExitCode -ne 0) { throw 'Published portable EXE failed its playback check' }
-          $inner = Get-ChildItem download/.silage-runtime -Recurse -Filter silage.exe | Select-Object -First 1
-          if (-not $inner) { throw 'Portable EXE did not extract its runtime' }
-          $versionFile = Join-Path $env:RUNNER_TEMP 'published-silage-version.txt'
-          $probe = Start-Process $inner.FullName -ArgumentList '--version' -Wait -PassThru -RedirectStandardOutput $versionFile
-          if ($probe.ExitCode -ne 0) { throw 'Published version probe failed' }
-          $reported = (Get-Content $versionFile -Raw).Trim()
-          if ($reported -ne "Silage $version") { throw "Unexpected published version: $reported" }
+          $entry = Get-Content download/SHA256SUMS | Where-Object { $_ -match "  $([regex]::Escape($setup))$" }
+          if (-not $entry) { throw "$setup checksum missing" }
+          $actual = (Get-FileHash "download/$setup" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne ($entry -split '\s+')[0]) { throw "$setup checksum mismatch" }
+      - name: Install, upgrade and uninstall
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $setup = Resolve-Path "download/Silage-$version-Setup.exe"
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Silage'
+          $exe = Join-Path $app 'silage.exe'
+          $shortcuts = @(
+            (Join-Path ([Environment]::GetFolderPath('Programs')) 'Silage.lnk'),
+            (Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Silage.lnk'))
+          $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{EC6708E9-2E25-4B67-A3D7-666423B0CD00}_is1'
+          # Settings that must survive a silent uninstall.
+          $settings = Join-Path $env:APPDATA 'Silage'
+          New-Item -ItemType Directory -Force $settings | Out-Null
+          Set-Content (Join-Path $settings 'marker.txt') 'keep me'
+
+          function Install-Silage([string]$log) {
+            $p = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$log`"" -Wait -PassThru
+            if ($p.ExitCode -ne 0) { Get-Content $log -ErrorAction SilentlyContinue; throw "Setup exited with $($p.ExitCode)" }
+          }
+          function Assert-Installed {
+            if (-not (Test-Path $exe)) { throw "Not installed: $exe" }
+            $check = Start-Process $exe -ArgumentList '--check' -Wait -PassThru
+            if ($check.ExitCode -ne 0) { throw 'Installed silage.exe failed its playback check' }
+            $versionFile = Join-Path $env:RUNNER_TEMP 'installed-silage-version.txt'
+            $probe = Start-Process $exe -ArgumentList '--version' -Wait -PassThru -RedirectStandardOutput $versionFile
+            if ($probe.ExitCode -ne 0) { throw 'Installed version probe failed' }
+            $reported = (Get-Content $versionFile -Raw).Trim()
+            if ($reported -ne "Silage $version") { throw "Unexpected installed version: $reported" }
+            foreach ($lnk in $shortcuts) { if (-not (Test-Path $lnk)) { throw "Shortcut missing: $lnk" } }
+            if (-not (Test-Path $uninstallKey)) { throw 'Uninstall entry missing' }
+            $listed = (Get-ItemProperty $uninstallKey).DisplayVersion
+            if ($listed -ne $version) { throw "Uninstall entry lists version $listed" }
+          }
+
+          Install-Silage (Join-Path $env:RUNNER_TEMP 'install.log')
+          Assert-Installed
+          # The updater installs a newer setup over the running install the same way.
+          Install-Silage (Join-Path $env:RUNNER_TEMP 'upgrade.log')
+          Assert-Installed
+
+          $u = Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "Uninstaller exited with $($u.ExitCode)" }
+          # The uninstaller finishes from a copy of itself in %TEMP%, so wait for the folder to go.
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path $app) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+          if (Test-Path $app) { Get-ChildItem $app -Recurse | Select-Object -ExpandProperty FullName; throw "App folder left behind: $app" }
+          foreach ($lnk in $shortcuts) { if (Test-Path $lnk) { throw "Shortcut left behind: $lnk" } }
+          if (Test-Path $uninstallKey) { throw 'Uninstall entry left behind' }
+          if ((Get-Content (Join-Path $settings 'marker.txt') -ErrorAction SilentlyContinue) -ne 'keep me') {
+            throw 'A silent uninstall deleted the settings'
+          }

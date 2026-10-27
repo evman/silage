@@ -27,7 +27,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Install mpv, ffmpeg, D-Bus and a virtual display
         run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg dbus xvfb libdrm-dev pkg-config
-      - name: Test bundled helper and portable packaging
+      - name: Test bundled helper and Windows packaging
         run: |
           python3 -m unittest discover -s scripts/dv-helper -v
           python3 -m unittest discover -s scripts/dv-lab -v
@@ -56,7 +56,7 @@ jobs:
       - name: Test
         shell: cmd
         run: build-windows.cmd :app:test :player:test :shared:desktopTest --no-daemon --console=plain
-      - name: Test portable packaging rollback and data exclusion
+      - name: Test Windows packaging rollback and data exclusion
         run: python -m unittest discover -s scripts/tests -v
       - uses: actions/upload-artifact@v7
         if: failure()

@@ -83,6 +83,7 @@ fun main(args: Array<String>) {
     }
     // After the headless flags: this touches the windowing system.
     WmClass.set("silage")
+    WindowsChrome.setAppUserModelId()
     val isWindows = System.getProperty("os.name").startsWith("Windows")
     mpvProblem(mpv)?.let { problem ->
         // Without a usable libmpv nothing can play: explain how to install it.

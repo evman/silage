@@ -2,6 +2,7 @@ package dev.silage.app
 
 import com.sun.jna.Native
 import com.sun.jna.Pointer
+import com.sun.jna.WString
 import com.sun.jna.ptr.IntByReference
 import com.sun.jna.win32.StdCallLibrary
 import dev.silage.app.playback.WindowsWindowApi
@@ -13,6 +14,29 @@ internal object WindowsChrome {
     }
 
     private val dwm: Dwm by lazy { Native.load("dwmapi", Dwm::class.java) }
+
+    internal interface Shell32 : StdCallLibrary {
+        fun SetCurrentProcessExplicitAppUserModelID(appId: WString): Int
+    }
+
+    private val shell32: Shell32 by lazy { Native.load("shell32", Shell32::class.java) }
+
+    /** Also set on the installer's Start menu and desktop shortcuts (packaging/windows/silage.iss). */
+    const val APP_USER_MODEL_ID = "dev.silage.Silage"
+
+    /**
+     * Gives the process Silage's AppUserModelID before the first window opens,
+     * so the taskbar groups and pins the window with the installed shortcuts
+     * rather than as a separate Java app. Returns whether it applied.
+     */
+    fun setAppUserModelId(
+        osName: String = System.getProperty("os.name").orEmpty(),
+        setId: (String) -> Int = { id -> shell32.SetCurrentProcessExplicitAppUserModelID(WString(id)) },
+    ): Boolean {
+        if (!osName.startsWith("Windows")) return false
+        // S_OK is 0; any HRESULT failure or missing library leaves Windows' default.
+        return runCatching { setId(APP_USER_MODEL_ID) == 0 }.getOrDefault(false)
+    }
 
     /** DWMWA_USE_IMMERSIVE_DARK_MODE: 20 from Windows 10 20H1, 19 on 1809–1909. */
     private val darkModeAttributes = intArrayOf(20, 19)

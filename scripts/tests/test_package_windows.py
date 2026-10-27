@@ -1,4 +1,4 @@
-"""Exercise packaging with fake build output, without requiring Windows or a JDK."""
+"""Exercise packaging with fake build output, without requiring Windows, a JDK or Inno Setup."""
 from pathlib import Path
 import runpy
 import shutil
@@ -6,7 +6,6 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-import zipfile
 
 
 class WindowsPackageTest(unittest.TestCase):
@@ -25,84 +24,105 @@ class WindowsPackageTest(unittest.TestCase):
         self.write(self.target / 'silage.exe', 'old executable')
         self.write(self.target / 'userdata/Data/session.json', 'remembered sign-in')
         self.write(self.target / 'userdata/Config/ui.json', 'my settings')
-        self.archive = self.root / 'dist/Silage-Windows-x64.zip'
-        self.archive.write_bytes(b'previous zip')
-        self.portable = self.root / 'dist/Silage-Portable.exe'
-        self.portable.write_bytes(b'previous portable exe')
+        self.setup = self.root / 'dist/Silage-0.5.0-Setup.exe'
+        self.setup.write_bytes(b'previous setup')
+        self.latest = self.root / 'dist/Silage-Setup.exe'
+        self.latest.write_bytes(b'previous latest setup')
         for name in ['libmpv-2.dll', 'LICENSE-mpv-GPL.txt', 'Copyright-mpv.txt']:
             self.write(self.root / 'native' / name, name)
         for name in ['vulkan-1.dll', 'VulkanRT-License.txt']:
             self.write(self.root / 'native/fallback' / name, name)
         for name in ['LICENSE', 'WINDOWS.md']:
             self.write(self.root / name, name)
+        self.installer_inputs = None
+        self.iscc_args = None
 
     @staticmethod
     def write(path, text):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
 
-    def package(self, check_code=0, launcher_fails=False):
+    def package(self, check_code=0, iscc_fails=False, version_output='Silage 0.5.0\n', iscc='ISCC.exe'):
         def fake_run(args, **kwargs):
-            if '-Output' in args:
-                if launcher_fails:
-                    raise subprocess.CalledProcessError(1, args)
-                Path(args[args.index('-Output') + 1]).write_bytes(b'new portable exe')
+            if args[0] == 'ISCC.exe':
+                self.iscc_args = args
+                app_dir = Path(next(a for a in args if a.startswith('/DAppDir=')).removeprefix('/DAppDir='))
+                self.installer_inputs = sorted(p.relative_to(app_dir).as_posix() for p in app_dir.rglob('*'))
+                if iscc_fails:
+                    raise subprocess.CalledProcessError(2, args)
+                version = next(a for a in args if a.startswith('/DVersion=')).removeprefix('/DVersion=')
+                out = Path(next(a for a in args if a.startswith('/O')).removeprefix('/O'))
+                (out / f'Silage-{version}-Setup.exe').write_bytes(b'new setup')
+            stdout = version_output if '--version' in args else ''
             return subprocess.CompletedProcess(args, check_code if '--check' in args else 0,
-                                               stdout='', stderr='')
+                                               stdout=stdout, stderr='')
 
-        with patch('sys.argv', ['package-windows.py']), patch('subprocess.run', side_effect=fake_run):
+        with patch('sys.argv', ['package-windows.py']), patch('subprocess.run', side_effect=fake_run), \
+                patch('shutil.which', return_value=iscc):
             runpy.run_path(str(self.root / 'package-windows.py'), run_name='__main__')
 
     def assert_old_data(self):
         self.assertEqual('remembered sign-in', (self.target / 'userdata/Data/session.json').read_text())
         self.assertEqual('my settings', (self.target / 'userdata/Config/ui.json').read_text())
 
+    def assert_previous_setups(self):
+        self.assertEqual(b'previous setup', self.setup.read_bytes())
+        self.assertEqual(b'previous latest setup', self.latest.read_bytes())
+
     def test_rebuild_preserves_settings_but_ships_no_personal_data(self):
         self.package()
         self.assert_old_data()
         self.assertEqual('new executable', (self.target / 'silage.exe').read_text())
-        self.assertEqual(b'new portable exe', self.portable.read_bytes())
-        with zipfile.ZipFile(self.archive) as archive:
-            self.assertIn('Silage/silage.exe', archive.namelist())
-            self.assertIn('Silage/fallback/vulkan-1.dll', archive.namelist())
-            self.assertIn('Silage/fallback/VulkanRT-License.txt', archive.namelist())
-            self.assertFalse(any('userdata' in Path(name).parts for name in archive.namelist()))
+        self.assertEqual(b'new setup', self.setup.read_bytes())
+        self.assertEqual(b'new setup', self.latest.read_bytes())
+        self.assertIn('/DVersion=0.5.0', self.iscc_args)
+        self.assertEqual(str(self.root / 'packaging/windows/silage.iss'), self.iscc_args[-1])
+        self.assertIn('silage.exe', self.installer_inputs)
+        self.assertIn('fallback/vulkan-1.dll', self.installer_inputs)
+        self.assertIn('fallback/VulkanRT-License.txt', self.installer_inputs)
+        self.assertFalse(any('userdata' in Path(name).parts for name in self.installer_inputs))
         backup, = (self.root / 'dist/backups').iterdir()
         self.assertEqual('remembered sign-in', (backup / 'Silage/userdata/Data/session.json').read_text())
-        self.assertEqual(b'previous zip', (backup / self.archive.name).read_bytes())
-        self.assertEqual(b'previous portable exe', (backup / self.portable.name).read_bytes())
+        self.assertEqual(b'previous setup', (backup / self.setup.name).read_bytes())
+        self.assertEqual(b'previous latest setup', (backup / self.latest.name).read_bytes())
 
-    def test_failed_native_check_restores_previous_app_and_zip(self):
+    def test_failed_native_check_restores_previous_app_and_setups(self):
         with self.assertRaises(subprocess.CalledProcessError):
             self.package(check_code=2)
         self.assert_old_data()
         self.assertEqual('old executable', (self.target / 'silage.exe').read_text())
-        self.assertEqual(b'previous zip', self.archive.read_bytes())
-        self.assertEqual(b'previous portable exe', self.portable.read_bytes())
+        self.assert_previous_setups()
 
-    def test_failed_zip_restores_previous_app_and_zip(self):
-        with patch('shutil.make_archive', side_effect=OSError('disk full')):
-            with self.assertRaises(OSError):
-                self.package()
+    def test_unexpected_version_output_restores_previous_artifacts(self):
+        with self.assertRaises(RuntimeError):
+            self.package(version_output='Error: something\n')
         self.assert_old_data()
-        self.assertEqual(b'previous zip', self.archive.read_bytes())
+        self.assert_previous_setups()
+        self.assertIsNone(self.iscc_args)
 
-    def test_failed_launcher_build_restores_previous_artifacts(self):
+    def test_failed_installer_build_restores_previous_artifacts(self):
         with self.assertRaises(subprocess.CalledProcessError):
-            self.package(launcher_fails=True)
+            self.package(iscc_fails=True)
         self.assert_old_data()
-        self.assertEqual(b'previous zip', self.archive.read_bytes())
-        self.assertEqual(b'previous portable exe', self.portable.read_bytes())
+        self.assert_previous_setups()
+
+    def test_missing_inno_setup_restores_previous_artifacts(self):
+        with patch.dict('os.environ', {'ProgramFiles(x86)': '', 'ProgramFiles': '', 'LOCALAPPDATA': ''}):
+            with self.assertRaisesRegex(RuntimeError, 'Inno Setup 6'):
+                self.package(iscc=None)
+        self.assert_old_data()
+        self.assert_previous_setups()
 
     def test_first_package_has_no_userdata(self):
         shutil.rmtree(self.target)
-        self.archive.unlink()
-        self.portable.unlink()
+        self.setup.unlink()
+        self.latest.unlink()
         self.package()
         self.assertFalse((self.target / 'userdata').exists())
-        self.assertTrue(self.archive.exists())
+        self.assertTrue(self.setup.exists())
+        self.assertTrue(self.latest.exists())
 
-    def test_failed_userdata_copy_restores_original_including_zip(self):
+    def test_failed_userdata_copy_restores_original_including_setups(self):
         copytree = shutil.copytree
 
         def fail_userdata_copy(source, destination, *args, **kwargs):
@@ -115,7 +135,7 @@ class WindowsPackageTest(unittest.TestCase):
                 self.package()
         self.assert_old_data()
         self.assertEqual('old executable', (self.target / 'silage.exe').read_text())
-        self.assertEqual(b'previous zip', self.archive.read_bytes())
+        self.assert_previous_setups()
 
 
 if __name__ == '__main__':
