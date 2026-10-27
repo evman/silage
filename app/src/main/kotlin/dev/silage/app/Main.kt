@@ -133,7 +133,7 @@ fun main(args: Array<String>) {
             position = savedWindow?.let { WindowPosition(it.x.dp, it.y.dp) } ?: WindowPosition.PlatformDefault,
             size = savedWindow?.let { DpSize(it.width.dp, it.height.dp) } ?: DpSize(1280.dp, 800.dp),
         )
-        val closeSilage: () -> Unit = { if (isWindows) windowMemory.save(); exitApplication() }
+        val closeSilage: () -> Unit = { if (isWindows) windowMemory.save(); dev.silage.app.update.UpdateApplier.onExit(); exitApplication() }
         var splashDone by remember { mutableStateOf(false) }
         Window(onCloseRequest = closeSilage, state = windowState, title = BuildInfo.NAME, icon = LogoIcon,
             undecorated = borderless, resizable = !borderless,
