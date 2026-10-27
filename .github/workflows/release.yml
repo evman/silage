@@ -289,8 +289,9 @@ jobs:
   # Releases made with GITHUB_TOKEN don't trigger other workflows, so installs and upgrades
   # through each repository are tested here, against the release just published: apt and
   # pacman from its tagged download URL, dnf from a local copy of the Pages tree (deployed
-  # only by promote). Task 5 adds a second run per distro through the README one-liner
-  # (install.sh with SILAGE_REPO_BASE pointed at the same URLs).
+  # only by promote). Each runs twice: with the repository configured by hand, then through
+  # the README one-liner (install.sh, with SILAGE_REPO_BASE and SILAGE_RPM_REPO pointed at the
+  # same URLs), which in upgrade mode moves the previous release's package onto the repository.
   install-test:
     needs: release
     strategy:
@@ -305,21 +306,28 @@ jobs:
         with:
           name: pages
           path: pages
-      - name: ${{ matrix.mode == 'upgrade' && 'Upgrade from the latest release through the repository' || 'Install through the repository' }}
+      - name: Serve the dnf repository and find the release to upgrade from
         env:
-          IMAGE: ${{ matrix.image }}
           MODE: ${{ matrix.mode }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 -m http.server 8000 --bind 127.0.0.1 --directory pages >/dev/null 2>&1 &
+          nohup python3 -m http.server 8000 --bind 127.0.0.1 --directory pages >/dev/null 2>&1 &
           for _ in $(seq 30); do curl -fs -o /dev/null http://localhost:8000/rpm/silage.repo && break; sleep 1; done
           if [ "$MODE" = upgrade ]; then
             # Until promote runs, "latest" is still the previous release.
             previous=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
             if [ "$previous" = "$GITHUB_REF_NAME" ]; then echo "$GITHUB_REF_NAME is already the latest release"; exit 1; fi
-            export SILAGE_UPGRADE_FROM="$previous"
+            echo "SILAGE_UPGRADE_FROM=$previous" >> "$GITHUB_ENV"
           fi
-          scripts/tests/repo-install-test.sh "$IMAGE" "https://github.com/evman/silage/releases/download/$GITHUB_REF_NAME" http://localhost:8000/rpm
+      - name: ${{ matrix.mode == 'upgrade' && 'Upgrade from the latest release through the repository' || 'Install through the repository' }}
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: scripts/tests/repo-install-test.sh "$IMAGE" "https://github.com/evman/silage/releases/download/$GITHUB_REF_NAME" http://localhost:8000/rpm
+      - name: ${{ matrix.mode == 'upgrade' && 'Move the latest release onto the repository with the README one-liner' || 'Install with the README one-liner' }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          SILAGE_INSTALL_SH: install.sh
+        run: scripts/tests/repo-install-test.sh "$IMAGE" "https://github.com/evman/silage/releases/download/$GITHUB_REF_NAME" http://localhost:8000/rpm
 
   # Installs the published (not yet latest) setup the way a person (or the in-app updater)
   # does, upgrades over it, then uninstalls it and checks the settings are kept.

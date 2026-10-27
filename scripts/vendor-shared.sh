@@ -36,5 +36,5 @@ if find "$S/commonMain" "$S/commonTest" -iname '*logo*' -o -iname '*wordmark*' |
   echo "ERROR: brand asset found in vendored tree" >&2; exit 1
 fi
 
-echo "$(git -C "$UP" rev-parse HEAD)" > "$ROOT/shared/UPSTREAM_COMMIT"
+git -C "$UP" rev-parse HEAD > "$ROOT/shared/UPSTREAM_COMMIT"
 echo "Vendored silo-android $(cat "$ROOT/shared/UPSTREAM_COMMIT")"

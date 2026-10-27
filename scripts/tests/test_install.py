@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -20,9 +21,9 @@ class ArchInstallTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         source = Path(__file__).resolve().parents[2] / 'install.sh'
-        # Load only the real installer's functions, with filesystem paths staged
-        # in our fixture. Never execute its download or distro-selection code.
-        self.functions = source.read_text().split('\nid="";', 1)[0]
+        # Load only the real installer's helper functions, with filesystem paths
+        # staged in our fixture. Never execute its repository or download code.
+        self.functions = source.read_text().split('\nmain() {', 1)[0]
         self.functions = self.functions.replace('/usr/', str(self.root / 'usr') + '/')
         self.record = self.root / 'arguments'
 
@@ -101,11 +102,11 @@ arch_install capture {shlex.join(frontend)}
                          self.overwrite_args(self.PATHS[0]), args)
         self.assertTrue(link.is_symlink())
 
-    def test_aur_frontend_receives_same_migration(self):
+    def test_repository_install_receives_same_migration(self):
         self.existing(*self.PATHS)
-        result, args = self.install(frontend=('paru', '-S', '--needed', 'silage-bin'))
+        result, args = self.install(frontend=('pacman', '-Syu', '--needed', 'silage-bin'))
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(['paru', '-S', '--needed', 'silage-bin'] +
+        self.assertEqual(['pacman', '-Syu', '--needed', 'silage-bin'] +
                          self.overwrite_args(*self.PATHS), args)
 
     def test_failure_propagates_and_leaves_existing_files(self):
@@ -114,3 +115,34 @@ arch_install capture {shlex.join(frontend)}
         self.assertEqual(42, result.returncode)
         for path in self.PATHS:
             self.assertEqual('previous helper', (self.root / path).read_text())
+
+
+@unittest.skipIf(os.name == 'nt', 'POSIX installer')
+class EmbeddedKeyTest(unittest.TestCase):
+    """install.sh trusts the repository key it embeds, so it must be the committed one."""
+    ROOT = Path(__file__).resolve().parents[2]
+    KEYS = ROOT / 'packaging' / 'keys'
+
+    def embedded(self, function):
+        # Every definition, but not the final `main "$@"` that would install.
+        definitions = (self.ROOT / 'install.sh').read_text().rsplit('\nmain "$@"', 1)[0]
+        return subprocess.run(['sh', '-c', definitions + '\n' + function],
+                              capture_output=True, check=True).stdout
+
+    def test_armored_key_is_the_repository_key(self):
+        self.assertEqual((self.KEYS / 'silage-archive-keyring.asc').read_bytes(),
+                         self.embedded('silage_key_asc'))
+
+    def test_apt_keyring_is_the_repository_key(self):
+        self.assertEqual((self.KEYS / 'silage-archive-keyring.gpg').read_bytes(),
+                         self.embedded('silage_keyring'))
+
+    @unittest.skipUnless(shutil.which('gpg'), 'needs gpg')
+    def test_pacman_trusts_the_key_by_its_fingerprint(self):
+        keys = subprocess.run(['gpg', '--show-keys', '--with-colons',
+                               str(self.KEYS / 'silage-archive-keyring.asc')],
+                              capture_output=True, text=True, check=True).stdout
+        fingerprint = next(line.split(':')[9] for line in keys.splitlines()
+                           if line.startswith('fpr:'))
+        self.assertEqual(fingerprint.encode() + b'\n',
+                         self.embedded('echo "$fingerprint"'))
