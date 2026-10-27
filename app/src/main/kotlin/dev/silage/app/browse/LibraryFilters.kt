@@ -88,6 +88,39 @@ data class LibraryFilters(
     fun reset() = copy(state = state.resetFilters(), durations = emptySet())
 }
 
+/** This sort and these filters as saved in ui.json. */
+fun LibraryFilters.toSaved() = dev.silage.app.ui.SavedLibraryView(
+    sort = state.sort, order = state.order, matchAll = state.matchAll,
+    filters = state.selections.filterValues { it.isNotEmpty() }.entries.associate { (f, v) -> f.name to v.sorted() },
+    durations = durations.sortedBy { it.ordinal }.map { it.name },
+)
+
+/** Saved choices back as filters; a sort, order, facet or duration this version doesn't know falls back to the default. */
+fun dev.silage.app.ui.SavedLibraryView?.toLibraryFilters(): LibraryFilters {
+    if (this == null) return LibraryFilters()
+    val field = LibrarySortField.entries.firstOrNull { it.key == sort }
+    val base = LibraryFilters()
+    val sorted = if (field == null) base else base.sortBy(field).let { f -> if (order in setOf("asc", "desc")) f.copy(state = f.state.copy(order = order!!)) else f }
+    val selections = filters.mapNotNull { (name, values) ->
+        CatalogFacet.entries.firstOrNull { it.name == name }?.let { f -> values.toSet().takeIf { it.isNotEmpty() }?.let { f to it } }
+    }.toMap()
+    return sorted.copy(
+        state = sorted.state.copy(selections = selections, matchAll = matchAll),
+        durations = durations.mapNotNull { n -> DurationBucket.entries.firstOrNull { it.name == n } }.toSet(),
+    )
+}
+
+/** Each library page remembers its own sort and filters on this device. */
+class LibraryViewPrefs(private val prefs: dev.silage.app.ui.UiPrefs) {
+    /** What [libraryId]'s page opens with: the last saved choices, else the defaults. */
+    fun initial(libraryId: Int): LibraryFilters = prefs.libraryView(libraryId).toLibraryFilters()
+
+    fun save(libraryId: Int, filters: LibraryFilters) {
+        val saved = filters.toSaved()
+        if (prefs.libraryView(libraryId) != saved) prefs.setLibraryView(libraryId, saved)
+    }
+}
+
 /** The facets the filter panel offers, in the order it shows them. */
 internal val PanelFacets = listOf(
     CatalogFacet.WatchStatus, CatalogFacet.Genre, CatalogFacet.Decade, CatalogFacet.Resolution, CatalogFacet.DynamicRange,

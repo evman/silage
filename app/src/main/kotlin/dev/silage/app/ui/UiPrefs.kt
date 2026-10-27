@@ -2,12 +2,28 @@ package dev.silage.app.ui
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
 @Serializable
 data class SidebarLibraryPref(val id: Int, val visible: Boolean)
+
+/**
+ * A library page's sort and filters as last chosen, in wire names (sort key,
+ * "asc"/"desc", facet and duration enum names) so values a later version
+ * drops are skipped rather than failing to load.
+ */
+@Serializable
+data class SavedLibraryView(
+    val sort: String? = null,
+    val order: String? = null,
+    val matchAll: Boolean = true,
+    val filters: Map<String, List<String>> = emptyMap(),
+    val durations: List<String> = emptyList(),
+)
 
 @Serializable
 private data class UiPrefsFile(
@@ -55,6 +71,11 @@ private data class UiPrefsFile(
     val playerMuted: Boolean = false,
     /** The last few searches, newest first. */
     val recentSearches: List<String> = emptyList(),
+    /**
+     * Each library's [SavedLibraryView], by library id. Kept as raw JSON and
+     * read entry by entry, so one bad entry doesn't lose the whole file.
+     */
+    val libraryViews: JsonElement? = null,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -149,6 +170,17 @@ class UiPrefs(private val path: Path) {
     var quality: dev.silage.app.playback.QualityPrefs
         get() = read().let { dev.silage.app.playback.QualityPrefs(it.qualityPreference, it.maxBitrateKbps) }
         set(value) = write { it.copy(qualityPreference = value.preference, maxBitrateKbps = value.maxBitrateKbps) }
+
+    /** The sort and filters last chosen on [libraryId]'s page; null if none (or unreadable). */
+    fun libraryView(libraryId: Int): SavedLibraryView? =
+        (read().libraryViews as? JsonObject)?.get(libraryId.toString())?.let { e ->
+            runCatching { json.decodeFromJsonElement(SavedLibraryView.serializer(), e) }.getOrNull()
+        }
+
+    fun setLibraryView(libraryId: Int, view: SavedLibraryView) = write {
+        val others = (it.libraryViews as? JsonObject).orEmpty()
+        it.copy(libraryViews = JsonObject(others + (libraryId.toString() to json.encodeToJsonElement(SavedLibraryView.serializer(), view))))
+    }
 
     var subtitleStyle: dev.silage.app.playback.SubtitleStyle
         get() = read().let { dev.silage.app.playback.SubtitleStyle.of(it.subtitleSize, it.subtitleBackground, it.subtitlePosition, it.subtitleColor) }

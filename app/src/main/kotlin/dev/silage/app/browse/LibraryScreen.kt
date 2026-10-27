@@ -33,9 +33,12 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
     val shuffle = dev.silage.app.playback.rememberShuffleStart(koin, org.siloserver.silo.model.shuffle.ShuffleScopeKind.LIBRARY, libraryId.toString(), onShuffle)
     // Saved with this visit's back-stack entry, so Back from a detail page returns here intact.
     var tab by rememberSaveable { mutableStateOf(0) }
-    // Sort and filters, kept with this visit so Back from a title returns to the same results.
-    val filtersFlow = rememberEntry("library:$libraryId:filters") { kotlinx.coroutines.flow.MutableStateFlow(LibraryFilters()) }
+    // Sort and filters, kept with this visit so Back from a title returns to the same results;
+    // a new visit opens with this library's last choices on this device.
+    val viewPrefs = remember { LibraryViewPrefs(koin.get()) }
+    val filtersFlow = rememberEntry("library:$libraryId:filters") { kotlinx.coroutines.flow.MutableStateFlow(viewPrefs.initial(libraryId)) }
     val filters by filtersFlow.collectAsState()
+    val setFilters: (LibraryFilters) -> Unit = { filtersFlow.value = it; viewPrefs.save(libraryId, it) }
     var panelOpen by rememberSaveable { mutableStateOf(false) }
     var vocabulary by remember(libraryId) { mutableStateOf<org.siloserver.silo.model.catalog.CatalogFiltersResponse?>(null) }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
@@ -91,12 +94,12 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
                             Pill("Collections", selected = tab == 1) { tab = 1 }
                             if (tab == 0) {
                                 Spacer(Modifier.width(18.dp))
-                                SortControls(filters) { filtersFlow.value = it }
+                                SortControls(filters, setFilters)
                                 Pill(if (filters.activeCount > 0) "Filters · ${filters.activeCount}" else "Filters", selected = panelOpen || filters.activeCount > 0) { panelOpen = !panelOpen }
                                 shuffle?.let { start -> Pill("Shuffle", onClick = start) }
                             }
                         }
-                        if (tab == 0 && panelOpen) FilterPanel(filters, vocabulary) { filtersFlow.value = it }
+                        if (tab == 0 && panelOpen) FilterPanel(filters, vocabulary, setFilters)
                     }
                 }
             },
