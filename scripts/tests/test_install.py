@@ -118,6 +118,59 @@ arch_install capture {shlex.join(frontend)}
 
 
 @unittest.skipIf(os.name == 'nt', 'POSIX installer')
+class AptRepositoryTest(unittest.TestCase):
+    """A broken third-party apt source must not stop the install (set -e would abort on it)."""
+    SILAGE_ONLY = ['update', '-o', 'Dir::Etc::sourcelist=sources.list.d/silage.list',
+                   '-o', 'Dir::Etc::sourceparts=-', '-o', 'APT::Get::List-Cleanup=0']
+
+    def run_apt_repository(self, full_update=0, silage_update=0, install=0):
+        source = Path(__file__).resolve().parents[2] / 'install.sh'
+        functions = source.read_text().split('\nmain() {', 1)[0]
+        # Only the real apt_repository; root access, file writes and apt itself are fakes.
+        script = 'set -eu\n' + functions + f'''
+sudo_() {{ "$@"; }}
+put() {{ cat >/dev/null; }}
+silage_keyring() {{ :; }}
+apt-get() {{
+  echo "apt-get $*" >&2
+  case "$*" in
+    update) return {full_update} ;;
+    update\\ -o*) return {silage_update} ;;
+    install*) return {install} ;;
+  esac
+}}
+apt_repository
+echo finished
+'''
+        result = subprocess.run(['sh', '-c', script], capture_output=True, text=True)
+        calls = [line.split(' ', 1)[1].split(' ') for line in result.stderr.splitlines()
+                 if line.startswith('apt-get ')]
+        return result, calls
+
+    def test_working_sources_update_everything_then_install(self):
+        result, calls = self.run_apt_repository()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([['update'], ['install', '-y', 'silage']], calls)
+
+    def test_broken_other_source_falls_back_to_the_silage_source(self):
+        result, calls = self.run_apt_repository(full_update=100)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([['update'], self.SILAGE_ONLY, ['install', '-y', 'silage']], calls)
+        self.assertIn('finished', result.stdout)
+
+    def test_failed_refresh_only_warns_and_lets_install_decide(self):
+        result, calls = self.run_apt_repository(full_update=100, silage_update=100)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(['install', '-y', 'silage'], calls[-1])
+        self.assertIn('Warning', result.stdout)
+
+    def test_install_failure_still_fails(self):
+        result, _ = self.run_apt_repository(full_update=100, install=100)
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotIn('finished', result.stdout)
+
+
+@unittest.skipIf(os.name == 'nt', 'POSIX installer')
 class EmbeddedKeyTest(unittest.TestCase):
     """install.sh trusts the repository key it embeds, so it must be the committed one."""
     ROOT = Path(__file__).resolve().parents[2]

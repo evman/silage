@@ -46,7 +46,14 @@ apt_repository() {
   say "Adding the Silage apt repository"
   silage_keyring | put "$apt_keyring"
   echo "deb [signed-by=$apt_keyring] $repo ./" | put /etc/apt/sources.list.d/silage.list
-  sudo_ apt-get update
+  # A broken unrelated source makes apt-get update fail: then refresh just the Silage source,
+  # and if even that fails, carry on so apt-get install reports what's actually wrong.
+  if ! sudo_ apt-get update; then
+    say "Warning: apt-get update failed (another repository may be broken); refreshing only the Silage repository"
+    sudo_ apt-get update -o Dir::Etc::sourcelist=sources.list.d/silage.list \
+      -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 ||
+      say "Warning: couldn't refresh the Silage repository; trying the install anyway"
+  fi
   sudo_ apt-get install -y silage
 }
 
