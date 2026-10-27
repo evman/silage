@@ -27,8 +27,8 @@ also need `dbus-daemon` and use a private bus. Run:
 ```
 
 On Windows, prepare JDK 21 and bundled mpv as described in [WINDOWS.md](WINDOWS.md),
-then use `test-windows.cmd` and `build-windows.cmd :app:run`. Portable packaging
-regression tests run on either platform:
+then use `test-windows.cmd` and `build-windows.cmd :app:run`. Packaging and
+installer regression tests run on either platform:
 
 ```sh
 python -m unittest discover -s scripts/tests -v
@@ -60,16 +60,15 @@ Update [CHANGELOG.md](CHANGELOG.md), the DV setup/limitations and runtime source
 information when changing those components.
 
 A `v<version>` tag on `main` runs `.github/workflows/release.yml`. It tests Linux
-and Windows, builds the Linux tarball/DEB/RPM/Arch package and Windows portable
-EXE/ZIP, and checks package installation before publishing. The release includes
-versioned artifacts, stable download filenames, SHA256SUMS and a checksum-pinned
-Arch PKGBUILD. Post-publication jobs verify the documented Linux installer and
-the Windows single-file download. Keep the repository's Arch PKGBUILD checksum
-in sync with the published tarball after the build completes.
+and Windows; builds the Linux tarball, DEB, RPM and Arch package and the Windows
+installer (`Silage-Setup.exe`); signs `SHA256SUMS` and the apt, dnf and pacman
+repositories; tests installing and upgrading from those repositories on each
+distro and on Windows; and only then marks the release Latest. The full
+procedure, keys and post-release checks are in [docs/RELEASING.md](docs/RELEASING.md).
 
 The release workflow first builds/tests the pinned private playback runtime in
 Arch Linux. Its verified libraries and licenses are included in each Linux app
-image, along with the helper and portable setup. System packages also install
+image, along with the helper and its portable setup. System packages also install
 the fixed root-owned helper and polkit policy. Incompatible runtime dependencies
 fall back to distro libmpv. Publish the generated corresponding-source tarball
 and retain all library/source hashes and license files. Source archives include

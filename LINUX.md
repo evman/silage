@@ -1,12 +1,87 @@
-# Linux desktop build
+# Silage on Linux
 
-Linux and Windows use the same app, player HUD and server feature code. The
-Linux packages in 0.2.0 include every shared feature developed during the
-Windows port. Version 0.3.0 adds input/focus/Escape fixes and the bundled experimental
-Dolby tooling described below. Both platforms
-are maintained on `main`; no separate UI implementation or cherry-picking is needed.
+Linux and Windows share the same app, player and server features, and are
+released together from `main`.
 
-## Feature parity audit
+## Install
+
+The quickest way is the one-command installer, which detects your distro, adds
+the signed Silage repository and installs the latest release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
+```
+
+Updates then arrive with your normal system updates, and **Update ready** in
+Silage's sidebar installs them through your package manager (with the system
+password prompt). If you installed Silage before 0.5.0, from a downloaded
+package, the AUR or the portable build, run the command once to move onto the
+repository.
+
+To set up the repository yourself instead: the key is
+[silage-archive-keyring.asc](https://raw.githubusercontent.com/evman/silage/main/packaging/keys/silage-archive-keyring.asc),
+fingerprint `DAA9CD6BF66D0D2AE50636BF4DBB1D66A1937A5F`.
+
+**Ubuntu 24.04+ / Debian 13** (apt):
+```sh
+curl -fsSL https://raw.githubusercontent.com/evman/silage/main/packaging/keys/silage-archive-keyring.asc | sudo gpg --dearmor -o /usr/share/keyrings/silage-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/silage-archive-keyring.gpg] https://github.com/evman/silage/releases/latest/download ./" | sudo tee /etc/apt/sources.list.d/silage.list
+sudo apt-get update && sudo apt-get install silage
+```
+
+**Fedora 40+** (dnf): save this as `/etc/yum.repos.d/silage.repo`
+```ini
+[silage]
+name=Silage
+baseurl=https://evman.github.io/silage/rpm/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-silage
+```
+then import the key and install:
+```sh
+sudo curl -fsSL -o /etc/pki/rpm-gpg/RPM-GPG-KEY-silage https://evman.github.io/silage/rpm/silage.asc
+sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-silage
+sudo dnf install silage
+```
+Fedora's stock FFmpeg leaves out H.264/HEVC; for full codec support, install
+FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
+
+**Arch Linux** (pacman): append this to `/etc/pacman.conf`
+```ini
+[silage]
+SigLevel = Required DatabaseRequired
+Server = https://github.com/evman/silage/releases/latest/download
+```
+then trust the key and install:
+```sh
+curl -fsSL -o silage.asc https://raw.githubusercontent.com/evman/silage/main/packaging/keys/silage-archive-keyring.asc
+sudo pacman-key --init
+sudo pacman-key --add silage.asc
+sudo pacman-key --lsign-key DAA9CD6BF66D0D2AE50636BF4DBB1D66A1937A5F
+sudo pacman -Syu silage-bin
+```
+To build the Arch package yourself, download the release's
+[PKGBUILD](https://github.com/evman/silage/releases/latest/download/PKGBUILD);
+it pins the matching tarball checksum and builds with `makepkg`. If you used the
+portable DV helper setup before, the one-command installer moves its three
+helper files into package ownership, avoiding pacman's file-conflict error.
+
+**Any other distro** (portable build into `~/.local`; Silage updates it itself):
+```sh
+curl -fL https://github.com/evman/silage/releases/latest/download/silage-linux-x86_64.tar.gz | tar xz && ./silage-*/install.sh
+```
+
+Every package bundles Java, a private playback runtime and the DV helper. Keep
+**mpv 0.37 or newer** (libmpv) installed from your distro: it is the fallback
+when the bundled renderer can't load. Run `silage --check` to see which runtime
+is in use. Experimental Dolby Vision is off by default, and ordinary playback
+never asks for administrator access.
+
+Logs are in `~/.local/state/silage/` (or `$XDG_STATE_HOME/silage`).
+
+## Features
 
 | Area | Included in Linux |
 | --- | --- |
@@ -56,17 +131,14 @@ libmpv and graphics drivers come from the Linux distribution.
 
 ```sh
 ./gradlew :app:test :player:test :shared:desktopTest
-scripts/package.sh 0.3.0 /path/to/nfpm
+scripts/package.sh 0.5.0 /path/to/nfpm
 ```
 
-The script creates a portable directory tarball, Debian package and RPM in
-`dist/`, preserving existing Windows artifacts and older Linux builds. The
-portable directory contains its Java runtime; launch `silage/bin/silage` after
-extracting, or run the included `install.sh` for a per-user install. The Arch
-PKGBUILD consumes the same tarball. The release workflow builds and tests all
-Linux formats alongside the Windows EXE and ZIP, then publishes them together.
-Local packaging commands do not publish a release. Release downloads include
-a generated Arch `PKGBUILD` with the exact tarball checksum.
+The script creates the portable tarball, Debian package and RPM in `dist/`.
+The portable directory contains its Java runtime; launch `silage/bin/silage`
+after extracting, or run the included `install.sh` for a per-user install.
+Local packaging never publishes anything: releases are built, signed and
+tested by the release workflow (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 After installing, run `silage --version` and `silage --check`. UI tests require a
 working display; desktop integration tests start a private `dbus-daemon` and
@@ -88,7 +160,7 @@ native Dolby Vision signaling to the monitor.
 
 ## Experimental native Dolby Vision milestone
 
-The 0.3.0 Linux download includes the optional [DV helper](scripts/dv-helper/README.md)
+The Linux download includes the optional [DV helper](scripts/dv-helper/README.md)
 and private renderer for the stock KDE desktop. Enable **Settings → Video →
 Experimental Dolby Vision** and restart; see the [setup guide](DOLBY_VISION.md).
 No separate helper download or compositor build is needed. KDE requires

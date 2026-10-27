@@ -1,6 +1,6 @@
 # Experimental Dolby Vision on Linux
 
-Silage 0.3.0 includes the display helper and a private mpv/libplacebo renderer in
+Silage includes the display helper and a private mpv/libplacebo renderer in
 the Linux download. No separate helper download, custom KWin build, or system
 library replacement is needed. The feature is disabled by default.
 

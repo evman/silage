@@ -46,7 +46,7 @@ See [Windows instructions](https://github.com/evman/silage/blob/v@VERSION@/WINDO
 curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
 ```
 
-To add a repository by hand (apt, dnf or pacman), see the [README](https://github.com/evman/silage/blob/v@VERSION@/README.md#install).
+To add a repository by hand (apt, dnf or pacman), see [LINUX.md](https://github.com/evman/silage/blob/v@VERSION@/LINUX.md#install).
 For full H.264/HEVC support on Fedora, install FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
 
 **Other distributions:** extract `silage-linux-x86_64.tar.gz`, then run the

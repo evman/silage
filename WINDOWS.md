@@ -2,7 +2,7 @@
 
 A Windows build of Silage, a client for a [Silo](https://siloserver.org)
 media server. Linux and Windows are maintained together on `main` and released
-together, starting with Silage 0.2.0.
+together.
 
 ## Install and run
 
