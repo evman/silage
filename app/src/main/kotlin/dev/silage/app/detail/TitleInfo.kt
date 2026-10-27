@@ -19,11 +19,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
+import dev.silage.app.nav.BackInput
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -150,14 +147,14 @@ private fun codecName(c: String) = when (c.lowercase()) {
 
 private fun channels(n: Int) = when (n) { 1 -> "Mono"; 2 -> "Stereo"; 6 -> "5.1"; 8 -> "7.1"; else -> "${n}ch" }
 
-/** The info dialog over the title page: Escape, Backspace or a click outside closes it. */
+/** The info dialog over the title page: Escape, Backspace, any Back key or a click outside closes it. */
 @Composable
 internal fun TitleInfoDialog(title: String, sections: List<InfoSection>, onDismiss: () -> Unit) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).onPreviewKeyEvent { e ->
-            if (e.type == KeyEventType.KeyDown && (e.key == Key.Escape || e.key == Key.Backspace)) { onDismiss(); true } else false
+            if (BackInput.isBack(e)) { onDismiss(); true } else false
         },
         contentAlignment = Alignment.Center,
     ) {

@@ -183,14 +183,11 @@ fun main(args: Array<String>) {
                         LaunchedEffect(Unit) { navigator = AppNavigator(withContext(Dispatchers.IO) { startRoute(koin) }) }
                         // Native canvases and initial page focus must not bypass the intro.
                         navigator?.takeIf { splashDone }?.let { nav ->
-                            // The mouse's Back button goes back, as in Explorer and browsers (not while playing).
-                            DisposableEffect(nav) {
-                                val listener = java.awt.event.AWTEventListener { e ->
-                                    if (e is java.awt.event.MouseEvent && e.id == java.awt.event.MouseEvent.MOUSE_PRESSED && e.button == 4 &&
-                                        nav.route.value !is Route.Playing) javax.swing.SwingUtilities.invokeLater { nav.back() }
-                                }
-                                java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(listener, java.awt.AWTEvent.MOUSE_EVENT_MASK)
-                                onDispose { java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(listener) }
+                            // The mouse's Back button, Browser Back and a remote's Back go back, as in Explorer and
+                            // browsers: as the Back key, so open dialogs close first and the player steps back.
+                            DisposableEffect(window) {
+                                val backInputs = dev.silage.app.nav.BackInput.install(window)
+                                onDispose { backInputs.close() }
                             }
                             // A clicked notification toast: bring the window forward on the inbox.
                             LaunchedEffect(nav) {

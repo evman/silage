@@ -152,6 +152,8 @@ enum class HudKey {
         fun ofAwt(code: Int): HudKey? = when (code) {
             java.awt.event.KeyEvent.VK_ESCAPE -> Escape
             java.awt.event.KeyEvent.VK_BACK_SPACE, java.awt.event.KeyEvent.VK_Q -> Back
+            // A remote's Back, Browser Back and the mouse's Back button (see BackInput).
+            dev.silage.app.nav.BackInput.AWT_BACK, dev.silage.app.nav.BackInput.AWT_NAVIGATE_PREVIOUS -> Back
             java.awt.event.KeyEvent.VK_SPACE, java.awt.event.KeyEvent.VK_K -> PlayPause
             java.awt.event.KeyEvent.VK_LEFT -> Left
             java.awt.event.KeyEvent.VK_RIGHT -> Right
@@ -175,6 +177,8 @@ enum class HudKey {
         fun ofMpv(name: String): HudKey? = when (name) {
             "ESC" -> Escape
             "BS", "q" -> Back
+            // In mpv's own window: the mouse's Back button, and Browser Back / XF86Back.
+            "MBTN_BACK", "GO_BACK" -> Back
             "SPACE", "k" -> PlayPause
             "LEFT" -> Left
             "RIGHT" -> Right
@@ -194,7 +198,7 @@ enum class HudKey {
             else -> null
         }
 
-        val MPV_KEYS = listOf("ESC", "BS", "q", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F",
+        val MPV_KEYS = listOf("ESC", "BS", "q", "MBTN_BACK", "GO_BACK", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F",
             "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N")
 
         /** The shortcut keys and what each does, whatever the HUD shows. */
