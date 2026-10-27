@@ -64,8 +64,14 @@ class UpdateOffer(
         _notice.value = null
     }
 
-    /** For quitting: a ready update installs silently on the way out (Windows). */
-    fun onExit() = applier.onExit(updater.state.value)
+    /** For quitting: a ready update installs silently on the way out (Windows), once checked again. */
+    fun onExit() {
+        val state = updater.state.value
+        if (state !is UpdateState.Ready) return applier.onExit(state)
+        // The cache is writable by anything the user runs: only an installer that still matches its signature.
+        val file = updater.verifiedReadyFile() ?: return
+        applier.onExit(UpdateState.Ready(state.version, file))
+    }
 
     private suspend fun apply(offer: UpdateState): UpdateNotice? = try {
         when (offer) {

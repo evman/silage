@@ -30,10 +30,10 @@ class UpdateOfferTest {
     private var relaunches = 0
     private val opened = mutableListOf<String>()
 
-    private fun publish(missingDeb: Boolean = false) {
+    private fun publish(missingDeb: Boolean = false, asset: String = "silage_${v}_amd64.deb") {
         val tag = "v$v"
         val base = "https://github.com/evman/silage/releases/download/$tag"
-        val deb = "silage_${v}_amd64.deb" to "deb".toByteArray()
+        val deb = asset to "deb".toByteArray()
         val sums = UpdateTestKeys.sums(deb)
         val files = mapOf(deb, "SHA256SUMS" to sums, "SHA256SUMS.sig" to keys.sign(sums).toByteArray())
         val assets = files.keys.associateWith { "$base/$it" }
@@ -149,6 +149,27 @@ class UpdateOfferTest {
         assertEquals(emptyList(), commands)
         assertEquals(1, relaunches)
         assertEquals(1, exits)
+    }
+
+    private val windows = InstallType.WindowsInstaller(Path.of("C:/Users/me/AppData/Local/Programs/Silage"))
+
+    @Test fun quittingWithAReadyUpdateStartsTheVerifiedInstaller() = runTest {
+        publish(asset = "Silage-$v-Setup.exe")
+        val (updater, offer) = offer(type = windows)
+        check(updater)
+        assertIs<UpdateState.Ready>(updater.state.value)
+        offer.onExit()
+        assertEquals(cacheDir.resolve("updates/Silage-$v-Setup.exe").toString(), commands.single().first())
+    }
+
+    @Test fun quittingNeverStartsATamperedInstaller() = runTest {
+        publish(asset = "Silage-$v-Setup.exe")
+        val (updater, offer) = offer(type = windows)
+        check(updater)
+        val file = assertIs<UpdateState.Ready>(updater.state.value).file!!
+        file.writeBytes("tampered".toByteArray())
+        offer.onExit()
+        assertEquals(emptyList(), commands)
     }
 
     @Test fun availableOpensTheReleasePage() = runTest {

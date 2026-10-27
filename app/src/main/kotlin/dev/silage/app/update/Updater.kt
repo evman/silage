@@ -67,7 +67,7 @@ class Updater(
 
     /** The signed SHA256SUMS the pending file was verified against, to verify it again before use. */
     private class Proof(val sums: ByteArray, val signature: String, val name: String)
-    private var proof: Proof? = null
+    @Volatile private var proof: Proof? = null
     private var started = false
 
     private val updates get() = type !is InstallType.Development
@@ -108,6 +108,21 @@ class Updater(
             }
             fetch(release)
         }
+    }
+
+    /**
+     * The [UpdateState.Ready] file if it still matches its signed SHA256SUMS entry; null otherwise or
+     * when nothing was downloaded. Never downloads: one SHA-256 of the file, so it suits quitting.
+     */
+    fun verifiedReadyFile(): Path? {
+        val file = (_state.value as? UpdateState.Ready)?.file ?: return null
+        val proof = proof ?: return null
+        val matches = try {
+            Files.isRegularFile(file) && verifier.verify(proof.sums, proof.signature, proof.name, file)
+        } catch (_: Exception) {
+            false
+        }
+        return file.takeIf { matches }
     }
 
     private suspend fun check() = lock.withLock {

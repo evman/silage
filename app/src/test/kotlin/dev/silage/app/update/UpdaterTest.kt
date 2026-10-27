@@ -145,6 +145,29 @@ class UpdaterTest {
         assertEquals(Version(0, 5, 1), updater.latest.value?.version)
     }
 
+    @Test fun verifiedReadyFileChecksTheFileAgainWithoutDownloading() = runTest {
+        val updater = updater()
+        assertEquals(null, updater.verifiedReadyFile())
+        publish("0.5.1")
+        check(updater)
+        val file = updatesDir.resolve("silage_0.5.1_amd64.deb")
+        val downloads = requested.size
+        assertEquals(file, updater.verifiedReadyFile())
+        file.writeBytes("tampered".toByteArray())
+        assertEquals(null, updater.verifiedReadyFile())
+        Files.delete(file)
+        assertEquals(null, updater.verifiedReadyFile())
+        assertEquals(downloads, requested.size)
+    }
+
+    @Test fun verifiedReadyFileIsNullWhenNothingWasDownloaded() = runTest {
+        val updater = updater(autoDownload = { false })
+        publish("0.5.1")
+        check(updater)
+        assertEquals(UpdateState.Ready(Version(0, 5, 1), null), updater.state.value)
+        assertEquals(null, updater.verifiedReadyFile())
+    }
+
     @Test fun eachInstallTypeGetsItsOwnAsset() = runTest {
         val windows = Path.of("C:/Users/me/AppData/Local/Programs/Silage")
         val expected = mapOf(
