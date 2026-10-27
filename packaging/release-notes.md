@@ -1,15 +1,15 @@
 ## Silage @VERSION@ — Linux and Windows
 
-This release adds sign-in with a code or QR code, fixes remote controls'
-Back button and the pointer over playing video, and makes libraries remember
-their sort and filters.
+This release replaces the portable Windows build with a one-file installer, moves
+Linux onto signed apt, dnf and pacman repositories, and lets Silage update itself.
 
 ### What's new
 
-- **Sign in with a code or QR code.** The sign-in screen shows a QR code and a short code next to the password form. Scan it or go to `<your server>/activate` on your phone or browser, sign in there (including single sign-on such as Discord) and approve. Servers that don't offer device sign-in show the password form as before.
-- **Remote Back button.** The Back / Browser Back button on remotes and air mice (for example the G60S Pro), and the mouse's Back button, now go back everywhere: pages, dialogs and the player. On Windows, Browser Back sent as an app command is caught too. If your remote's Back still does nothing, please say so in issue #3.
-- **Pointer over video.** The mouse pointer hides with the player controls after 3 seconds of no movement and comes back when you move the mouse.
-- **Libraries remember sort and filters.** Each library keeps its sort, order and filters on this device, between visits and after restarting.
+- **Windows installer.** `Silage-Setup.exe` installs for your user only, into `%LOCALAPPDATA%\Programs\Silage`, with no administrator access and no wizard. It adds Start menu (Windows search) and Desktop shortcuts and an entry in Settings → Apps, whose uninstall asks before deleting your settings. Settings and sign-in live in `%APPDATA%\Silage` and `%LOCALAPPDATA%\Silage`.
+- **Linux repositories.** Signed apt (Debian/Ubuntu), dnf (Fedora) and pacman (Arch) repositories keep Silage up to date with your normal system updates. The one-command installer adds the repository.
+- **Updates inside Silage.** Silage checks for updates in the background and shows **Update ready** in the sidebar above Settings, never during playback. Selecting it installs the update (silently on Windows; on Linux through the package manager, with the system password prompt) and restarts Silage. Settings → About has *Automatic updates*, *Check now* and *What's new*. Every update is signature-checked.
+
+**Upgrading from 0.4.x.** Windows: install `Silage-Setup.exe` once and sign in again; the old portable folder can then be deleted. Linux: run the one-command installer below once; updates then arrive with normal system updates.
 
 ### Experimental Dolby Vision limitations
 
@@ -31,38 +31,22 @@ permissions. Watch Together, TV sign-in and offline downloads are not included.
 
 ### Windows 10/11 x64
 
-[Download the portable EXE](https://github.com/evman/silage/releases/download/v@VERSION@/Silage-Portable.exe), put it in a writable folder and double-click it.
-No Java, mpv installation or administrator rights are needed. First launch
-extracts the runtime beside the EXE; later launches reuse it.
-
-[ZIP alternative](https://github.com/evman/silage/releases/download/v@VERSION@/Silage-Windows-x64.zip): extract the whole folder and run `Silage/silage.exe`.
-Keep `userdata` when updating. Saved Windows sign-in is tied to your Windows
-account; moving to another account or PC may require signing in again.
+[Download Silage-Setup.exe](https://github.com/evman/silage/releases/download/v@VERSION@/Silage-Setup.exe) and run it. It installs per user with no
+administrator access and no wizard, then starts Silage. No Java or mpv installation
+is needed. The portable EXE and ZIP are no longer published: install once, sign in
+again, and delete the old portable folder.
 
 The Windows build is unsigned, so SmartScreen may show a first-run warning.
 See [Windows instructions](https://github.com/evman/silage/blob/v@VERSION@/WINDOWS.md).
 
 ### Linux
 
-**Automatic installer:**
+**Automatic installer** (adds the signed repository; run it once if you installed Silage before 0.5.0):
 ```sh
 curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
 ```
 
-**Arch:**
-```sh
-curl -fLO https://github.com/evman/silage/releases/latest/download/silage-bin-x86_64.pkg.tar.zst && sudo pacman -U silage-bin-x86_64.pkg.tar.zst
-```
-
-**Ubuntu 24.04+ / Debian 13:**
-```sh
-curl -fLO https://github.com/evman/silage/releases/latest/download/silage_amd64.deb && sudo apt install ./silage_amd64.deb
-```
-
-**Fedora 40+:**
-```sh
-sudo dnf install https://github.com/evman/silage/releases/latest/download/silage.x86_64.rpm
-```
+To add a repository by hand (apt, dnf or pacman), see the [README](https://github.com/evman/silage/blob/v@VERSION@/README.md#install).
 For full H.264/HEVC support on Fedora, install FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
 
 **Other distributions:** extract `silage-linux-x86_64.tar.gz`, then run the
@@ -73,11 +57,10 @@ remain in the XDG directories; sessions use the desktop keyring when available,
 otherwise an owner-only file. Run `silage --check` to verify playback dependencies.
 See [Linux instructions](https://github.com/evman/silage/blob/v@VERSION@/LINUX.md).
 The Linux download also includes the optional helper and private playback
-libraries. Package installers include the helper's host dependencies. Portable
-users need Python 3, pkexec/polkit, Intel GPU Tools and libdrm before enabling DV.
+libraries. Package installers include the helper's host dependencies. Users of the portable build need Python 3, pkexec/polkit, Intel GPU Tools and libdrm before enabling DV.
 `silage-playback-runtime-sources.tar.gz` supplies the exact corresponding mpv and
 libplacebo sources, licenses, applied patch, build instructions and runtime hashes.
 
-Versioned and stable-named downloads contain the same builds. `SHA256SUMS`
+Versioned and stable-named downloads contain the same builds. The signed `SHA256SUMS`
 covers the Linux and Windows downloads. The attached `PKGBUILD` contains the
 exact Linux tarball checksum for building the Arch package yourself.

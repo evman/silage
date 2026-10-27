@@ -1,6 +1,6 @@
 pkgbase = silage-bin
 	pkgdesc = An unofficial Silo client for Linux: a fullscreen home-theater app for Silo media servers
-	pkgver = 0.3.0
+	pkgver = 0.5.0
 	pkgrel = 1
 	url = https://github.com/evman/silage
 	arch = x86_64
@@ -23,7 +23,7 @@ pkgbase = silage-bin
 	conflicts = silage
 	options = !strip
 	options = !debug
-	source = https://github.com/evman/silage/releases/download/v0.3.0/silage-0.3.0-linux-x86_64.tar.gz
+	source = https://github.com/evman/silage/releases/download/v0.5.0/silage-0.5.0-linux-x86_64.tar.gz
 	sha256sums = fac3e9d37cb78ad37bb9b7fcbce85710d7389f6910632940b6d413d58e28a103
 
 pkgname = silage-bin

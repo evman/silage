@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0 — 2026-10-27
+
+- Install Silage on Windows with one per-user Silage-Setup.exe: no administrator
+  access and no wizard. It installs into `%LOCALAPPDATA%\Programs\Silage`, adds
+  Start menu (Windows search) and Desktop shortcuts, and appears in Settings →
+  Apps, whose uninstall asks before deleting your settings. Settings and sign-in
+  live in `%APPDATA%\Silage` and `%LOCALAPPDATA%\Silage`. The portable EXE and ZIP
+  are gone: install Silage-Setup.exe once and sign in again.
+- Install Silage on Linux from signed apt (Debian/Ubuntu), dnf (Fedora) and pacman
+  (Arch) repositories. The README one-liner adds the repository; updates then come
+  with normal system updates. Run the one-liner once if you installed earlier.
+- Update Silage from inside the app. It checks in the background and shows
+  "Update ready" in the sidebar above Settings, never during playback; selecting it
+  installs (silently on Windows, through the package manager with the system
+  password prompt on Linux) and restarts. Settings → About has Automatic updates,
+  Check now and What's new. Every update is signature-checked.
+
 ## 0.4.1 — 2026-10-27
 
 - Add sign-in with a code or QR code next to the password form, so accounts that

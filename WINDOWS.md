@@ -1,69 +1,60 @@
 # Silage for Windows (x64)
 
-A portable Windows build of Silage, a client for a [Silo](https://siloserver.org)
+A Windows build of Silage, a client for a [Silo](https://siloserver.org)
 media server. Linux and Windows are maintained together on `main` and released
 together, starting with Silage 0.2.0.
 
 ## Install and run
 
-Silage for Windows is portable: no installer, Java installation, mpv installation
-or admin rights are needed. Windows 10/11 is required.
+Windows 10/11 (x64) is required. No Java installation, mpv installation or admin
+rights are needed.
 
-**Single EXE:** [Download Silage-Portable.exe](https://github.com/evman/silage/releases/latest/download/Silage-Portable.exe), put it in a writable folder and double-click it.
-It contains the app, Java and mpv. On first launch it automatically unpacks them
-into `.silage-runtime` beside itself; later launches reuse those files. Settings
-stay in `userdata` beside the EXE, outside the unpacked runtime. The small
-launcher uses the .NET Framework included in Windows.
+[Download Silage-Setup.exe](https://github.com/evman/silage/releases/latest/download/Silage-Setup.exe) and run it.
+There is no wizard: it installs for your Windows user only, into
+`%LOCALAPPDATA%\Programs\Silage`, adds Silage to the Start menu (so Windows search
+finds it) and the Desktop, and starts it. Java and mpv are bundled; nothing is
+added to PATH. Running a newer Silage-Setup.exe over an installed Silage updates it
+in place and keeps your settings.
 
-**[ZIP alternative](https://github.com/evman/silage/releases/latest/download/Silage-Windows-x64.zip):**
+Silage updates itself: it checks in the background and shows **Update ready** in
+the sidebar above Settings (never during playback). Selecting it installs the new
+version silently and restarts Silage. Settings → About has *Automatic updates*,
+*Check now* and *What's new*. Every update is signature-checked before it is
+installed.
 
-1. Extract `Silage-Windows-x64.zip` anywhere you like (a folder in Documents,
-   another drive, a USB stick).
-2. Open the extracted `Silage` folder and run `silage.exe`.
-
-Keep the whole `Silage` folder together; `silage.exe` needs the `app` and
-`runtime` folders and `libmpv-2.dll` beside it. Java and libmpv are bundled, so
-nothing else has to be installed and nothing is added to PATH.
-
-From a terminal, `Silage-Portable.exe --check` confirms the bundled mpv loads
-and `Silage-Portable.exe --version` prints the version. In the ZIP alternative,
-use `silage.exe` for those commands.
+From a terminal, `%LOCALAPPDATA%\Programs\Silage\silage.exe --check` confirms the
+bundled mpv loads and `silage.exe --version` prints the version.
 
 The build is not code-signed, so Windows SmartScreen may warn the first time it
 runs ("More info" → "Run anyway").
 
+**Coming from the portable build (0.4.x and earlier):** install Silage-Setup.exe
+once and sign in again; settings are not imported. The old portable folder (the
+EXE, `userdata` and `.silage-runtime`, or the extracted ZIP folder) can then be
+deleted. The portable EXE and ZIP are no longer published.
+
 ## Where Silage keeps its files
 
-Settings, saved sign-in, logs and caches live in `userdata` beside the EXE:
+Settings, saved sign-in, logs and caches live in your user profile, outside the
+install folder:
 
 | Folder | Contents |
 |---|---|
-| `Config` | device id, interface settings (`ui.json`) |
-| `Data` | saved sign-in and preferences (encrypted, see below) |
-| `State` | logs (`silage.log`, `last-playback.json`, and `playback-error.log` after a failed playback) and the playback journal |
-| `Cache` | downloaded artwork |
+| `%APPDATA%\Silage\Config` | device id, interface settings (`ui.json`) |
+| `%APPDATA%\Silage\Data` | saved sign-in and preferences (encrypted, see below) |
+| `%LOCALAPPDATA%\Silage\State` | logs (`silage.log`, `last-playback.json`, and `playback-error.log` after a failed playback) and the playback journal |
+| `%LOCALAPPDATA%\Silage\Cache` | downloaded artwork |
 
-For the single EXE, move the EXE and `userdata` together to take settings with
-you. `.silage-runtime` can be deleted while the app is closed; it will be
-recreated on the next launch. A new release EXE can replace the old one while
-keeping `userdata`. For the ZIP build, move or copy the whole `Silage` folder.
-Choose a writable folder, rather than Program Files: Silage does not fall back
-to AppData.
-To reset Silage, close it and delete `userdata`. Deleting the entire `Silage`
-folder (or the EXE, `userdata` and `.silage-runtime`) removes the app and its saved data.
+An update keeps these. To reset Silage, close it and delete these folders.
 Settings → About shows the log folder; include those logs when reporting a problem.
 
-To keep settings from an earlier build, close Silage and copy the contents of
-`%LOCALAPPDATA%\Silage` (the `Config`, `Data`, `State` and `Cache` folders) into
-`userdata` beside the EXE before launching it. Very early builds used
-`%USERPROFILE%\.config\silage`, `.local\share\silage`, `.local\state\silage`
-and `.cache\silage`; copy their contents into `userdata\Config`, `Data`,
-`State` and `Cache`, respectively. Existing profile folders are left alone;
-a fresh portable copy never imports settings automatically.
+**Uninstall:** Settings → Apps → Installed apps → Silage → Uninstall. It removes the
+app and asks whether to delete your settings and saved sign-in as well; answer No
+to keep them for a later reinstall.
 
 **Remember me** (on the sign-in screen and in Settings → Account) is off by
 default. When on, the session is encrypted with Windows DPAPI for your Windows
-user account; your password is never stored. A copy of the folder on another
+user account; your password is never stored. A copy of the data on another
 PC or Windows account requires signing in again; interface settings still travel.
 
 ## What works
@@ -133,7 +124,7 @@ PC or Windows account requires signing in again; interface settings still travel
   played inside Silage. Extras your server holds (featurettes, behind the scenes) play
   directly. YouTube trailers use yt-dlp and Deno, which the packaged app carries in its
   `tools` folder (official release builds, checked against the checksums published with them
-  when the app is built). A copy downloaded into `userdata\Data\tools` takes precedence, and a
+  when the app is built). A copy downloaded into `%APPDATA%\Silage\Data\tools` takes precedence, and a
   build without the folder asks once to download them. yt-dlp is its folder build, which
   starts faster than the single-file one. A trailer plays at the best quality YouTube has,
   at any resolution. Silage looks a trailer up only when you play it, one at a time, so
@@ -158,8 +149,7 @@ PC or Windows account requires signing in again; interface settings still travel
   and 100%), the window redraws at the new size. Escape goes back through pages, then offers **Quit Silage?**
   when there is no previous page. **Cancel** is focused first; use arrows or Tab to
   choose, Enter/Space to activate, or click either button. Escape cancels the
-  dialog. Alt+F4 closes Silage. The Silage icon is embedded in both the portable EXE
-  and the app launcher.
+  dialog. Alt+F4 closes Silage. The Silage icon is embedded in the app launcher.
 
 ## Controls
 
@@ -258,21 +248,15 @@ it also links that JDK under `toolchains` (otherwise unpack a portable JDK there
 |---|---|
 | `test-windows.cmd` | runs the app, player and shared test suites; output in `test-windows.log` |
 | `build-windows.cmd <tasks>` | runs any Gradle task with the portable JDK, e.g. `build-windows.cmd :app:run` |
-| `package-windows.cmd -PappVersion=0.4.1` | builds `dist\Silage-Portable.exe`, plus the folder and ZIP alternatives, checks bundled mpv, and keeps the previous build in `dist\backups` |
+| `package-windows.cmd -PappVersion=0.5.0` | builds the app image `dist\Silage`, checks bundled mpv, then the per-user installer `dist\Silage-0.5.0-Setup.exe` and its version-free copy `dist\Silage-Setup.exe`, and keeps the previous build in `dist\backups` |
 
-`build-windows.py` and `package-windows.py -PappVersion=0.4.1` do the same with Python. The version flag is forwarded to Gradle, so the app and release metadata agree.
-Both packaging scripts preserve `dist\Silage\userdata` when rebuilding and
-back up the previous build. Release ZIPs exclude personal data. When updating
-an extracted app, close it and replace the app files while keeping `userdata`.
-
-The single EXE launcher is compiled using Windows' built-in .NET Framework C#
-compiler; no separate SDK is required to package it. It embeds the clean ZIP,
-unpacks a versioned runtime cache on first launch, and passes the outer EXE's
-directory to the app through `SILAGE_PORTABLE_HOME`.
+`build-windows.py` and `package-windows.py -PappVersion=0.5.0` do the same with Python. The version flag is forwarded to Gradle, so the app and release metadata agree.
+Packaging needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`scripts\prepare-windows.ps1` installs it); the installer script is `packaging\windows\silage.iss`.
+Both packaging scripts back up the previous `dist\Silage` and installers first.
 
 When running from source (`:app:run`), Windows uses `userdata` in the development
-working directory. Packaged builds always use the executable's directory,
-regardless of the terminal directory or shortcut's *Start in* setting. Explicit
+working directory (or in `SILAGE_PORTABLE_HOME` when set). The installed app always
+uses `%APPDATA%\Silage` and `%LOCALAPPDATA%\Silage`. Explicit
 `XDG_*_HOME` environment overrides remain available for isolated developer tests.
 
 Optional native playback tests run only when these variables point at test
@@ -285,10 +269,11 @@ clips you make with ffmpeg (paths relative to the repository are fine):
 ## Release automation
 
 Pushing a version tag from `main` runs the Linux and Windows build/test jobs.
-The Windows job prepares checksum-pinned mpv dependencies and publishes the
-single EXE and clean ZIP, with versioned copies and SHA256 checksums. A separate
-Windows job downloads the published EXE and verifies extraction and playback.
-The build remains unsigned; this release does not add a code-signing certificate.
+The Windows job prepares checksum-pinned mpv dependencies, builds the installer
+and publishes `Silage-Setup.exe` with its versioned copy `Silage-<version>-Setup.exe`,
+both covered by the signed SHA256SUMS. A separate Windows job downloads the published
+installer, checks its checksum, then installs, upgrades and uninstalls it. The build remains
+unsigned; this release does not add a code-signing certificate.
 
 ## How the Windows build works
 

@@ -46,6 +46,12 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.5.0" date="2026-10-27">
+      <description>
+        <p>Windows installs with one per-user Silage-Setup.exe, with no administrator access, Start menu and Desktop shortcuts and an uninstall entry in Settings. The portable EXE and ZIP are gone. Linux gets signed apt, dnf and pacman repositories, so updates arrive with normal system updates.</p>
+        <p>Silage checks for updates in the background and shows Update ready in the sidebar, never during playback. Settings has Automatic updates, Check now and What's new, and every update is signature-checked.</p>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-10-27">
       <description>
         <p>Sign in with a code or QR code, approving on a phone or browser, so accounts that use single sign-on can sign in. Remote and mouse Back buttons now go back everywhere, the pointer hides over playing video, and each library remembers its sort and filters.</p>

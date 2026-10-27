@@ -28,20 +28,55 @@
 
 ## Install
 
-**Windows 10/11 (x64):** [Download Silage-Portable.exe](https://github.com/evman/silage/releases/latest/download/Silage-Portable.exe), put it in a writable folder, and double-click it. Java and mpv are included. No installer or administrator access is needed. A [ZIP alternative](https://github.com/evman/silage/releases/latest/download/Silage-Windows-x64.zip) is also available. See [WINDOWS.md](WINDOWS.md) for portable settings, saved logins and build instructions.
+**Windows 10/11 (x64):** [Download Silage-Setup.exe](https://github.com/evman/silage/releases/latest/download/Silage-Setup.exe) and run it. It installs for your user only, into `%LOCALAPPDATA%\Programs\Silage`, with no administrator access and no wizard, adds Start menu (Windows search) and Desktop shortcuts, and starts Silage. Java and mpv are included. Silage appears in Settings → Apps, and its uninstall asks before deleting your settings. See [WINDOWS.md](WINDOWS.md) for where settings are kept and build instructions. Coming from the portable build: install Silage-Setup.exe once and sign in again; the old portable folder can then be deleted.
 
-**Linux:** Packages below use the same app features. See [LINUX.md](LINUX.md) for desktop integration, saved logins and build notes. All development now happens on `main`.
+**Linux:** Silage installs from signed apt (Debian/Ubuntu), dnf (Fedora) and pacman (Arch) repositories, so updates arrive with your normal system updates. See [LINUX.md](LINUX.md) for desktop integration, saved logins and build notes. All development now happens on `main`.
 
-**One command, any distro.** Detects your distro and installs the latest release (the .deb, the .rpm, or the Arch package):
+**One command, any distro.** Detects your distro, adds the Silage repository and installs the latest release. If you installed Silage before 0.5.0 (from a downloaded package, the AUR or the portable build), run it once more to move onto the repository:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
 ```
 
-Or pick yours:
+Or add the repository yourself. The repository key is [silage-archive-keyring.asc](https://raw.githubusercontent.com/evman/silage/main/packaging/keys/silage-archive-keyring.asc), fingerprint `DAA9CD6BF66D0D2AE50636BF4DBB1D66A1937A5F`.
 
-**Arch Linux**:
+**Ubuntu 24.04+ / Debian 13** (apt):
 ```sh
-curl -fLO https://github.com/evman/silage/releases/latest/download/silage-bin-x86_64.pkg.tar.zst && sudo pacman -U silage-bin-x86_64.pkg.tar.zst
+curl -fsSL https://raw.githubusercontent.com/evman/silage/main/packaging/keys/silage-archive-keyring.asc | sudo gpg --dearmor -o /usr/share/keyrings/silage-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/silage-archive-keyring.gpg] https://github.com/evman/silage/releases/latest/download ./" | sudo tee /etc/apt/sources.list.d/silage.list
+sudo apt-get update && sudo apt-get install silage
+```
+
+**Fedora 40+** (dnf): save this as `/etc/yum.repos.d/silage.repo`
+```ini
+[silage]
+name=Silage
+baseurl=https://evman.github.io/silage/rpm/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-silage
+```
+then import the key and install:
+```sh
+sudo curl -fsSL -o /etc/pki/rpm-gpg/RPM-GPG-KEY-silage https://evman.github.io/silage/rpm/silage.asc
+sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-silage
+sudo dnf install silage
+```
+Fedora's stock FFmpeg leaves out H.264/HEVC; for full codec support, install FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
+
+**Arch Linux** (pacman): append this to `/etc/pacman.conf`
+```ini
+[silage]
+SigLevel = Required DatabaseRequired
+Server = https://github.com/evman/silage/releases/latest/download
+```
+then trust the key and install:
+```sh
+curl -fsSL -o silage.asc https://raw.githubusercontent.com/evman/silage/main/packaging/keys/silage-archive-keyring.asc
+sudo pacman-key --init
+sudo pacman-key --add silage.asc
+sudo pacman-key --lsign-key DAA9CD6BF66D0D2AE50636BF4DBB1D66A1937A5F
+sudo pacman -Syu silage-bin
 ```
 To build the Arch package yourself, download the release's [PKGBUILD](https://github.com/evman/silage/releases/latest/download/PKGBUILD). It pins the matching Linux tarball checksum and can be built with `makepkg`.
 
@@ -49,21 +84,12 @@ If you previously used the portable DV helper setup, use the one-command install
 above to switch to the Arch package. It transfers the three unowned helper files
 into package ownership automatically, avoiding pacman's file-conflict error.
 
-**Ubuntu 24.04+ / Debian 13**:
-```sh
-curl -fLO https://github.com/evman/silage/releases/latest/download/silage_amd64.deb && sudo apt install ./silage_amd64.deb
-```
-
-**Fedora 40+**:
-```sh
-sudo dnf install https://github.com/evman/silage/releases/latest/download/silage.x86_64.rpm
-```
-Fedora's stock FFmpeg leaves out H.264/HEVC; for full codec support, install FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
-
-**Any other distro** (portable build into `~/.local`):
+**Any other distro** (portable build into `~/.local`; no package manager updates it):
 ```sh
 curl -fL https://github.com/evman/silage/releases/latest/download/silage-linux-x86_64.tar.gz | tar xz && ./silage-*/install.sh
 ```
+
+**Updates.** Silage checks for updates in the background and shows **Update ready** in the sidebar above Settings (never during playback). Selecting it installs the update (silently on Windows; on Linux through the package manager, with the system password prompt) and restarts Silage. Settings → About has *Automatic updates*, *Check now* and *What's new*. Every update is signature-checked before it is installed.
 
 Linux bundles Java, a private playback runtime and the DV helper. Keep **mpv 0.37 or newer** (libmpv) from your distribution installed: it is the fallback when the bundled renderer's native dependencies are incompatible. Packages declare the helper's Python/polkit/Intel GPU Tools dependencies. Run `silage --check` to check the selected runtime. On first launch, enter your Silo server's address, sign in, and pick your profile. Experimental DV is disabled by default; ordinary playback does not ask for administrator authorization.
 
