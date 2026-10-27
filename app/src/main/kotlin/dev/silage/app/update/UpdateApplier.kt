@@ -30,6 +30,9 @@ class UpdateApplier(
     private val relaunch: () -> Unit,
     private val exit: () -> Unit,
 ) {
+    /** Set once an installer has been started, so quitting afterwards doesn't start another. */
+    @Volatile private var installerStarted = false
+
     /** The command that installs [file]; empty for a tarball, which Silage swaps in itself. */
     fun commandFor(file: Path): List<String> = when (type) {
         is InstallType.WindowsInstaller -> listOf(file.toString()) + WINDOWS_SILENT + "/RELAUNCH"
@@ -55,9 +58,10 @@ class UpdateApplier(
 
     /** On quit, a ready update installs silently (and Silage isn't started again). Windows only. */
     fun onExit(state: UpdateState) {
-        if (type !is InstallType.WindowsInstaller) return
+        if (type !is InstallType.WindowsInstaller || installerStarted) return
         val file = (state as? UpdateState.Ready)?.file ?: return
         try {
+            installerStarted = true
             startDetached(commandFor(file) - "/RELAUNCH")
         } catch (_: IOException) {
             // Quitting must not fail; the update stays ready for the next start.
@@ -66,9 +70,12 @@ class UpdateApplier(
 
     private fun applyWindows(file: Path): ApplyResult {
         // CloseApplications=force closes Silage if it is still running, so quit right away.
+        if (installerStarted) return ApplyResult.Restarting
         try {
+            installerStarted = true
             startDetached(commandFor(file))
         } catch (e: IOException) {
+            installerStarted = false
             return ApplyResult.Failed("Couldn't start the installer: ${e.message}")
         }
         exit()

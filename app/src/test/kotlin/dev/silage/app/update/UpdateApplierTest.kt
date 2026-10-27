@@ -55,6 +55,13 @@ class UpdateApplierTest {
         assertEquals(1, detached.size)
     }
 
+    @Test fun quittingAfterApplyDoesNotStartASecondInstaller() {
+        val applier = applier(windows)
+        applier.apply(setup)
+        applier.onExit(UpdateState.Ready(Version.parse("0.6.0")!!, setup))
+        assertEquals(1, detached.size)
+    }
+
     @Test fun quittingOutsideWindowsNeverInstalls() {
         applier(InstallType.Deb).onExit(UpdateState.Ready(Version.parse("0.6.0")!!, file))
         assertTrue(detached.isEmpty() && ran.isEmpty())
