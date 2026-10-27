@@ -42,8 +42,8 @@ and account/profile permissions, exactly as on Windows.
   dragging, and coalesces mouse motion before updating the HUD.
 - Installed Linux builds use the XDG config/data/state/cache directories. Saved
   sessions use Secret Service (KWallet/GNOME Keyring) when available, otherwise
-  an atomic owner-only file (0600). Windows uses its portable `userdata` folder
-  and Windows account encryption instead.
+  an atomic owner-only file (0600). Windows keeps it in `%APPDATA%\Silage` (settings in `%LOCALAPPDATA%\Silage`)
+  and uses Windows account encryption instead.
 - Remember me is per server. Turning it off removes saved authentication while
   keeping the current in-memory sign-in. Previously saved Linux sign-ins migrate
   with Remember me enabled; an explicit opt-out is respected. Passwords are not

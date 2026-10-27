@@ -126,7 +126,7 @@ See the [changelog](CHANGELOG.md) for release changes.
 
 ## Logs
 
-On Linux, playback logs and unexpected errors are written to `~/.local/state/silage/` (or `$XDG_STATE_HOME/silage`). On Windows, they are in `userdata/State` beside the portable EXE. Settings → About shows the log folder. Include relevant logs when reporting a problem.
+On Linux, playback logs and unexpected errors are written to `~/.local/state/silage/` (or `$XDG_STATE_HOME/silage`). On Windows, they are in `%LOCALAPPDATA%\Silage\State`. Settings → About shows the log folder. Include relevant logs when reporting a problem.
 
 ## Credits and license
 
