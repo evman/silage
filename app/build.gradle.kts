@@ -85,6 +85,21 @@ tasks.matching { it.name in setOf("checkRuntime", "createRuntimeImage", "createD
     inputs.property("silage.packagingJavaHome", providers.gradleProperty("packagingJavaHome").orElse("toolchain"))
 }
 
+// The app image records its full version in version.txt next to the jars (Linux lib/app,
+// Windows app), so a running Silage can tell when a package manager replaced it underneath.
+tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>()
+    .matching { it.name in setOf("createDistributable", "createReleaseDistributable") }
+    .configureEach {
+        inputs.property("silage.appVersion", appVersion)
+        val image = destinationDir.zip(packageName) { dir, name -> dir.dir(name).asFile }
+        doLast {
+            val root = image.get()
+            val appDir = listOf("lib/app", "app").map(root::resolve).firstOrNull { it.isDirectory }
+                ?: throw GradleException("No app folder in the app image $root")
+            appDir.resolve("version.txt").writeText("$appVersion\n")
+        }
+    }
+
 tasks.register<JavaExec>("runOverlaySpike") {
     group = "spike"
     classpath = sourceSets["main"].runtimeClasspath
