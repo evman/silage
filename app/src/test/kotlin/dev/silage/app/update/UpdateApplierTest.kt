@@ -8,6 +8,8 @@ import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.Test
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -86,6 +88,8 @@ class UpdateApplierTest {
         assertEquals(0, exited)
     }
 
+    // Linux package-manager commands; Windows paths would be quoted for their backslashes.
+    @EnabledOnOs(OS.LINUX)
     @Test fun noPolkitAgentShowsTheCommand() {
         // pkexec exits 127 when there's no authentication agent (game mode, kiosks, bare window managers).
         assertEquals(ApplyResult.NeedsCommand("sudo dnf install -y $file"), applier(InstallType.Rpm, exitCode = 127).apply(file))
@@ -93,6 +97,8 @@ class UpdateApplierTest {
         assertEquals(0, exited)
     }
 
+    // Linux package-manager commands; Windows paths would be quoted for their backslashes.
+    @EnabledOnOs(OS.LINUX)
     @Test fun shownCommandQuotesPathsWithSpaces() {
         val spaced = Path.of("/home/me/My Cache/it's/silage_0.6.0_amd64.deb")
         assertEquals(
@@ -105,6 +111,8 @@ class UpdateApplierTest {
         )
     }
 
+    // Linux package-manager commands; Windows paths would be quoted for their backslashes.
+    @EnabledOnOs(OS.LINUX)
     @Test fun withoutPkexecShowsTheCommand() {
         assertEquals(ApplyResult.NeedsCommand("sudo apt-get install -y $file"), applier(InstallType.Deb, pkexec = false).apply(file))
         assertEquals(ApplyResult.NeedsCommand("sudo dnf install -y $file"), applier(InstallType.Rpm, pkexec = false).apply(file))

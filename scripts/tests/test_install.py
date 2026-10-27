@@ -126,23 +126,29 @@ class AptRepositoryTest(unittest.TestCase):
     def run_apt_repository(self, full_update=0, silage_update=0, install=0):
         source = Path(__file__).resolve().parents[2] / 'install.sh'
         functions = source.read_text().split('\nmain() {', 1)[0]
-        # Only the real apt_repository; root access, file writes and apt itself are fakes.
-        script = 'set -eu\n' + functions + f'''
-sudo_() {{ "$@"; }}
-put() {{ cat >/dev/null; }}
-silage_keyring() {{ :; }}
-apt-get() {{
-  echo "apt-get $*" >&2
-  case "$*" in
-    update) return {full_update} ;;
-    update\\ -o*) return {silage_update} ;;
-    install*) return {install} ;;
-  esac
-}}
+        # Only the real apt_repository; root access and file writes are fakes, and apt-get is a
+        # stub program on PATH (dash, Ubuntu's sh, rejects a function named apt-get).
+        stubs = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, stubs)
+        apt = stubs / 'apt-get'
+        apt.write_text(f'''#!/bin/sh
+echo "apt-get $*" >&2
+case "$*" in
+  update) exit {full_update} ;;
+  update\\ -o*) exit {silage_update} ;;
+  install*) exit {install} ;;
+esac
+''')
+        apt.chmod(0o755)
+        script = 'set -eu\n' + functions + '''
+sudo_() { "$@"; }
+put() { cat >/dev/null; }
+silage_keyring() { :; }
 apt_repository
 echo finished
 '''
-        result = subprocess.run(['sh', '-c', script], capture_output=True, text=True)
+        env = dict(os.environ, PATH=f'{stubs}{os.pathsep}{os.environ["PATH"]}')
+        result = subprocess.run(['sh', '-c', script], capture_output=True, text=True, env=env)
         calls = [line.split(' ', 1)[1].split(' ') for line in result.stderr.splitlines()
                  if line.startswith('apt-get ')]
         return result, calls

@@ -5,6 +5,8 @@ import kotlin.io.path.createTempDirectory
 import kotlin.io.path.writeBytes
 import kotlin.test.AfterTest
 import kotlin.test.Test
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -118,6 +120,8 @@ class UpdateOfferTest {
         assertNull(offer.notice.value)
     }
 
+    // Linux package-manager commands; Windows paths would be quoted for their backslashes.
+    @EnabledOnOs(OS.LINUX)
     @Test fun withoutPkexecTheNoticeShowsTheCommand() = runTest {
         publish()
         val (updater, offer) = offer(pkexec = false)
