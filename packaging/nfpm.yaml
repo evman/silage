@@ -35,6 +35,11 @@ contents:
     type: tree
   - src: scripts/dv-helper/dev.silage.dv-helper.policy
     dst: /usr/share/polkit-1/actions/dev.silage.dv-helper.policy
+rpm:
+  signature:
+    # Release builds sign the .rpm with the repository GPG key (an armored private key file
+    # without a passphrase); unset or empty leaves it unsigned (local builds).
+    key_file: ${SILAGE_RPM_SIGNING_KEY_FILE}
 overrides:
   deb:
     # Ubuntu 24.04+ / Debian 13; earlier releases ship libmpv1 (mpv < 0.37).

@@ -53,12 +53,24 @@ jobs:
           python3 -m unittest discover -s scripts/dv-helper -v
           python3 -m unittest discover -s scripts/dv-lab -v
           python3 -m unittest discover -s scripts/tests -v
+      - name: Test release signing and the repositories (throwaway keys)
+        run: |
+          scripts/tests/test-sign-release.sh
+          docker run --rm -v "$PWD:/src:ro" -v /usr/local/bin/nfpm:/usr/local/bin/nfpm:ro archlinux:latest \
+            bash -c 'pacman -Syu --noconfirm --needed apt createrepo_c rpm-tools >/dev/null && /src/scripts/tests/test-build-repos.sh'
       - name: Test Linux
         run: xvfb-run -a ./gradlew --no-daemon :app:test :player:test :shared:desktopTest -PappVersion="${GITHUB_REF_NAME#v}"
       - name: Build packages
         env:
           SILAGE_LINUX_DV_BUNDLE: build/release-runtime
-        run: scripts/package.sh "${GITHUB_REF_NAME#v}"
+          REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
+        run: |
+          # nfpm signs the .rpm with the repository key (packaging/nfpm.yaml), so the rpm that
+          # test-rpm installs is the one published. The key file exists for this step only.
+          export SILAGE_RPM_SIGNING_KEY_FILE="$RUNNER_TEMP/repo-signing-key.asc"
+          trap 'rm -f "$SILAGE_RPM_SIGNING_KEY_FILE"' EXIT
+          (umask 077 && printf '%s\n' "$REPO_GPG_PRIVATE_KEY" > "$SILAGE_RPM_SIGNING_KEY_FILE")
+          scripts/package.sh "${GITHUB_REF_NAME#v}"
       - name: Include corresponding playback sources
         run: cp build/release-runtime/silage-playback-runtime-sources.tar.gz dist/
       - uses: actions/upload-artifact@v7
@@ -137,13 +149,25 @@ jobs:
 
   test-rpm:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        # The current Fedora release and the one before it.
+        image: ['fedora:latest', 'fedora:43']
     runs-on: ubuntu-24.04
-    container: fedora:41
+    container: ${{ matrix.image }}
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
+      - name: Check the .rpm is signed with the repository key
+        run: |
+          rpm --import packaging/keys/silage-archive-keyring.asc
+          check=$(rpm -K dist/silage-*.rpm)
+          echo "$check"
+          case "$check" in *"signatures OK"*) ;; *) echo "The .rpm is not signed with the repository key"; exit 1 ;; esac
       - name: Install the .rpm
         run: dnf install -y ./dist/silage-*.rpm
       - name: Run it
@@ -167,15 +191,18 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed base-devel
           v="${GITHUB_REF_NAME#v}"
+          # pacman versions can't contain '-' (v0.5.0-rc.1 is pkgver 0.5.0_rc.1).
+          pkgver="${v//-/_}"
           useradd -m builder
           mkdir /build && cp packaging/aur/PKGBUILD "dist/silage-$v-linux-x86_64.tar.gz" /build/
           cd /build
           sum=$(sha256sum "silage-$v-linux-x86_64.tar.gz" | cut -d' ' -f1)
-          sed -i "s/^pkgver=.*/pkgver=$v/; s/^sha256sums=.*/sha256sums=('$sum')/" PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=$pkgver/; s/^sha256sums=.*/sha256sums=('$sum')/" PKGBUILD
           mkdir -p "$GITHUB_WORKSPACE/arch"
           cp PKGBUILD "$GITHUB_WORKSPACE/arch/PKGBUILD"
           # Build from the tarball in hand (the release URL doesn't exist yet).
-          sed -i 's|^source=.*|source=("silage-$pkgver-linux-x86_64.tar.gz")|' PKGBUILD
+          # shellcheck disable=SC2016 # $pkgver is expanded by makepkg, not here
+          sed -i 's|^source=.*|source=("silage-${pkgver//_/-}-linux-x86_64.tar.gz")|' PKGBUILD
           chown -R builder /build
           su builder -c "makepkg --nodeps --noconfirm"
           mkdir -p "$GITHUB_WORKSPACE/arch" && cp silage-bin-*.pkg.tar.zst "$GITHUB_WORKSPACE/arch/"
@@ -199,10 +226,15 @@ jobs:
       - run: desktop-file-validate packaging/dev.silage.Silage.desktop
       - run: appstreamcli validate --no-net packaging/dev.silage.Silage.metainfo.xml
 
+  # Publishes the release without making it "latest": every repository URL and the in-app
+  # check follow "latest", so nobody gets it until the tests below pass and promote runs.
   release:
     needs: [build, windows, test-deb, test-rpm, arch, validate]
     runs-on: ubuntu-24.04
+    container: archlinux:latest
     steps:
+      - name: Install the repository and release tools
+        run: pacman -Syu --noconfirm --needed git github-cli apt createrepo_c
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
@@ -216,47 +248,78 @@ jobs:
         with:
           name: windows
           path: dist
-      - name: Publish the GitHub release
+      - name: Import the repository signing key
         env:
-          GH_TOKEN: ${{ github.token }}
+          REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
+        run: printf '%s\n' "$REPO_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+      - name: Build the signed repositories and the signed SHA256SUMS
+        env:
+          REPO_GPG_KEY_ID: ${{ secrets.REPO_GPG_KEY_ID }}
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
           v="${GITHUB_REF_NAME#v}"
-          sed "s/@VERSION@/$v/g" packaging/release-notes.md > /tmp/notes.md
           # Version-free copies, so releases/latest/download/<name> always gets the newest.
           cp "dist/silage_${v}_amd64.deb" dist/silage_amd64.deb
           cp "dist/silage-${v}-1.x86_64.rpm" dist/silage.x86_64.rpm
           cp "dist/silage-${v}-linux-x86_64.tar.gz" dist/silage-linux-x86_64.tar.gz
-          cp dist/silage-bin-"${v}"-*-x86_64.pkg.tar.zst dist/silage-bin-x86_64.pkg.tar.zst
-          (cd dist && sha256sum ./*.tar.gz ./*.deb ./*.rpm ./*.pkg.tar.zst ./Silage-*-Setup.exe ./Silage-Setup.exe PKGBUILD | sed 's| \./| |' > SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "Silage $v" --notes-file /tmp/notes.md \
-            dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/Silage-*-Setup.exe dist/Silage-Setup.exe dist/PKGBUILD dist/SHA256SUMS
+          cp "dist/silage-bin-${v//-/_}-1-x86_64.pkg.tar.zst" dist/silage-bin-x86_64.pkg.tar.zst
+          scripts/build-repos.sh dist "$v" pages
+          # Last, so SHA256SUMS lists every asset.
+          scripts/sign-release.sh dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pages
+          path: pages/
+      - name: Publish the GitHub release (not as latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          sed "s/@VERSION@/$v/g" packaging/release-notes.md > "$RUNNER_TEMP/notes.md"
+          pre=()
+          case "$GITHUB_REF_NAME" in *-*) pre=(--prerelease) ;; esac
+          # A draft until every asset is attached, so no index ever points at a missing file.
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --latest=false "${pre[@]}" \
+            --title "Silage $v" --notes-file "$RUNNER_TEMP/notes.md" dist/*
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false "${pre[@]}"
 
-  # Releases made with GITHUB_TOKEN don't trigger other workflows, so the
-  # README installer is tested here, against the release just published.
+  # Releases made with GITHUB_TOKEN don't trigger other workflows, so installs and upgrades
+  # through each repository are tested here, against the release just published: apt and
+  # pacman from its tagged download URL, dnf from a local copy of the Pages tree (deployed
+  # only by promote). Task 5 adds a second run per distro through the README one-liner
+  # (install.sh with SILAGE_REPO_BASE pointed at the same URLs).
   install-test:
     needs: release
     strategy:
       fail-fast: false
       matrix:
-        image: ['ubuntu:24.04', 'debian:trixie', 'fedora:41', 'archlinux:latest']
+        image: ['ubuntu:24.04', 'debian:trixie', 'fedora:latest', 'fedora:43', 'archlinux:latest']
+        mode: [install, upgrade]
     runs-on: ubuntu-24.04
-    container: ${{ matrix.image }}
     steps:
-      - name: Prerequisites (curl, sudo)
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: pages
+          path: pages
+      - name: ${{ matrix.mode == 'upgrade' && 'Upgrade from the latest release through the repository' || 'Install through the repository' }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          MODE: ${{ matrix.mode }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if command -v apt-get >/dev/null; then apt-get update && apt-get install -y curl sudo ca-certificates
-          elif command -v dnf >/dev/null; then dnf install -y curl sudo
-          else pacman -Syu --noconfirm --needed curl sudo; fi
-      - name: One-line install from the README
-        run: curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
-      - name: Run it
-        run: |
-          silage --version
-          silage --check
+          python3 -m http.server 8000 --bind 127.0.0.1 --directory pages >/dev/null 2>&1 &
+          for _ in $(seq 30); do curl -fs -o /dev/null http://localhost:8000/rpm/silage.repo && break; sleep 1; done
+          if [ "$MODE" = upgrade ]; then
+            # Until promote runs, "latest" is still the previous release.
+            previous=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+            if [ "$previous" = "$GITHUB_REF_NAME" ]; then echo "$GITHUB_REF_NAME is already the latest release"; exit 1; fi
+            export SILAGE_UPGRADE_FROM="$previous"
+          fi
+          scripts/tests/repo-install-test.sh "$IMAGE" "https://github.com/evman/silage/releases/download/$GITHUB_REF_NAME" http://localhost:8000/rpm
 
-
-  # Installs the published setup the way a person (or the in-app updater) does,
-  # upgrades over it, then uninstalls it and checks the settings are kept.
+  # Installs the published (not yet latest) setup the way a person (or the in-app updater)
+  # does, upgrades over it, then uninstalls it and checks the settings are kept.
   install-windows:
     needs: release
     runs-on: windows-2022
@@ -326,3 +389,31 @@ jobs:
           if ((Get-Content (Join-Path $settings 'marker.txt') -ErrorAction SilentlyContinue) -ne 'keep me') {
             throw 'A silent uninstall deleted the settings'
           }
+
+  # Only once every install test passed: the release becomes "latest" (apt, pacman and the
+  # in-app check follow it) and the dnf repository goes to Pages. Prereleases stop before this.
+  promote:
+    needs: [install-test, install-windows]
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Mark the release latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --latest
+      - uses: actions/download-artifact@v8
+        with:
+          name: pages
+          path: pages
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: pages/
+      - id: deploy
+        uses: actions/deploy-pages@v5

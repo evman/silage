@@ -12,12 +12,13 @@ provides=('silage')
 conflicts=('silage')
 # The bundled Java runtime ships prebuilt native libraries.
 options=('!strip' '!debug')
-source=("$url/releases/download/v$pkgver/silage-$pkgver-linux-x86_64.tar.gz")
+# pacman versions can't contain '-': a prerelease tag v0.5.0-rc.1 is pkgver 0.5.0_rc.1.
+source=("$url/releases/download/v${pkgver//_/-}/silage-${pkgver//_/-}-linux-x86_64.tar.gz")
 # The release workflow writes the exact tarball checksum in its published PKGBUILD.
 sha256sums=('fac3e9d37cb78ad37bb9b7fcbce85710d7389f6910632940b6d413d58e28a103')
 
 package() {
-  cd "silage-$pkgver"
+  cd "silage-${pkgver//_/-}"
   install -d "$pkgdir/opt" "$pkgdir/usr/bin" "$pkgdir/usr/share"
   cp -a silage "$pkgdir/opt/silage"
   install -Dm755 silage/lib/app/dv-helper/silage-dv-helper "$pkgdir/usr/libexec/silage-dv-helper/silage-dv-helper"

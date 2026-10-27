@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ['ubuntu:24.04', 'debian:trixie', 'fedora:41', 'archlinux:latest']
+        image: ['ubuntu:24.04', 'debian:trixie', 'fedora:latest', 'fedora:43', 'archlinux:latest']
     runs-on: ubuntu-24.04
     container: ${{ matrix.image }}
     steps:

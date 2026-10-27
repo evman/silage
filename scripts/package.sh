@@ -40,6 +40,14 @@ printf '%s\n' "$config" > "$stage/nfpm.yaml"
 for format in deb rpm; do
   SILAGE_VERSION=$version "$nfpm" pkg -f "$stage/nfpm.yaml" -p "$format" -t "$stage/"
 done
+# nfpm spells a prerelease 0.5.0~rc.1 inside the package (so it sorts before 0.5.0) and in the
+# file name; name the files with the tag's spelling, which the release and the app look for
+# (and GitHub may rewrite '~' in asset names).
+for f in "$stage"/*~*; do
+  [[ -e "$f" ]] || continue
+  name=${f##*/}
+  mv "$f" "$stage/${name//\~/-}"
+done
 mv "$stage/"*.tar.gz "$stage/"*.deb "$stage/"*.rpm dist/
 (cd dist && shopt -s nullglob && sha256sum ./*.tar.gz ./*.deb ./*.rpm ./*.pkg.tar.zst ./*.exe ./*.zip | sed 's| \./| |' > SHA256SUMS)
 ls -l dist
