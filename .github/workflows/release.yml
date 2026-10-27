@@ -63,14 +63,17 @@ jobs:
       - name: Build packages
         env:
           SILAGE_LINUX_DV_BUNDLE: build/release-runtime
+        run: scripts/package.sh "${GITHUB_REF_NAME#v}"
+      # Only nfpm runs while the repository key exists (no Gradle or other build code), and the
+      # signed .rpm replaces the unsigned one, so the rpm test-rpm installs is the one published.
+      - name: Sign the .rpm with the repository key
+        env:
           REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
         run: |
-          # nfpm signs the .rpm with the repository key (packaging/nfpm.yaml), so the rpm that
-          # test-rpm installs is the one published. The key file exists for this step only.
           export SILAGE_RPM_SIGNING_KEY_FILE="$RUNNER_TEMP/repo-signing-key.asc"
           trap 'rm -f "$SILAGE_RPM_SIGNING_KEY_FILE"' EXIT
           (umask 077 && printf '%s\n' "$REPO_GPG_PRIVATE_KEY" > "$SILAGE_RPM_SIGNING_KEY_FILE")
-          scripts/package.sh "${GITHUB_REF_NAME#v}"
+          scripts/package.sh --rpm-only "${GITHUB_REF_NAME#v}"
       - name: Include corresponding playback sources
         run: cp build/release-runtime/silage-playback-runtime-sources.tar.gz dist/
       - uses: actions/upload-artifact@v7

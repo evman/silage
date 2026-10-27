@@ -1,35 +1,48 @@
 #!/usr/bin/env bash
-# scripts/package.sh VERSION [NFPM]: builds Linux release artifacts into dist/.
+# scripts/package.sh [--rpm-only] VERSION [NFPM]: builds Linux release artifacts into dist/.
 # Keep Windows builds and previous versions; stage this build until it succeeds.
+# --rpm-only rebuilds just the .rpm from the app image a full run left behind, without Gradle or
+# any other build code, so the release can sign it (SILAGE_RPM_SIGNING_KEY_FILE) with no secret
+# present during the build.
 set -euo pipefail
-version=${1:?usage: scripts/package.sh VERSION [path-to-nfpm]}
+rpm_only=false
+if [[ "${1:-}" == --rpm-only ]]; then rpm_only=true; shift; fi
+version=${1:?usage: scripts/package.sh [--rpm-only] VERSION [path-to-nfpm]}
 nfpm=${2:-nfpm}
 cd "$(dirname "$0")/.."
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || { echo "Invalid version: $version" >&2; exit 2; }
 
-packaging_args=()
-if [[ -n "${SILAGE_PACKAGING_JAVA_HOME:-}" ]]; then
-  packaging_args+=("-PpackagingJavaHome=$SILAGE_PACKAGING_JAVA_HOME")
+if ! $rpm_only; then
+  packaging_args=()
+  if [[ -n "${SILAGE_PACKAGING_JAVA_HOME:-}" ]]; then
+    packaging_args+=("-PpackagingJavaHome=$SILAGE_PACKAGING_JAVA_HOME")
+  fi
+  ./gradlew --no-daemon -q :app:createDistributable -PappVersion="$version" "${packaging_args[@]}"
 fi
-./gradlew --no-daemon -q :app:createDistributable -PappVersion="$version" "${packaging_args[@]}"
 app=$(realpath app/build/compose/binaries/main/app/silage)
 test -x "$app/bin/silage"
-python3 scripts/dv-helper/bundle_helper.py --image "$app"
-if [[ -n "${SILAGE_LINUX_DV_RUNTIME:-}" ]]; then
-  python3 scripts/dv-helper/package_runtime.py --runtime "$SILAGE_LINUX_DV_RUNTIME" --image "$app"
-elif [[ -n "${SILAGE_LINUX_DV_BUNDLE:-}" ]]; then
-  python3 scripts/dv-helper/release_runtime.py --bundle "$SILAGE_LINUX_DV_BUNDLE" --image "$app"
+if ! $rpm_only; then
+  python3 scripts/dv-helper/bundle_helper.py --image "$app"
+  if [[ -n "${SILAGE_LINUX_DV_RUNTIME:-}" ]]; then
+    python3 scripts/dv-helper/package_runtime.py --runtime "$SILAGE_LINUX_DV_RUNTIME" --image "$app"
+  elif [[ -n "${SILAGE_LINUX_DV_BUNDLE:-}" ]]; then
+    python3 scripts/dv-helper/release_runtime.py --bundle "$SILAGE_LINUX_DV_BUNDLE" --image "$app"
+  fi
 fi
 
 mkdir -p dist
 stage=$(mktemp -d dist/.linux-package.XXXXXX)
 trap 'rm -rf "$stage"' EXIT
-mkdir -p "$stage/silage-$version"
-cp -a "$app" "$stage/silage-$version/silage"
-cp -a packaging/dev.silage.Silage.desktop packaging/dev.silage.Silage.metainfo.xml packaging/install.sh LICENSE README.md LINUX.md "$stage/silage-$version/"
-cp -a packaging/icons "$stage/silage-$version/icons"
-tar -C "$stage" -czf "$stage/silage-$version-linux-x86_64.tar.gz" "silage-$version"
-rm -rf "$stage/silage-$version"
+formats=(rpm)
+if ! $rpm_only; then
+  formats=(deb rpm)
+  mkdir -p "$stage/silage-$version"
+  cp -a "$app" "$stage/silage-$version/silage"
+  cp -a packaging/dev.silage.Silage.desktop packaging/dev.silage.Silage.metainfo.xml packaging/install.sh LICENSE README.md LINUX.md "$stage/silage-$version/"
+  cp -a packaging/icons "$stage/silage-$version/icons"
+  tar -C "$stage" -czf "$stage/silage-$version-linux-x86_64.tar.gz" "silage-$version"
+  rm -rf "$stage/silage-$version"
+fi
 
 # nfpm does not expand environment variables in content source paths.
 # Render just this path, preserving YAML quoting even if the checkout has spaces.
@@ -37,7 +50,7 @@ config=$(<packaging/nfpm.yaml)
 yaml_app=${app//\'/\'\'}
 config=${config/'src: dist/app/'/"src: '$yaml_app/'"}
 printf '%s\n' "$config" > "$stage/nfpm.yaml"
-for format in deb rpm; do
+for format in "${formats[@]}"; do
   SILAGE_VERSION=$version "$nfpm" pkg -f "$stage/nfpm.yaml" -p "$format" -t "$stage/"
 done
 # nfpm spells a prerelease 0.5.0~rc.1 inside the package (so it sorts before 0.5.0) and in the
@@ -48,6 +61,8 @@ for f in "$stage"/*~*; do
   name=${f##*/}
   mv "$f" "$stage/${name//\~/-}"
 done
+shopt -s nullglob
 mv "$stage/"*.tar.gz "$stage/"*.deb "$stage/"*.rpm dist/
+shopt -u nullglob
 (cd dist && shopt -s nullglob && sha256sum ./*.tar.gz ./*.deb ./*.rpm ./*.pkg.tar.zst ./*.exe ./*.zip | sed 's| \./| |' > SHA256SUMS)
 ls -l dist
