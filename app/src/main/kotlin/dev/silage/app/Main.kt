@@ -146,8 +146,10 @@ fun main(args: Array<String>) {
         LaunchedEffect(splashDone) {
             if (!splashDone) return@LaunchedEffect
             withContext(Dispatchers.IO) {
+                // Separate guards: a failed cleanup of the previous copy must never stop updates.
+                runCatching { dev.silage.app.update.UpdateApplier.removeOldInstall(koin.get()) }
+                    .onFailure { crashLog.record("updates", it) }
                 runCatching {
-                    dev.silage.app.update.UpdateApplier.removeOldInstall(koin.get())
                     updates.set(koin.get<dev.silage.app.update.UpdateOffer>())
                     koin.get<dev.silage.app.update.Updater>().start()
                 }.onFailure { crashLog.record("updates", it) }

@@ -81,11 +81,28 @@ class UpdateApplierTest {
     }
 
     @Test fun cancelledPasswordKeepsTheUpdate() {
-        for (code in listOf(126, 127)) {
-            assertEquals(ApplyResult.Cancelled, applier(InstallType.Rpm, exitCode = code).apply(file))
-        }
+        assertEquals(ApplyResult.Cancelled, applier(InstallType.Rpm, exitCode = 126).apply(file))
         assertEquals(0, relaunched)
         assertEquals(0, exited)
+    }
+
+    @Test fun noPolkitAgentShowsTheCommand() {
+        // pkexec exits 127 when there's no authentication agent (game mode, kiosks, bare window managers).
+        assertEquals(ApplyResult.NeedsCommand("sudo dnf install -y $file"), applier(InstallType.Rpm, exitCode = 127).apply(file))
+        assertEquals(0, relaunched)
+        assertEquals(0, exited)
+    }
+
+    @Test fun shownCommandQuotesPathsWithSpaces() {
+        val spaced = Path.of("/home/me/My Cache/it's/silage_0.6.0_amd64.deb")
+        assertEquals(
+            ApplyResult.NeedsCommand("sudo apt-get install -y '/home/me/My Cache/it'\\''s/silage_0.6.0_amd64.deb'"),
+            applier(InstallType.Deb, pkexec = false).apply(spaced),
+        )
+        assertEquals(
+            ApplyResult.NeedsCommand("sudo apt-get install -y '/home/me/My Cache/it'\\''s/silage_0.6.0_amd64.deb'"),
+            applier(InstallType.Deb, exitCode = 127).apply(spaced),
+        )
     }
 
     @Test fun withoutPkexecShowsTheCommand() {
@@ -145,6 +162,24 @@ class UpdateApplierTest {
         assertEquals("current", installDir.resolve("v").readText())
         assertFalse(root.resolve("silage.old").exists())
         assertEquals(0, exited)
+    }
+
+    @Test fun cleanupNeverThrows() {
+        // A path that can't be walked (here a file where a folder is expected, below a regular file)
+        // must not escape removeOldInstall, or it takes Updater.start() down with it.
+        val root = createTempDirectory("applier")
+        val installDir = root.resolve("silage").createDirectories()
+        val old = installDir.resolveSibling("silage.old").createDirectories()
+        val locked = old.resolve("locked").createDirectories().also { it.resolve("f").writeText("x") }
+        locked.toFile().setExecutable(false)
+        locked.toFile().setReadable(false)
+        try {
+            UpdateApplier.removeOldInstall(InstallType.Tarball(installDir, true))
+        } finally {
+            locked.toFile().setReadable(true)
+            locked.toFile().setExecutable(true)
+        }
+        assertTrue(installDir.exists())
     }
 
     @Test fun cleanupRemovesTheOldInstall() {

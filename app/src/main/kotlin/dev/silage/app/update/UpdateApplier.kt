@@ -84,10 +84,12 @@ class UpdateApplier(
 
     private fun applyPackage(file: Path): ApplyResult {
         val command = commandFor(file)
-        if (which("pkexec") == null) return ApplyResult.NeedsCommand(("sudo " + command.drop(1).joinToString(" ")))
+        val manual = ApplyResult.NeedsCommand("sudo " + command.drop(1).joinToString(" ") { shellQuote(it) })
+        if (which("pkexec") == null) return manual
         return when (val code = try { run(command) } catch (e: IOException) { return ApplyResult.Failed("Couldn't run pkexec: ${e.message}") }) {
             0 -> { relaunch(); exit(); ApplyResult.Restarting }
-            126, 127 -> ApplyResult.Cancelled
+            126 -> ApplyResult.Cancelled // The person dismissed the password dialog.
+            127 -> manual // No polkit authentication agent (or authorization failed): they run it themselves.
             else -> ApplyResult.Failed("The install failed (exit code $code).")
         }
     }
@@ -129,11 +131,24 @@ class UpdateApplier(
     companion object {
         private val WINDOWS_SILENT = listOf("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
 
+        private val SHELL_SAFE = Regex("[A-Za-z0-9_@%+=:,./-]+")
+
+        /** [arg] as one shell word: left alone when it's plain, otherwise single-quoted. */
+        internal fun shellQuote(arg: String): String =
+            if (SHELL_SAFE.matches(arg)) arg else "'" + arg.replace("'", "'\\''") + "'"
+
         private fun oldInstall(installDir: Path) = installDir.resolveSibling(installDir.fileName.toString() + ".old")
 
-        /** Deletes the previous copy a tarball swap left behind; call once the new version has started. */
+        /**
+         * Deletes the previous copy a tarball swap left behind; call once the new version has started.
+         * Never throws: a leftover folder is harmless.
+         */
         fun removeOldInstall(type: InstallType) {
-            if (type is InstallType.Tarball) deleteRecursively(oldInstall(type.installDir))
+            try {
+                if (type is InstallType.Tarball) deleteRecursively(oldInstall(type.installDir))
+            } catch (_: Exception) {
+                // Best effort.
+            }
         }
 
         private fun deleteRecursively(path: Path) {
@@ -142,6 +157,8 @@ class UpdateApplier(
                 Files.walk(path).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) } }
             } catch (_: IOException) {
                 // Best effort: a leftover folder is harmless.
+            } catch (_: java.io.UncheckedIOException) {
+                // Files.walk reports unreadable folders this way.
             }
         }
 
