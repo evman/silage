@@ -1,6 +1,25 @@
 package dev.silage.app.di
 
+import dev.silage.app.BuildInfo
 import dev.silage.app.XdgPaths
+import dev.silage.app.update.GitHubReleaseSource
+import dev.silage.app.update.InstallType
+import dev.silage.app.update.ReleaseSource
+import dev.silage.app.update.UpdateApplier
+import dev.silage.app.update.UpdateOffer
+import dev.silage.app.update.UpdateVerifier
+import dev.silage.app.update.Updater
+import dev.silage.app.update.Version
+import dev.silage.app.update.detectInstallType
+import dev.silage.app.update.httpDownloader
+import dev.silage.app.update.installedVersionFile
+import dev.silage.app.update.openInBrowser
+import dev.silage.app.update.readVersionFile
+import dev.silage.app.update.systemPackageOwner
+import java.nio.file.Files
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.koin.dsl.module
 import org.siloserver.silo.network.AndroidServerRegistry
 import org.siloserver.silo.network.DeviceMetadataProvider
@@ -51,5 +70,27 @@ val desktopModule = module {
     single { dev.silage.app.shell.SidebarStore() }
     single { org.siloserver.silo.network.apiv2.HistoryRemovalV2Api(get(), get(), get()) }
     single { org.siloserver.silo.network.apiv2.LoginSessionsV2Api(get(), get(), get()) }
+    // Updates (see dev.silage.app.update). Resolve these off the UI thread: detecting the install type runs commands.
+    single { dev.silage.app.AppExit() }
+    single<InstallType> {
+        detectInstallType(
+            osName = System.getProperty("os.name"), version = BuildInfo.VERSION, launcherPath = System.getProperty("jpackage.app-path"),
+            env = System::getenv, owner = ::systemPackageOwner, isWritable = { Files.isWritable(it) },
+        )
+    }
+    single<ReleaseSource> { GitHubReleaseSource() }
+    single {
+        val type = get<InstallType>()
+        val prefs = get<dev.silage.app.ui.UiPrefs>()
+        Updater(
+            running = Version.parse(BuildInfo.VERSION), type = type, source = get(), download = httpDownloader(),
+            verifier = UpdateVerifier.bundled(), cacheDir = XdgPaths.cache,
+            installedVersion = { installedVersionFile(type)?.let(::readVersionFile) },
+            autoDownload = { prefs.automaticUpdates },
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        )
+    }
+    single { UpdateApplier.forThisProcess(get(), exit = get<dev.silage.app.AppExit>()::quit) }
+    single { UpdateOffer(get(), get(), ::openInBrowser, CoroutineScope(SupervisorJob() + Dispatchers.IO)) }
     single { dev.silage.app.shell.LiveFeatures(get(), get(), get()) { where, t -> dev.silage.app.CrashLog().record(where, t) } }
 }

@@ -76,6 +76,8 @@ private data class UiPrefsFile(
      * read entry by entry, so one bad entry doesn't lose the whole file.
      */
     val libraryViews: JsonElement? = null,
+    /** Download updates in the background; off still checks, and downloads once the update is chosen. */
+    val automaticUpdates: Boolean = true,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -143,6 +145,10 @@ class UiPrefs(private val path: Path) {
     var languages: dev.silage.app.playback.LanguagePrefs
         get() = read().let { dev.silage.app.playback.LanguagePrefs(it.audioLanguage, it.subtitleMode, it.subtitleLanguage) }
         set(value) = write { it.copy(audioLanguage = value.audio, subtitleMode = value.subtitleMode, subtitleLanguage = value.subtitle) }
+
+    var automaticUpdates: Boolean
+        get() = read().automaticUpdates
+        set(value) = write { it.copy(automaticUpdates = value) }
 
     var calendarFilter: String?
         get() = read().calendarFilter

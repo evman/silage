@@ -61,4 +61,16 @@ class UiPrefsTest {
         assertEquals(SavedLibraryView(sort = "year"), UiPrefs(f).libraryView(1))
         assertEquals(SavedLibraryView(sort = "title"), UiPrefs(f).libraryView(3))
     }
+
+    @Test fun automaticUpdatesDefaultsOnAndRoundTrips() {
+        val f = Files.createTempDirectory("silage-ui").resolve("ui.json")
+        assertEquals(true, UiPrefs(f).automaticUpdates)
+        Files.writeString(f, """{"hdrMode":"on"}""")
+        assertEquals(true, UiPrefs(f).automaticUpdates)
+        UiPrefs(f).automaticUpdates = false
+        assertEquals(false, UiPrefs(f).automaticUpdates)
+        assertEquals("on", UiPrefs(f).hdrMode)
+        UiPrefs(f).automaticUpdates = true
+        assertEquals(true, UiPrefs(f).automaticUpdates)
+    }
 }

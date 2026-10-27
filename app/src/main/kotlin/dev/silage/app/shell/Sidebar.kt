@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.Icon
@@ -43,6 +44,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,11 +53,25 @@ import dev.silage.app.nav.Route
 import dev.silage.app.ui.Artwork
 import dev.silage.app.ui.Silage
 import dev.silage.app.ui.isActive
+import dev.silage.app.update.UpdateState
 
 val SidebarRail = 96.dp
 private val SidebarOpen = 320.dp
 
 data class SidebarProfile(val name: String, val avatarUrl: String?, val avatarKey: String?)
+
+/** The sidebar's update entry: [title] beside the icon, [subtitle] beneath it. */
+data class SidebarUpdate(val title: String, val subtitle: String, val onSelect: () -> Unit)
+
+/** The update entry's title and subtitle for [state]; null when there is nothing to offer. */
+fun sidebarUpdateFor(state: UpdateState): Pair<String, String>? = when (state) {
+    is UpdateState.Ready -> "Update ready" to "Restart to update to ${state.version}"
+    is UpdateState.RestartToFinish -> "Update ready" to "Restart to finish updating to ${state.version}"
+    is UpdateState.Available -> "Update available" to "Silage ${state.version}"
+    else -> null
+}
+
+internal const val UpdateDotTag = "update-dot"
 
 fun LibraryKind.icon(): ImageVector = when (this) {
     LibraryKind.Movies -> Icons.Outlined.Movie
@@ -81,6 +97,8 @@ fun Sidebar(
     requestsEnabled: Boolean = false,
     /** The server has an in-app inbox. */
     notificationsAvailable: Boolean = true,
+    /** A newer Silage to install, restart into or download; null shows no entry. */
+    update: SidebarUpdate? = null,
 ) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
@@ -130,6 +148,10 @@ fun Sidebar(
                     badge = unread) { go(Route.Notifications) }
                 Spacer(Modifier.height(6.dp))
             }
+            if (update != null) {
+                UpdateEntry(update, open) { dismissed = true; focusManager.clearFocus(); update.onSelect() }
+                Spacer(Modifier.height(6.dp))
+            }
             Entry(Icons.Outlined.Settings, "Settings", current == Route.Settings, open) { go(Route.Settings) }
         }
     }
@@ -160,6 +182,38 @@ private fun Entry(icon: ImageVector, label: String, selected: Boolean, open: Boo
             AnimatedVisibility(open, enter = fadeIn(tween(120)), exit = fadeOut(tween(80))) {
                 Text(label, color = fg, fontSize = 19.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 20.dp, end = 12.dp))
+            }
+        }
+    }
+}
+
+/** [Entry]'s shape for the update, in amber: a dot on the icon while collapsed, the subtitle beneath when open. */
+@Composable
+private fun UpdateEntry(update: SidebarUpdate, open: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val active = interaction.isActive()
+    val fg = if (active) Color.Black else Silage.Amber
+    Box(
+        Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp))
+            .background(if (active) Color.White else Silage.Amber.copy(alpha = 0.12f))
+            .hoverable(interaction).pointerHoverIcon(PointerIcon.Hand)
+            .clickable(interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(Modifier.padding(start = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                Icon(Icons.Outlined.SystemUpdateAlt, update.title, tint = fg, modifier = Modifier.size(26.dp))
+                if (!open) Box(
+                    Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).size(9.dp).clip(CircleShape)
+                        .background(Silage.Amber).testTag(UpdateDotTag),
+                )
+            }
+            AnimatedVisibility(open, enter = fadeIn(tween(120)), exit = fadeOut(tween(80))) {
+                Column(Modifier.padding(start = 20.dp, end = 12.dp)) {
+                    Text(update.title, color = fg, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(update.subtitle, color = if (active) Color.Black.copy(alpha = 0.65f) else Silage.Text2, fontSize = 14.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }

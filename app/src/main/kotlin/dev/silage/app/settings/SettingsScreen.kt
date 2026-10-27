@@ -41,7 +41,13 @@ import org.siloserver.silo.model.settings.SubtitleBackgroundStylePreset
 import org.siloserver.silo.model.settings.SubtitlePositionPreset
 import org.siloserver.silo.model.settings.pointSize
 import dev.silage.app.ui.isActive
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import dev.silage.app.update.InstallType
+import dev.silage.app.update.UpdateState
+import dev.silage.app.update.Updater
+import dev.silage.app.update.openInBrowser
 import org.koin.core.Koin
 import org.siloserver.silo.model.personal.UserLibrary
 import org.siloserver.silo.network.ApiResult
@@ -394,12 +400,60 @@ private fun AccountSection(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServ
 internal fun AboutSection(koin: Koin) {
     var server by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { server = runCatching { koin.get<TokenManager>().getServerUrl() }.getOrDefault("") }
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    // Resolved off the UI thread: finding out how Silage was installed runs commands.
+    val updates by produceState<Pair<InstallType, Updater>?>(null) {
+        value = withContext(Dispatchers.IO) { runCatching { koin.getOrNull<InstallType>()?.let { it to koin.get<Updater>() } }.getOrNull() }
+    }
+    val scope = rememberCoroutineScope()
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Heading("About")
         Row { Text("Version", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp)); Text("${BuildInfo.NAME} ${BuildInfo.VERSION}", color = Silage.Text, fontSize = 20.sp) }
         Row { Text("Server", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp)); Text(server, color = Silage.Text, fontSize = 20.sp) }
         Row { Text("Logs", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp)); Text(XdgPaths.state.toString(), color = Silage.Text, fontSize = 20.sp) }
+        updates?.let { (type, updater) ->
+            Spacer(Modifier.height(26.dp))
+            if (type is InstallType.Development) {
+                Heading("Updates", "This copy of Silage doesn't update itself.")
+            } else {
+                AboutUpdates(koin.get(), updater) { url -> scope.launch(Dispatchers.IO) { runCatching { openInBrowser(url) } } }
+            }
+        }
         Spacer(Modifier.height(20.dp))
         Text("Silage is a Silo client. Silo is a trademark of Silo Media L.L.C.; Silage is not affiliated with it.", color = Silage.Text3, fontSize = 17.sp)
+        Spacer(Modifier.height(48.dp))
     }
+}
+
+/** The About page's update rows: status, Check now, What's new and the Automatic updates choice. */
+@Composable
+internal fun AboutUpdates(prefs: UiPrefs, updater: Updater, openUrl: (String) -> Unit) {
+    val version by prefs.changes.collectAsState()
+    val automatic = remember(version) { prefs.automaticUpdates }
+    val state by updater.state.collectAsState()
+    val latest by updater.latest.collectAsState()
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Heading("Updates")
+        Row { Text("Status", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp)); Text(updateStatusText(state), color = Silage.Text, fontSize = 20.sp) }
+        Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("Check now") { updater.checkNow() }
+            latest?.let { release -> Pill("What's new") { openUrl(release.notesUrl) } }
+        }
+        Spacer(Modifier.height(26.dp))
+        Heading("Automatic updates", "Download updates in the background, ready to install from the sidebar. When off, Silage still checks, and downloads an update when you choose it.")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("On", selected = automatic) { prefs.automaticUpdates = true }
+            Pill("Off", selected = !automatic) { prefs.automaticUpdates = false }
+        }
+    }
+}
+
+/** The About page's one-line update status. */
+internal fun updateStatusText(state: UpdateState): String = when (state) {
+    UpdateState.Idle -> "Up to date"
+    UpdateState.Checking -> "Checking for updates…"
+    is UpdateState.Downloading -> "Downloading ${state.version}… ${kotlin.math.round(state.fraction * 100).toInt()}%"
+    is UpdateState.Ready -> "Silage ${state.version} is ready"
+    is UpdateState.RestartToFinish -> "Silage ${state.version} is ready"
+    is UpdateState.Available -> "Silage ${state.version} is available"
+    is UpdateState.Failed -> state.reason
 }

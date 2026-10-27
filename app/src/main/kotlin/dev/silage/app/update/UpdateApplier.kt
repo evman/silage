@@ -145,16 +145,6 @@ class UpdateApplier(
             }
         }
 
-        /** Set by the update UI wiring so [onExit] can reach the live applier and state. */
-        @Volatile var current: UpdateApplier? = null
-        @Volatile var currentState: (() -> UpdateState)? = null
-
-        /** Called by `closeSilage`; does nothing until the update UI has registered itself. */
-        fun onExit() {
-            val applier = current ?: return
-            applier.onExit(currentState?.invoke() ?: return)
-        }
-
         /** The real process plumbing for [UpdateApplier]. */
         fun forThisProcess(type: InstallType, exit: () -> Unit): UpdateApplier {
             fun launch(command: List<String>) {

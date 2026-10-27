@@ -130,6 +130,21 @@ class UpdaterTest {
         assertEquals(downloads, requested.size)
     }
 
+    @Test fun latestIsTheNewestReleaseFound() = runTest {
+        val updater = updater()
+        assertEquals(null, updater.latest.value)
+        publish("0.5.0")
+        check(updater)
+        assertEquals(Version(0, 5, 0), updater.latest.value?.version)
+        publish("0.5.1")
+        check(updater)
+        assertEquals("https://github.com/evman/silage/releases/tag/v0.5.1", updater.latest.value?.notesUrl)
+        // An unanswered check keeps the last release found.
+        source.release = null
+        check(updater)
+        assertEquals(Version(0, 5, 1), updater.latest.value?.version)
+    }
+
     @Test fun eachInstallTypeGetsItsOwnAsset() = runTest {
         val windows = Path.of("C:/Users/me/AppData/Local/Programs/Silage")
         val expected = mapOf(

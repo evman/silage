@@ -133,8 +133,26 @@ fun main(args: Array<String>) {
             position = savedWindow?.let { WindowPosition(it.x.dp, it.y.dp) } ?: WindowPosition.PlatformDefault,
             size = savedWindow?.let { DpSize(it.width.dp, it.height.dp) } ?: DpSize(1280.dp, 800.dp),
         )
-        val closeSilage: () -> Unit = { if (isWindows) windowMemory.save(); dev.silage.app.update.UpdateApplier.onExit(); exitApplication() }
+        // Set once the updater is running (after the splash); quitting with an update ready installs it (Windows).
+        val updates = remember { java.util.concurrent.atomic.AtomicReference<dev.silage.app.update.UpdateOffer?>() }
+        val closeSilage: () -> Unit = {
+            if (isWindows) windowMemory.save()
+            runCatching { updates.get()?.onExit() }
+            exitApplication()
+        }
+        // Installing an update quits through here too, so the window's place is saved.
+        koin.get<AppExit>().handler = closeSilage
         var splashDone by remember { mutableStateOf(false) }
+        LaunchedEffect(splashDone) {
+            if (!splashDone) return@LaunchedEffect
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    dev.silage.app.update.UpdateApplier.removeOldInstall(koin.get())
+                    updates.set(koin.get<dev.silage.app.update.UpdateOffer>())
+                    koin.get<dev.silage.app.update.Updater>().start()
+                }.onFailure { crashLog.record("updates", it) }
+            }
+        }
         Window(onCloseRequest = closeSilage, state = windowState, title = BuildInfo.NAME, icon = LogoIcon,
             undecorated = borderless, resizable = !borderless,
             onPreviewKeyEvent = { e -> !splashDone || (interfaceZoomKey(e)?.let { step -> uiPrefs.interfaceSize = step(uiPrefs.interfaceSize); true } ?: false) }) {

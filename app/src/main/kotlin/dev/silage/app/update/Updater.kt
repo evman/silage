@@ -55,6 +55,11 @@ class Updater(
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
 
+    private val _latest = MutableStateFlow<Release?>(null)
+
+    /** The newest release the last answered check found (for its release notes), or null before one. */
+    val latest: StateFlow<Release?> = _latest.asStateFlow()
+
     private val updatesDir = cacheDir.resolve("updates")
     private val work: CoroutineContext = scope.coroutineContext.minusKey(Job)
     private val lock = Mutex()
@@ -133,6 +138,7 @@ class Updater(
             if (!offering) _state.value = UpdateState.Failed(COULD_NOT_CHECK)
             return
         }
+        _latest.value = release
         if (running == null || release.version <= running) {
             if (!offering) _state.value = UpdateState.Idle
             return
