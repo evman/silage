@@ -33,11 +33,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
+import dev.silage.app.nav.BackInput
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -452,7 +449,7 @@ internal fun VersionPicker(options: List<VersionOption>, selectedId: Int, onPick
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).onPreviewKeyEvent { e ->
-            if (e.type == KeyEventType.KeyDown && (e.key == Key.Escape || e.key == Key.Backspace)) { onDismiss(); true } else false
+            if (BackInput.isBack(e)) { onDismiss(); true } else false
         },
         contentAlignment = Alignment.Center,
     ) {

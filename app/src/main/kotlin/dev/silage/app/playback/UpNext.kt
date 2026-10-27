@@ -15,11 +15,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
+import dev.silage.app.nav.BackInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -131,7 +128,7 @@ private fun UpNextLayout(
     Box(
         Modifier.fillMaxSize().background(Color.Black)
             .onPreviewKeyEvent { e ->
-                if (e.type == KeyEventType.KeyDown && (e.key == Key.Escape || e.key == Key.Backspace)) { onBack(); true } else false
+                if (BackInput.isBack(e)) { onBack(); true } else false
             },
     ) {
         Artwork(stillUrl, stillThumbhash, "", Modifier.fillMaxWidth(0.62f).fillMaxHeight().align(Alignment.CenterEnd), showTitleTile = false)

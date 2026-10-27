@@ -137,7 +137,7 @@ private fun PinPad(target: ProfileRow, pin: String, error: String?, onDigit: (Ch
             when {
                 c.isDigit() -> { onDigit(c); true }
                 e.key == Key.Backspace -> { onDelete(); true }
-                e.key == Key.Escape -> { onCancel(); true }
+                dev.silage.app.nav.BackInput.isBack(e) -> { onCancel(); true }
                 else -> false
             }
         },

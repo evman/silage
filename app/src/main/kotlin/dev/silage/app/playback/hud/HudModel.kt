@@ -32,6 +32,29 @@ class HudVisibility(private val hideAfterMs: Long, shownAt: Long = System.curren
         paused || menuOpen || now - lastActivity < hideAfterMs
 }
 
+/**
+ * The pointer over the playing video: hidden while the HUD is, once the mouse
+ * has been still for [hideAfterMs] too; any movement brings it back.
+ */
+class CursorAutoHide(private val hideAfterMs: Long = 3_000, now: Long = System.currentTimeMillis()) {
+    @Volatile private var lastMove = now
+
+    fun moved(now: Long = System.currentTimeMillis()) { lastMove = now }
+
+    private var lastX = Int.MIN_VALUE
+    private var lastY = Int.MIN_VALUE
+
+    /** The pointer is at ([x], [y]) on screen; returns whether it really moved there. */
+    fun movedTo(x: Int, y: Int, now: Long = System.currentTimeMillis()): Boolean {
+        if (x == lastX && y == lastY) return false
+        lastX = x; lastY = y
+        moved(now)
+        return true
+    }
+
+    fun hidden(now: Long, hudVisible: Boolean): Boolean = !hudVisible && now - lastMove >= hideAfterMs
+}
+
 data class Track(val id: Int, val label: String, val selected: Boolean)
 
 /** A chapter from the file (mpv's `chapter-list`), by start time. */
@@ -152,6 +175,8 @@ enum class HudKey {
         fun ofAwt(code: Int): HudKey? = when (code) {
             java.awt.event.KeyEvent.VK_ESCAPE -> Escape
             java.awt.event.KeyEvent.VK_BACK_SPACE, java.awt.event.KeyEvent.VK_Q -> Back
+            // A remote's Back, Browser Back and the mouse's Back button (see BackInput).
+            dev.silage.app.nav.BackInput.AWT_BACK, dev.silage.app.nav.BackInput.AWT_NAVIGATE_PREVIOUS -> Back
             java.awt.event.KeyEvent.VK_SPACE, java.awt.event.KeyEvent.VK_K -> PlayPause
             java.awt.event.KeyEvent.VK_LEFT -> Left
             java.awt.event.KeyEvent.VK_RIGHT -> Right
@@ -175,6 +200,8 @@ enum class HudKey {
         fun ofMpv(name: String): HudKey? = when (name) {
             "ESC" -> Escape
             "BS", "q" -> Back
+            // In mpv's own window: the mouse's Back button, and Browser Back / XF86Back.
+            "MBTN_BACK", "GO_BACK" -> Back
             "SPACE", "k" -> PlayPause
             "LEFT" -> Left
             "RIGHT" -> Right
@@ -194,7 +221,7 @@ enum class HudKey {
             else -> null
         }
 
-        val MPV_KEYS = listOf("ESC", "BS", "q", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F",
+        val MPV_KEYS = listOf("ESC", "BS", "q", "MBTN_BACK", "GO_BACK", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F",
             "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N")
 
         /** The shortcut keys and what each does, whatever the HUD shows. */

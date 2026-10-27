@@ -25,7 +25,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 
 /**
- * Window-level keys: arrows move focus spatially, Esc/Backspace go back.
+ * Window-level keys: arrows move focus spatially, Esc and the other Back keys ([BackInput]) go back.
  * At the root, Escape offers a confirmation before quitting.
  * The root takes focus on every route change (pages then claim their own),
  * so a page with nothing focusable — an empty grid, an error — never
@@ -63,8 +63,8 @@ fun KeyRoot(route: Route, onBack: () -> Boolean, onSearch: () -> Unit = {}, onQu
                     Key.DirectionUp -> move(FocusDirection.Up)
                     Key.DirectionDown -> move(FocusDirection.Down)
                     Key.Escape -> { if (!onBack()) confirmQuit = true; true }
-                    Key.Backspace -> onBack()
-                    else -> false
+                    // Backspace, a remote's Back, Browser Back, the mouse's Back button.
+                    else -> if (BackInput.isBackKey(e.key)) onBack() else false
                 }
             },
     ) { content() }

@@ -36,8 +36,8 @@ internal fun QuitConfirmation(onCancel: () -> Unit, onQuit: () -> Unit) {
         onDismissRequest = onCancel,
         modifier = Modifier.onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            if (BackInput.isBack(event)) { onCancel(); return@onPreviewKeyEvent true }
             when (event.key) {
-                Key.Escape -> { onCancel(); true }
                 Key.DirectionLeft, Key.DirectionUp -> { cancel.requestFocus(); true }
                 Key.DirectionRight, Key.DirectionDown -> { quit.requestFocus(); true }
                 Key.Tab -> { if (quitSelected) cancel.requestFocus() else quit.requestFocus(); true }

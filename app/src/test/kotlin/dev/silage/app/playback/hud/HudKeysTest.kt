@@ -4,6 +4,7 @@ import dev.silage.app.playback.hud.HudFocus.*
 import java.awt.event.KeyEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class HudKeysTest {
     @Test fun awtAndMpvKeyNamesMapToTheSameKeys() {
@@ -15,6 +16,19 @@ class HudKeysTest {
         assertEquals(HudKey.Enter, HudKey.ofAwt(KeyEvent.VK_ENTER))
         assertEquals(HudKey.Info, HudKey.ofMpv("i"))
         assertEquals(null, HudKey.ofAwt(KeyEvent.VK_B))
+    }
+
+    /** Issue #3: a remote's Back (Browser Back, the mouse's Back button) peels the player like Backspace. */
+    @Test fun theRemotesBackInputsAreBackInThePlayer() {
+        assertEquals(HudKey.Back, HudKey.ofAwt(dev.silage.app.nav.BackInput.AWT_BACK))
+        assertEquals(HudKey.Back, HudKey.ofAwt(dev.silage.app.nav.BackInput.AWT_NAVIGATE_PREVIOUS))
+        assertEquals(HudKey.Back, HudKey.ofMpv("MBTN_BACK"))
+        assertEquals(HudKey.Back, HudKey.ofMpv("GO_BACK"))
+        assertTrue("MBTN_BACK" in HudKey.MPV_KEYS)
+        assertTrue("GO_BACK" in HudKey.MPV_KEYS)
+        // Escape still leaves at once; Back still only hides a shown HUD.
+        assertEquals(HudEffect.Exit, shown.on(HudKey.Escape).second)
+        assertEquals(hidden.copy(focus = PlayPause) to HudEffect.None, shown.on(HudKey.ofAwt(dev.silage.app.nav.BackInput.AWT_BACK)!!))
     }
 
     @Test fun shortcutKeysActWhereverTheFocusIsWithoutRevealingTheHud() {
