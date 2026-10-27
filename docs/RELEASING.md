@@ -48,7 +48,8 @@ done
 curl -fsSL https://evman.github.io/silage/rpm/silage.repo
 ```
 
-Every line should print `200`. Then check Settings, About, Check now on an
+Every file line should print `200`, and the last command should print the
+`[silage]` repository definition. Then check Settings, About, Check now on an
 installed copy of the previous version.
 
 ## Secrets
