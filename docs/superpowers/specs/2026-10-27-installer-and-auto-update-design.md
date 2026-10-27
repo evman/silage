@@ -262,6 +262,17 @@ portable folder can be deleted), and Linux users to re-run the one-liner once.
    it isn't tested in CI and isn't promised. The AUR branch is removed from
    `install.sh` so it can't install a `silage-bin` someone else might register.
 
+## Who can release (decided by the user)
+
+- Signing happens only in the release workflow, so any maintainer who pushes a
+  `v*` tag produces a fully signed release; nobody needs the keys locally.
+- A repository tag ruleset restricts creating, moving and deleting `v*` tags
+  to the two maintainers, `evman` (admin) and `minimalhandle` (write). Other
+  future collaborators can push code but can't cut releases until added.
+- No required-approval environment: either maintainer releases in one step.
+- Only the admin can replace or rotate the secrets. The offline key backup may
+  be shared with the co-maintainer so either can recover or rotate the keys.
+
 ## Left to the builder
 
 Inno Setup script details and how it is installed on the runner; exact repository
