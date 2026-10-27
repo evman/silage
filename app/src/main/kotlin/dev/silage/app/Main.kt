@@ -283,6 +283,30 @@ private suspend fun startRoute(koin: Koin): Route {
     return Route.Profiles
 }
 
+/** Outlives the sign-in screen, for withdrawing an abandoned code on the server. */
+private val signInBackground = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+/** Sign-in with a code approved on another device (SSO servers), mirroring the Android TV app. */
+@Composable
+private fun rememberDeviceSignIn(koin: Koin, auth: AuthRepository, onSignedIn: (profileSelected: Boolean) -> Unit): dev.silage.app.signin.DeviceSignInPresenter {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val signedIn by androidx.compose.runtime.rememberUpdatedState(onSignedIn)
+    return androidx.compose.runtime.remember {
+        val tokens = koin.get<TokenManager>()
+        dev.silage.app.signin.DeviceSignInPresenter(
+            scope = scope,
+            cancelScope = signInBackground,
+            newMachine = { url ->
+                val device = runCatching { koin.get<org.siloserver.silo.network.DeviceMetadataProvider>().current() }.getOrNull()
+                org.siloserver.silo.repository.DeviceSignInMachine(koin.get(), url, device?.name, device?.platform)
+            },
+            captureExpectation = { tokens.captureAccountSessionExpectation() },
+            commit = { response, expected -> dev.silage.app.signin.commitDeviceApproval(tokens, { auth.onSessionCommitted() }, response, expected) },
+            onSignedIn = { signedIn(it) },
+        )
+    }
+}
+
 @Composable
 private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
     val auth = koin.get<AuthRepository>()
@@ -307,6 +331,8 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             remembered = koin.get<dev.silage.app.signin.RememberSignInSettings>().enabled,
             onRememberChanged = koin.get<dev.silage.app.signin.RememberSignInSettings>()::setEnabled,
             onChangeServer = { nav.root(Route.Connect) },
+            device = rememberDeviceSignIn(koin, auth) { profileSelected -> nav.root(if (profileSelected) Route.Home else Route.Profiles) },
+            serverHost = koin.get<ServerRegistry>().activeEntry.value?.url?.let(org.siloserver.silo.model.auth.DeviceCodeFormat::host).orEmpty(),
         )
         Route.Profiles -> ProfilesScreen(
             ProfilesPresenter(

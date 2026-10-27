@@ -38,6 +38,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-svg:3.1.0")
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.coroutines.swing)
+    implementation(libs.zxing.core)
     implementation("com.github.hypfvieh:dbus-java-core:5.2.2")
     runtimeOnly("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.2.2")
     testImplementation(kotlin("test"))
