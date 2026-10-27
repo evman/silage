@@ -83,6 +83,10 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     @Volatile private var running = true
 
+    /** Whether the HUD is on screen (the pointer over the video hides with it). */
+    @Volatile var hudVisible: Boolean = true
+        private set
+
     // HUD-thread state.
     private var nav = HudNav(hasQuality = ui.value.qualities.isNotEmpty())
     private var keyboardFocus = false
@@ -550,6 +554,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         if (nav.visible && !visibility.visible(now, s.paused, nav.menu != HudMenu.None)) nav = nav.copy(visible = false, focus = HudFocus.PlayPause)
         nav = nav.copy(hasSkip = skip != null, focus = if (skip == null && nav.focus == HudFocus.Skip) HudFocus.Seek else nav.focus)
         val visible = nav.visible
+        hudVisible = visible
         val info = if (nav.menu == HudMenu.Info && now - lastInfoAt > 1_000) {
             lastInfoAt = now
             infoRows + InfoRows.build(mpv::getProperty) + liveInfoRows()

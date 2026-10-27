@@ -32,6 +32,29 @@ class HudVisibility(private val hideAfterMs: Long, shownAt: Long = System.curren
         paused || menuOpen || now - lastActivity < hideAfterMs
 }
 
+/**
+ * The pointer over the playing video: hidden while the HUD is, once the mouse
+ * has been still for [hideAfterMs] too; any movement brings it back.
+ */
+class CursorAutoHide(private val hideAfterMs: Long = 3_000, now: Long = System.currentTimeMillis()) {
+    @Volatile private var lastMove = now
+
+    fun moved(now: Long = System.currentTimeMillis()) { lastMove = now }
+
+    private var lastX = Int.MIN_VALUE
+    private var lastY = Int.MIN_VALUE
+
+    /** The pointer is at ([x], [y]) on screen; returns whether it really moved there. */
+    fun movedTo(x: Int, y: Int, now: Long = System.currentTimeMillis()): Boolean {
+        if (x == lastX && y == lastY) return false
+        lastX = x; lastY = y
+        moved(now)
+        return true
+    }
+
+    fun hidden(now: Long, hudVisible: Boolean): Boolean = !hudVisible && now - lastMove >= hideAfterMs
+}
+
 data class Track(val id: Int, val label: String, val selected: Boolean)
 
 /** A chapter from the file (mpv's `chapter-list`), by start time. */
