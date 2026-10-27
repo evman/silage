@@ -12,7 +12,9 @@ class WindowsPackageTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # Resolved like package-windows.py resolves itself: on Windows the temp dir can be an
+        # 8.3 short path (C:\Users\RUNNER~1) that resolve() expands to the long one.
+        self.root = Path(self.temp.name).resolve()
         script = Path(__file__).resolve().parents[2] / 'package-windows.py'
         shutil.copy2(script, self.root)
         self.source = self.root / 'app/build/compose/binaries/main/app/silage'
