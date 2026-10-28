@@ -8,9 +8,9 @@ import kotlin.test.assertSame
 
 class AvatarInitialTest {
     @Test fun theInitialIsTheWholeFirstCharacter() {
-        assertEquals("J", avatarInitial(" josh"))
+        assertEquals("N", avatarInitial(" nova"))
         // An emoji is two UTF-16 halves; taking one showed as "?".
-        assertEquals("🎮", avatarInitial("🎮Josh"))
+        assertEquals("🎮", avatarInitial("🎮Nova"))
         assertEquals("?", avatarInitial("  "))
     }
 
