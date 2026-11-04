@@ -6,7 +6,7 @@ restarting after an update. If you have 0.5.0 or 0.5.1, Silage offers it as
 
 ### What's new
 
-- **Dolby Vision on any GPU** (Arch-based systems and Fedora with KDE Plasma). Settings → Video → **Dolby Vision through KDE** installs an opt-in version of KDE's KWin with a small Silage patch, from a separate signed repository; it stays current with normal system updates and Settings can restore the standard KWin. Works over DisplayPort and HDMI. Tested on an NVIDIA RTX 5090 and Intel Arc A380 with the ASUS PG32UCDM. See [Dolby Vision](https://github.com/evman/silage/blob/v@VERSION@/DOLBY_VISION.md).
+- **Dolby Vision on any GPU** (Arch-based systems and Fedora with KDE Plasma). Settings → Video → **Dolby Vision through KDE** installs an opt-in version of KDE's KWin with a small Silage patch, from a separate signed repository; it stays current with normal system updates and Settings can restore the standard KWin. Works over DisplayPort and HDMI. Tested on an NVIDIA RTX 5090 and Intel Arc A380 with the ASUS PG32UCDM. See [Dolby Vision](https://github.com/evman/silage/blob/v@VERSION@/docs/DOLBY_VISION.md).
 - **Windowed mode on Linux.** Press **F11** (or **F** while playing) to switch between fullscreen and a window, and pick how Silage opens in Settings → Interface → Window. Fullscreen remains the default and the best experience.
 - **Hardware decoding for every Dolby Vision profile**, including Profile 7 on NVIDIA.
 - **No missed openings.** A Dolby Vision title waits on its first frame while the monitor switches, then plays.
@@ -29,7 +29,7 @@ The bundled Linux renderer targets the tested Arch/CachyOS FFmpeg ABI. If its
 native libraries cannot load, the app uses the distribution's libmpv instead;
 older runtimes may omit Profile 7 enhancement processing and retain normal HDR.
 Experimental DV is disabled by default. No separate helper download or custom
-compositor is needed. See [setup and validation status](https://github.com/evman/silage/blob/v@VERSION@/DOLBY_VISION.md).
+compositor is needed. See [setup and validation status](https://github.com/evman/silage/blob/v@VERSION@/docs/DOLBY_VISION.md).
 
 Linux retains native Wayland/Vulkan HDR playback. Windows currently tone-maps HDR
 to SDR. Server features depend on your Silo server's capabilities and profile
@@ -43,7 +43,7 @@ is needed. The portable EXE and ZIP are no longer published: install once, sign 
 again, and delete the old portable folder.
 
 The Windows build is unsigned, so SmartScreen may show a first-run warning.
-See [Windows instructions](https://github.com/evman/silage/blob/v@VERSION@/WINDOWS.md).
+See [Windows instructions](https://github.com/evman/silage/blob/v@VERSION@/docs/WINDOWS.md).
 
 ### Linux
 
@@ -52,7 +52,7 @@ See [Windows instructions](https://github.com/evman/silage/blob/v@VERSION@/WINDO
 curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
 ```
 
-To add a repository by hand (apt, dnf or pacman), see [LINUX.md](https://github.com/evman/silage/blob/v@VERSION@/LINUX.md#install).
+To add a repository by hand (apt, dnf or pacman), see [LINUX.md](https://github.com/evman/silage/blob/v@VERSION@/docs/LINUX.md#install).
 For full H.264/HEVC support on Fedora, install FFmpeg from [RPM Fusion](https://rpmfusion.org/Howto/Multimedia).
 
 **Other distributions:** extract `silage-linux-x86_64.tar.gz`, then run the
@@ -61,7 +61,7 @@ included `install.sh` or launch `silage/bin/silage` directly.
 Linux bundles Java and needs your distribution's libmpv 0.37+. Saved settings
 remain in the XDG directories; sessions use the desktop keyring when available,
 otherwise an owner-only file. Run `silage --check` to verify playback dependencies.
-See [Linux instructions](https://github.com/evman/silage/blob/v@VERSION@/LINUX.md).
+See [Linux instructions](https://github.com/evman/silage/blob/v@VERSION@/docs/LINUX.md).
 The Linux download also includes the optional helper and private playback
 libraries. Package installers include the helper's host dependencies. Users of the portable build need Python 3, pkexec/polkit, Intel GPU Tools and libdrm before enabling DV.
 `silage-playback-runtime-sources.tar.gz` supplies the exact corresponding mpv and

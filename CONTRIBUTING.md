@@ -26,8 +26,8 @@ also need `dbus-daemon` and use a private bus. Run:
 ./gradlew :app:run
 ```
 
-On Windows, prepare JDK 21 and bundled mpv as described in [WINDOWS.md](WINDOWS.md),
-then use `test-windows.cmd` and `build-windows.cmd :app:run`. Packaging and
+On Windows, prepare JDK 21 and bundled mpv as described in [docs/WINDOWS.md](docs/WINDOWS.md),
+then use `scripts\windows\test-windows.cmd` and `scripts\windows\build-windows.cmd :app:run`. Packaging and
 installer regression tests run on either platform:
 
 ```sh
@@ -43,7 +43,7 @@ bash scripts/dv-helper/install.sh --stage
 ```
 
 Only explicitly enabled native hardware tests write display signaling. Never run
-the application, mpv or FFmpeg as root. See [the DV guide](DOLBY_VISION.md) and
+the application, mpv or FFmpeg as root. See [the DV guide](docs/DOLBY_VISION.md) and
 [runtime build instructions](scripts/dv-helper/BUILDING-RUNTIME.md).
 
 Keep server features in shared code and adapt desktop services where needed.
@@ -52,7 +52,7 @@ credentials, personal settings, extracted runtimes or dependency binaries.
 
 ## Releases
 
-Update README, [LINUX.md](LINUX.md), [WINDOWS.md](WINDOWS.md), AppStream release
+Update README, [docs/LINUX.md](docs/LINUX.md), [docs/WINDOWS.md](docs/WINDOWS.md), AppStream release
 metadata and `packaging/release-notes.md` before tagging a release. Set
 `-PappVersion=<version>` when packaging locally so the version shown in About
 matches the filenames.

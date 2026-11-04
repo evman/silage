@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-root = Path(__file__).resolve().parent
+# This script lives in scripts/windows: the project root is two folders up.
+root = Path(__file__).resolve().parents[2]
 jdk = next((root / 'toolchains').glob('jdk-*'))
 env = os.environ.copy()
 env['JAVA_HOME'] = str(jdk)

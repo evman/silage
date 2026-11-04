@@ -42,7 +42,7 @@ if ! $rpm_only; then
   formats=(deb rpm)
   mkdir -p "$stage/silage-$version"
   cp -a "$app" "$stage/silage-$version/silage"
-  cp -a packaging/dev.silage.Silage.desktop packaging/dev.silage.Silage.metainfo.xml packaging/install.sh LICENSE README.md LINUX.md "$stage/silage-$version/"
+  cp -a packaging/dev.silage.Silage.desktop packaging/dev.silage.Silage.metainfo.xml packaging/install.sh LICENSE README.md docs/LINUX.md "$stage/silage-$version/"
   cp -a packaging/icons "$stage/silage-$version/icons"
   tar -C "$stage" -czf "$stage/silage-$version-linux-x86_64.tar.gz" "silage-$version"
   rm -rf "$stage/silage-$version"

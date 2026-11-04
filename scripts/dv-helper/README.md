@@ -28,7 +28,7 @@ The normal Linux download includes the helper and playback runtime. Enable
 packages install the root-owned helper/policy; portable builds include a fixed
 setup that installs and starts only the helper during the first authorization
 (or after its bundled payload changes). No separate helper download or compiler
-is needed by users. See [the setup and compatibility guide](../../DOLBY_VISION.md).
+is needed by users. See [the setup and compatibility guide](../../docs/DOLBY_VISION.md).
 
 The app and all media/network processing stay unprivileged. Only the fixed
 helper/setup process runs as root, with ordinary administrator authorization.
@@ -267,4 +267,4 @@ creative adjustments. Monitor activation and actual enhancement GPU passes do
 not establish complete Dolby content mapping, reference color accuracy or
 standards-compliant LLDV/TV-led output. Controlled metadata-response tests, a
 verified Dolby reference pipeline and instrumented measurements remain necessary.
-See [the validation plan](../../DOLBY_VISION.md#what-remains-to-validate).
+See [the validation plan](../../docs/DOLBY_VISION.md#what-remains-to-validate).

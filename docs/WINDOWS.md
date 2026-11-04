@@ -247,11 +247,11 @@ it also links that JDK under `toolchains` (otherwise unpack a portable JDK there
 
 | Script | What it does |
 |---|---|
-| `test-windows.cmd` | runs the app, player and shared test suites; output in `test-windows.log` |
-| `build-windows.cmd <tasks>` | runs any Gradle task with the portable JDK, e.g. `build-windows.cmd :app:run` |
-| `package-windows.cmd -PappVersion=0.5.0` | builds the app image `dist\Silage`, checks bundled mpv, then the per-user installer `dist\Silage-0.5.0-Setup.exe` and its version-free copy `dist\Silage-Setup.exe`, and keeps the previous build in `dist\backups` |
+| `scripts\windows\test-windows.cmd` | runs the app, player and shared test suites; output in `test-windows.log` |
+| `scripts\windows\build-windows.cmd <tasks>` | runs any Gradle task with the portable JDK, e.g. `scripts\windows\build-windows.cmd :app:run` |
+| `scripts\windows\package-windows.cmd -PappVersion=0.5.0` | builds the app image `dist\Silage`, checks bundled mpv, then the per-user installer `dist\Silage-0.5.0-Setup.exe` and its version-free copy `dist\Silage-Setup.exe`, and keeps the previous build in `dist\backups` |
 
-`build-windows.py` and `package-windows.py -PappVersion=0.5.0` do the same with Python. The version flag is forwarded to Gradle, so the app and release metadata agree.
+`scripts\windows\build-windows.py` and `scripts\windows\package-windows.py -PappVersion=0.5.0` do the same with Python. The version flag is forwarded to Gradle, so the app and release metadata agree.
 Packaging needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`scripts\prepare-windows.ps1` installs it); the installer script is `packaging\windows\silage.iss`.
 Both packaging scripts back up the previous `dist\Silage` and installers first.
 

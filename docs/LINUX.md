@@ -138,7 +138,7 @@ The script creates the portable tarball, Debian package and RPM in `dist/`.
 The portable directory contains its Java runtime; launch `silage/bin/silage`
 after extracting, or run the included `install.sh` for a per-user install.
 Local packaging never publishes anything: releases are built, signed and
-tested by the release workflow (see [docs/RELEASING.md](docs/RELEASING.md)).
+tested by the release workflow (see [docs/RELEASING.md](RELEASING.md)).
 
 After installing, run `silage --version` and `silage --check`. UI tests require a
 working display; desktop integration tests start a private `dbus-daemon` and
@@ -160,7 +160,7 @@ native Dolby Vision signaling to the monitor.
 
 ## Experimental native Dolby Vision milestone
 
-The Linux download includes the optional [DV helper](scripts/dv-helper/README.md)
+The Linux download includes the optional [DV helper](../scripts/dv-helper/README.md)
 and private renderer for the stock KDE desktop. Enable **Settings → Video →
 Experimental Dolby Vision** and restart; see the [setup guide](DOLBY_VISION.md).
 No separate helper download or compositor build is needed. KDE requires
@@ -191,7 +191,7 @@ Profile 7 FEL requires actual enhancement-layer processing as well as reshaping.
 Profile 7 MEL requires reshaping and decoder confirmation that residual picture
 data is not needed; it must not be blocked for omitting an unnecessary GPU pass.
 The release bundles a pinned private mpv/libplacebo runtime using
-the [runtime build and packaging scripts](scripts/dv-helper/README.md#profile-7-private-playback-runtime).
+the [runtime build and packaging scripts](../scripts/dv-helper/README.md#profile-7-private-playback-runtime).
 The affected movie's Profile 7 FEL excerpt passed VAAPI playback with zero
 dropped frames, helper activation, enhancement off/on release/reacquisition,
 and restoration after close. **I → Playback Info → Enhancement layer** reports
@@ -206,7 +206,7 @@ the root-owned helper and policy; portable app images include a fixed helper
 setup that installs and starts only that component during startup authorization.
 The UI and media/network processing never run as root.
 
-The [DV lab](scripts/dv-lab/README.md) retains the alternative KWin 6.8.0 patch
+The [DV lab](../scripts/dv-lab/README.md) retains the alternative KWin 6.8.0 patch
 and its separate hardware evidence. That backend uses the standard DRM metadata
 API and requires `SILAGE_EXPERIMENTAL_DV=compositor` under the patched compositor
 started with `KWIN_SILAGE_EXPERIMENTAL_DV=1`. Stock KWin lacks that private API.

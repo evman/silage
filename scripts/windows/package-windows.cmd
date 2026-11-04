@@ -8,8 +8,10 @@ rem modules from the powershell steps below; without the variable, Windows Power
 set "PSModulePath="
 set "NEWSETUP="
 set "VERSION="
-cd /d "%~dp0"
-set "LOG=%~dp0package-windows.log"
+rem The project root is two folders up (this script lives in scripts\windows).
+cd /d "%~dp0..\.."
+set "ROOT=%CD%"
+set "LOG=%ROOT%\package-windows.log"
 echo Packaging Silage... (log: package-windows.log)
 echo === package %DATE% %TIME% === > "%LOG%"
 
@@ -57,7 +59,7 @@ copy /y "native\LICENSE-mpv-GPL.txt" "dist\Silage\" >> "%LOG%" 2>&1 || goto rest
 copy /y "native\Copyright-mpv.txt" "dist\Silage\" >> "%LOG%" 2>&1 || goto restore
 robocopy "native\fallback" "dist\Silage\fallback" /E /NFL /NDL /NJH /NJS >> "%LOG%" 2>&1
 if errorlevel 8 goto restore
-copy /y "WINDOWS.md" "dist\Silage\" >> "%LOG%" 2>&1 || goto restore
+copy /y "docs\WINDOWS.md" "dist\Silage\" >> "%LOG%" 2>&1 || goto restore
 echo Adding yt-dlp and Deno for trailers... >> "%LOG%"
 powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "scripts\fetch-trailer-tools.ps1" -Out "dist\Silage\tools" >> "%LOG%" 2>&1
 if errorlevel 1 ( echo Adding the trailer tools failed - see package-windows.log & goto restore )
@@ -74,7 +76,7 @@ echo Version: %VERSION% >> "%LOG%"
 
 echo [5/6] Creating dist\Silage-%VERSION%-Setup.exe...
 set "NEWSETUP=1"
-"%ISCC%" "/DVersion=%VERSION%" "/DAppDir=%~dp0dist\Silage" "/O%~dp0dist" "%~dp0packaging\windows\silage.iss" >> "%LOG%" 2>&1
+"%ISCC%" "/DVersion=%VERSION%" "/DAppDir=%ROOT%\dist\Silage" "/O%ROOT%\dist" "%ROOT%\packaging\windows\silage.iss" >> "%LOG%" 2>&1
 if errorlevel 1 ( echo Building the installer failed - see package-windows.log & goto restore )
 rem Version-free copy, so releases/latest/download/Silage-Setup.exe always gets the newest.
 copy /y /b "dist\Silage-%VERSION%-Setup.exe" "dist\Silage-Setup.exe" >> "%LOG%" 2>&1 || goto restore

@@ -59,7 +59,7 @@ jobs:
         run: ./scripts/prepare-windows.ps1
       - name: Test
         shell: cmd
-        run: build-windows.cmd :app:test :player:test :shared:desktopTest --no-daemon --console=plain
+        run: scripts\windows\build-windows.cmd :app:test :player:test :shared:desktopTest --no-daemon --console=plain
       - name: Test Windows packaging rollback and data exclusion
         run: python -m unittest discover -s scripts/tests -v
       - uses: actions/upload-artifact@v7

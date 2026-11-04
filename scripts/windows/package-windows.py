@@ -6,8 +6,10 @@ import shutil
 import stat
 import subprocess
 import sys
-root = Path(__file__).resolve().parent
-subprocess.run([sys.executable, str(root / 'build-windows.py'), ':app:createDistributable', '--console=plain', *sys.argv[1:]], check=True)
+# This script lives in scripts/windows: the project root is two folders up.
+here = Path(__file__).resolve().parent
+root = here.parents[1]
+subprocess.run([sys.executable, str(here / 'build-windows.py'), ':app:createDistributable', '--console=plain', *sys.argv[1:]], check=True)
 source = root / 'app/build/compose/binaries/main/app/silage'
 target = root / 'dist/Silage'
 setup_latest = root / 'dist/Silage-Setup.exe'
@@ -48,7 +50,7 @@ try:
     for name in ['LICENSE-mpv-GPL.txt', 'Copyright-mpv.txt']:
         shutil.copy2(root / 'native' / name, target / name)
     shutil.copytree(root / 'native/fallback', target / 'fallback')
-    shutil.copy2(root / 'WINDOWS.md', target / 'WINDOWS.md')
+    shutil.copy2(root / 'docs/WINDOWS.md', target / 'WINDOWS.md')
     subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
                     '-File', str(root / 'scripts/fetch-trailer-tools.ps1'), '-Out', str(target / 'tools')], check=True)
     # Verification must not rely on developer-only JNA paths or Java.

@@ -1,4 +1,4 @@
-; Per-user Silage installer (Inno Setup 6). Built by package-windows.cmd / package-windows.py:
+; Per-user Silage installer (Inno Setup 6). Built by scripts\windows\package-windows.cmd / package-windows.py:
 ;   ISCC /DVersion=0.5.0 /DAppDir=<repo>\dist\Silage /O<repo>\dist packaging\windows\silage.iss
 ; Relative paths below are relative to this file's folder.
 ;

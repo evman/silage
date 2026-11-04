@@ -15,8 +15,9 @@ class WindowsPackageTest(unittest.TestCase):
         # Resolved like package-windows.py resolves itself: on Windows the temp dir can be an
         # 8.3 short path (C:\Users\RUNNER~1) that resolve() expands to the long one.
         self.root = Path(self.temp.name).resolve()
-        script = Path(__file__).resolve().parents[2] / 'package-windows.py'
-        shutil.copy2(script, self.root)
+        script = Path(__file__).resolve().parents[2] / 'scripts/windows/package-windows.py'
+        (self.root / 'scripts/windows').mkdir(parents=True)
+        shutil.copy2(script, self.root / 'scripts/windows')
         self.source = self.root / 'app/build/compose/binaries/main/app/silage'
         self.source.mkdir(parents=True)
         (self.source / 'silage.exe').write_text('new executable')
@@ -34,7 +35,7 @@ class WindowsPackageTest(unittest.TestCase):
             self.write(self.root / 'native' / name, name)
         for name in ['vulkan-1.dll', 'VulkanRT-License.txt']:
             self.write(self.root / 'native/fallback' / name, name)
-        for name in ['LICENSE', 'WINDOWS.md']:
+        for name in ['LICENSE', 'docs/WINDOWS.md']:
             self.write(self.root / name, name)
         self.installer_inputs = None
         self.iscc_args = None
@@ -61,7 +62,7 @@ class WindowsPackageTest(unittest.TestCase):
 
         with patch('sys.argv', ['package-windows.py']), patch('subprocess.run', side_effect=fake_run), \
                 patch('shutil.which', return_value=iscc):
-            runpy.run_path(str(self.root / 'package-windows.py'), run_name='__main__')
+            runpy.run_path(str(self.root / 'scripts/windows/package-windows.py'), run_name='__main__')
 
     def assert_old_data(self):
         self.assertEqual('remembered sign-in', (self.target / 'userdata/Data/session.json').read_text())

@@ -104,7 +104,7 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          & ./build-windows.cmd :app:test :player:test :shared:desktopTest --no-daemon --console=plain "-PappVersion=$version"
+          & ./scripts/windows/build-windows.cmd :app:test :player:test :shared:desktopTest --no-daemon --console=plain "-PappVersion=$version"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s scripts/tests -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -112,7 +112,7 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          cmd /d /c "package-windows.cmd -PappVersion=$version <nul"
+          cmd /d /c "scripts\windows\package-windows.cmd -PappVersion=$version <nul"
           if ($LASTEXITCODE -ne 0) { Get-Content package-windows.log; exit $LASTEXITCODE }
           $versionFile = Join-Path $env:RUNNER_TEMP 'silage-version.txt'
           $probe = Start-Process ./dist/Silage/silage.exe -ArgumentList '--version' -Wait -PassThru -RedirectStandardOutput $versionFile

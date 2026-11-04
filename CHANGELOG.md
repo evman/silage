@@ -6,7 +6,7 @@
   Fedora: Settings → Video → Dolby Vision through KDE installs an opt-in version of
   KDE's KWin with a small Silage patch (and can restore the standard one). It stays
   current with normal system updates. Tested on an RTX 5090 over HDMI. See
-  DOLBY_VISION.md.
+  docs/DOLBY_VISION.md.
 - Use Silage in a window on Linux (issue #7): F11 switches between fullscreen and a
   window anywhere (F too while playing), and Settings → Interface → Window chooses how it
   opens. Fullscreen stays the default and the recommended way to use Silage. HDR video in a

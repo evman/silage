@@ -1,6 +1,7 @@
 @echo off
 rem Double-click to run the app, player and shared test suites; full output goes to test-windows.log.
-cd /d "%~dp0"
+rem The project root is two folders up (this script lives in scripts\windows).
+cd /d "%~dp0..\.."
 echo Running Silage tests (this takes a few minutes)...
 call "%~dp0build-windows.cmd" :app:test :player:test :shared:desktopTest --console=plain > test-windows.log 2>&1
 set "RC=%ERRORLEVEL%"

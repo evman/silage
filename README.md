@@ -24,7 +24,7 @@
 ## Why Silage
 
 - **Full quality, no transcoding.** Your files play as they are, through mpv with hardware decoding.
-- **Real HDR on Linux.** True HDR output on KDE Plasma, plus [experimental Dolby Vision](DOLBY_VISION.md).
+- **Real HDR on Linux.** True HDR output on KDE Plasma, plus [experimental Dolby Vision](docs/DOLBY_VISION.md).
 - **Made for the couch.** Everything works with a remote or arrow keys, Enter and Esc.
 - **Everything you use in Silo.** Libraries, collections, watchlist, requests, notifications, subtitles, Up next and Skip Intro.
 - **Updates itself.** New versions are signature-checked and installed with one click.
@@ -43,7 +43,7 @@ One command adds the Silage repository for your distro and installs it:
 curl -fsSL https://raw.githubusercontent.com/evman/silage/main/install.sh | sh
 ```
 
-Works on Ubuntu 24.04+, Debian 13, Fedora 40+ and Arch Linux. Updates then arrive with your normal system updates. Prefer to set the repository up yourself, or use another distro? See [LINUX.md](LINUX.md#install).
+Works on Ubuntu 24.04+, Debian 13, Fedora 40+ and Arch Linux. Updates then arrive with your normal system updates. Prefer to set the repository up yourself, or use another distro? See [LINUX.md](docs/LINUX.md#install).
 
 Keep **mpv 0.37 or newer** installed from your distro. On first launch, enter your Silo server's address and sign in.
 
@@ -81,7 +81,7 @@ Media keys work too.
 ## Help
 
 - **Something not working?** [Open an issue](https://github.com/evman/silage/issues) and attach the logs from the folder shown in **Settings → About**.
-- **Platform details:** [Linux](LINUX.md) · [Windows](WINDOWS.md) · [Dolby Vision](DOLBY_VISION.md)
+- **Platform details:** [Linux](docs/LINUX.md) · [Windows](docs/WINDOWS.md) · [Dolby Vision](docs/DOLBY_VISION.md)
 - **Building or contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License

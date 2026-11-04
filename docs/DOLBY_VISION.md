@@ -25,7 +25,7 @@ PG32UCDM. Profiles 5, 7 and 8 play with hardware decoding (VAAPI or NVDEC).
    *Dolby Vision* reads *Signal active (via KWin)*.
 
 **What it installs.** KDE's own `kwin` package, rebuilt by Silage's CI from Arch's or
-Fedora's recipe with [the patch](packaging/kwin/) added, from a separate signed
+Fedora's recipe with [the patch](../packaging/kwin/) added, from a separate signed
 repository (`[silage-kwin]` for pacman, `silage-kwin` for dnf). The patch adds one
 D-Bus interface that only Silage's executable may use: while Silage renews a lease,
 KWin sends the Dolby Vision trigger metadata to that monitor; when Silage stops,
@@ -130,8 +130,8 @@ An OSD mode switch, a normal-looking movie or zero dropped frames cannot replace
 those checks. Distinguishing LLDV from TV-led output also needs verified transport
 evidence; this release does not claim either mode.
 
-See the [helper implementation and hardware verification](scripts/dv-helper/README.md)
-and [corresponding runtime source/build instructions](scripts/dv-helper/BUILDING-RUNTIME.md).
+See the [helper implementation and hardware verification](../scripts/dv-helper/README.md)
+and [corresponding runtime source/build instructions](../scripts/dv-helper/BUILDING-RUNTIME.md).
 The release includes `silage-playback-runtime-sources.tar.gz`, licenses, revision
 identifiers, the applied patch and library hashes. Private media, authenticated
 server URLs, credentials and local settings are not distributed.

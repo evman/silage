@@ -1,9 +1,9 @@
 @echo off
 rem Build with the portable JDK in toolchains\jdk-*; no Python or global Java needed.
-rem Usage: build-windows.cmd <gradle tasks/options>, e.g. build-windows.cmd :app:run
+rem Usage: scripts\windows\build-windows.cmd <gradle tasks/options>, e.g. scripts\windows\build-windows.cmd :app:run
 setlocal
-set "ROOT=%~dp0"
-set "ROOT=%ROOT:~0,-1%"
+rem This script lives in scripts\windows: the project root is two folders up.
+for %%I in ("%~dp0..\..") do set "ROOT=%%~fI"
 set "JDK="
 for /d %%D in ("%ROOT%\toolchains\jdk-*") do if not defined JDK set "JDK=%%~fD"
 if not defined JDK (
