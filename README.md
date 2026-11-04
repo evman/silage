@@ -61,7 +61,7 @@ When a new version is ready, **Update ready** appears in the sidebar, never duri
 | Enter | Open | Show controls / press the focused control |
 | Space | — | Play / pause |
 | Esc / Backspace | Back; on the home page, Esc asks to quit | Close a menu, then leave the player |
-| I | — | Playback info |
+| I | — | Playback info (C copies it to the clipboard) |
 | Ctrl + / − / 0 | Interface size | — |
 | Ctrl Q | Quit Silage | Quit Silage |
 

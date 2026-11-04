@@ -125,6 +125,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             nav = nav.copy(menu = HudMenu.None)
         }
         override fun nextEpisode() { onNextEpisode?.invoke() }
+        override fun copyInfo() = this@PlayerHud.copyInfo()
         override fun findSubtitles() {
             val tools = subtitleTools ?: return
             nav = nav.copy(menu = HudMenu.FindSubtitles, menuIndex = 0, menuSize = 0)
@@ -323,6 +324,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                     actions.speed(s); toast(if (s == 1.0) "Normal speed" else "Speed ${s}×")
                 }
                 HudEffect.NextEpisode -> if (onNextEpisode != null && hasNextEpisode()) actions.nextEpisode() else toast("No next episode")
+                HudEffect.CopyInfo -> copyInfo()
                 is HudEffect.Activate -> when (effect.control) {
                     HudFocus.Skip -> ui.value.skip?.let { if (it.kind == SkipPrompt.Kind.NextEpisode) actions.nextEpisode() else actions.seekTo(it.target) }
                     HudFocus.Seek, HudFocus.PlayPause -> actions.togglePause()
@@ -445,6 +447,18 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     // Shortcut feedback and the sleep timer (HUD thread).
     private var toastUntil = 0L
     private var sleepAt: Long? = null
+
+    /** Copy details: Playback Info as plain text on the system clipboard (Linux and Windows alike). */
+    private fun copyInfo() {
+        val text = playbackInfoText(ui.value.info, "${dev.silage.app.BuildInfo.NAME} ${dev.silage.app.BuildInfo.VERSION}",
+            System.getProperty("os.name"))
+        java.awt.EventQueue.invokeLater {
+            val copied = runCatching {
+                java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(text), null)
+            }.isSuccess
+            toast(if (copied) "Playback info copied" else "Couldn't copy playback info")
+        }
+    }
 
     private fun toast(message: String) {
         toastUntil = System.currentTimeMillis() + 1_600

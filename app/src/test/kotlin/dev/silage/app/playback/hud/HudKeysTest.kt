@@ -96,6 +96,23 @@ class HudKeysTest {
         assertEquals(HudNav(visible = true, focus = Seek), shown.copy(focus = Skip, hasSkip = true).withSkip(false))
     }
 
+    /** Playback Info's Copy details, by key too: C copies while the panel is open, in either window. */
+    @Test fun cCopiesPlaybackInfoOnlyWhileItIsOpen() {
+        assertEquals(HudKey.CopyInfo, HudKey.ofAwt(KeyEvent.VK_C))
+        assertEquals(HudKey.CopyInfo, HudKey.ofMpv("c"))
+        assertTrue("c" in HudKey.MPV_KEYS)
+        val info = shown.copy(menu = HudMenu.Info)
+        assertEquals(info to HudEffect.CopyInfo, info.on(HudKey.CopyInfo))
+        assertEquals(shown to HudEffect.None, shown.on(HudKey.CopyInfo))
+    }
+
+    @Test fun copiedPlaybackInfoIsPlainTextWithVersionAndPlatformFirst() {
+        assertEquals(
+            "Silage 0.5.2 · Linux\nSource format: Dolby Vision (Profile 7)\nDecoder: NVDEC-copy (hardware)\n",
+            playbackInfoText(listOf("Source format" to "Dolby Vision (Profile 7)", "Decoder" to "NVDEC-copy (hardware)"), "Silage 0.5.2", "Linux"),
+        )
+    }
+
     @Test fun spaceAlwaysTogglesPause() {
         assertEquals(HudEffect.TogglePause, hidden.on(HudKey.PlayPause).second)
         assertEquals(HudEffect.TogglePause, shown.on(HudKey.PlayPause).second)

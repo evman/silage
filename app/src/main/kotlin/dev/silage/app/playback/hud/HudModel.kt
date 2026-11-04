@@ -169,7 +169,9 @@ object HudCommands {
 enum class HudKey {
     Back, Escape, PlayPause, Left, Right, Up, Down, Enter, Info, Fullscreen,
     // Shortcuts: they act at once, with a short message, wherever the focus is.
-    Mute, VolumeUp, VolumeDown, CycleSubtitles, CycleAudio, SlowerSpeed, FasterSpeed, NextEpisode;
+    Mute, VolumeUp, VolumeDown, CycleSubtitles, CycleAudio, SlowerSpeed, FasterSpeed, NextEpisode,
+    // Copies Playback Info while it's open.
+    CopyInfo;
 
     companion object {
         fun ofAwt(code: Int): HudKey? = when (code) {
@@ -193,6 +195,7 @@ enum class HudKey {
             java.awt.event.KeyEvent.VK_OPEN_BRACKET -> SlowerSpeed
             java.awt.event.KeyEvent.VK_CLOSE_BRACKET -> FasterSpeed
             java.awt.event.KeyEvent.VK_N -> NextEpisode
+            java.awt.event.KeyEvent.VK_C -> CopyInfo
             else -> null
         }
 
@@ -209,6 +212,7 @@ enum class HudKey {
             "DOWN" -> Down
             "ENTER" -> Enter
             "i" -> Info
+            "c" -> CopyInfo
             "f", "F" -> Fullscreen
             "m", "M" -> Mute
             "+", "=", "KP_ADD", "0" -> VolumeUp
@@ -222,7 +226,7 @@ enum class HudKey {
         }
 
         val MPV_KEYS = listOf("ESC", "BS", "q", "MBTN_BACK", "GO_BACK", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F",
-            "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N")
+            "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N", "c")
 
         /** The shortcut keys and what each does, whatever the HUD shows. */
         internal fun shortcut(key: HudKey): HudEffect? = when (key) {
@@ -258,6 +262,7 @@ sealed interface HudEffect {
     data object CycleAudio : HudEffect
     data class Speed(val step: Int) : HudEffect
     data object NextEpisode : HudEffect
+    data object CopyInfo : HudEffect
 }
 
 /**
@@ -293,6 +298,7 @@ data class HudNav(
 
     fun on(key: HudKey): Pair<HudNav, HudEffect> {
         if (key == HudKey.Fullscreen) return copy(visible = true) to HudEffect.ToggleFullscreen
+        if (key == HudKey.CopyInfo) return this to if (menu == HudMenu.Info) HudEffect.CopyInfo else HudEffect.None
         HudKey.shortcut(key)?.let { return this to it }
         if (key == HudKey.Escape) return if (menu != HudMenu.None) copy(menu = HudMenu.None) to HudEffect.None
             else this to HudEffect.Exit
@@ -478,3 +484,9 @@ fun nextSpeed(speeds: List<Double>, current: Double, step: Int): Double {
 
 /** The track after the selected one in [ids] (null meaning off, when offered), wrapping round. */
 fun <T> nextInCycle(ids: List<T>, selected: T): T = ids[(ids.indexOf(selected) + 1).mod(ids.size)]
+
+/** Playback Info as plain text for the clipboard: Silage's version and the platform first, then each row. */
+fun playbackInfoText(rows: List<Pair<String, String>>, app: String, platform: String): String = buildString {
+    appendLine("$app · $platform")
+    rows.forEach { (k, v) -> appendLine("$k: $v") }
+}

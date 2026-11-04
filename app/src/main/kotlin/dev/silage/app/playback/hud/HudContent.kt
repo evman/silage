@@ -127,6 +127,8 @@ interface HudActions {
     fun chapter(index: Int) {}
     /** Ends this episode and moves on to the next one (the credits' "Next Episode"). */
     fun nextEpisode() {}
+    /** Copies Playback Info to the clipboard. */
+    fun copyInfo() {}
     /** Opens the Find subtitles panel (and searches). */
     fun findSubtitles() {}
     /** Opens the AI subtitles panel. */
@@ -183,7 +185,7 @@ fun HudContent(ui: HudUi, act: HudActions) {
             enter = fadeIn(tween(150)) + slideInVertically { it / 8 },
             exit = fadeOut(tween(150)) + slideOutVertically { it / 8 },
         ) { Box(Modifier.pointerInput(Unit) { detectTapGestures { } }) { MenuPanel(ui, act) } }
-        if (ui.menu == HudMenu.Info) InfoPanel(ui.info, Modifier.align(Alignment.TopEnd).padding(40.dp))
+        if (ui.menu == HudMenu.Info) InfoPanel(ui.info, act::copyInfo, Modifier.align(Alignment.TopEnd).padding(40.dp))
         ui.toast?.let { message ->
             Box(Modifier.align(Alignment.TopCenter).padding(top = 64.dp).clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.78f))
                 .padding(horizontal = 26.dp, vertical = 14.dp)) {
@@ -448,13 +450,19 @@ private fun MenuRow(label: String, selected: Boolean, highlighted: Boolean, deta
 }
 
 @Composable
-private fun InfoPanel(rows: List<Pair<String, String>>, modifier: Modifier) {
+private fun InfoPanel(rows: List<Pair<String, String>>, onCopy: () -> Unit, modifier: Modifier) {
     Column(
         modifier.width(460.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp)).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("PLAYBACK INFO", color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("PLAYBACK INFO", color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp, modifier = Modifier.weight(1f))
+            // Copy details (C): plain text for a bug report or a forum post.
+            Text("Copy details  C", color = Text, fontSize = 13.sp,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.10f))
+                    .clickable(onClick = onCopy).padding(horizontal = 10.dp, vertical = 5.dp))
+        }
         rows.forEach { (k, v) ->
             Row {
                 Text(k, color = Color.White.copy(alpha = 0.55f), fontSize = 15.sp, modifier = Modifier.width(150.dp))
