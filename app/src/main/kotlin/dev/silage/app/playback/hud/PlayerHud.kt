@@ -51,6 +51,8 @@ fun hudSceneSize(w: Int, h: Int): Pair<Int, Int> {
 }
 
 class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
+    /** Told after every update, so a deadlocked mpv (which blocks this loop) is noticed. */
+    private val watchdog: dev.silage.app.playback.PlaybackWatchdog? = null,
     private val audioRows: ((List<Track>) -> List<Track>)? = null,
     private val selectSourceAudio: ((Int) -> Unit)? = null,
     private val fullscreenWindow: PlaybackFullscreen? = null,
@@ -522,6 +524,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             } catch (t: Throwable) {
                 System.err.println("silage-hud: ${t.message}")
             }
+            watchdog?.alive(System.currentTimeMillis())
             Thread.sleep(16)
         }
     }

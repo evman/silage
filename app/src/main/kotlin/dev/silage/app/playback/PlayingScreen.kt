@@ -89,7 +89,17 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val helperRequested = dvAuthorization != null
     val helper = AtomicReference<ExperimentalDvHelper?>()
     val sourceSwitch = !ready.direct && ready.sourceAudio.isNotEmpty()
+    // A deadlocked mpv can't be closed and keeps the keyboard: after 20 s of a
+    // silent player loop, save a note and restart Silage instead of staying frozen.
+    val watchdog = PlaybackWatchdog()
+    val watching = Thread({
+        while (!Thread.currentThread().isInterrupted) {
+            try { Thread.sleep(1_000) } catch (_: InterruptedException) { break }
+            if (watchdog.stuck(System.currentTimeMillis())) restartAfterStuckPlayback()
+        }
+    }, "silage-watchdog").apply { isDaemon = true; start() }
     val hud = try { PlayerHud(mpv, ready.meta,
+        watchdog = watchdog,
         fullscreenWindow = if (output is VideoOutput.Embedded) fullscreen else null,
         videoSession = video,
         autoSkip = koin.get<dev.silage.app.ui.UiPrefs>().let { dev.silage.app.playback.hud.AutoSkip(it.autoSkipIntro, it.autoSkipRecap, it.autoSkipCredits) },
@@ -118,7 +128,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
                 mpv.command("stop")
             }
         }) else null,
-    ) } catch (t: Throwable) { mpv.close(); throw t }
+    ) } catch (t: Throwable) { watchdog.stop(); watching.interrupt(); mpv.close(); throw t }
     // Subscribed before the controller loads the file, so FileLoaded can't be missed.
     // A stream from the server fetches (segments, or byte ranges after a seek)
     // for as long as it plays: renew the sign-in headers before the access
@@ -165,6 +175,8 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     return object : OpenedPlayer by port {
         override fun close() {
             if (!closed.compareAndSet(false, true)) return
+            watchdog.stop()
+            watching.interrupt()
             experimentalDv?.close()
             subtitles.cancel()
             authRefresh?.cancel()
