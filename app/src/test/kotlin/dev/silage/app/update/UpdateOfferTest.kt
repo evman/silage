@@ -70,6 +70,12 @@ class UpdateOfferTest {
         runCurrent()
     }
 
+    /** Java's Desktop.browse loads GTK into Silage on Linux and can hang the whole app. */
+    @Test fun linuxOpensLinksWithXdgOpenNeverJavasDesktop() {
+        assertEquals(BrowserLauncher.XdgOpen, browserLauncher("Linux"))
+        assertEquals(BrowserLauncher.Desktop, browserLauncher("Windows 11"))
+    }
+
     @Test fun shownUpdateKeepsTheLastOfferThroughDownloadsAndFailures() {
         val ready = UpdateState.Ready(v, null)
         assertEquals(ready, shownUpdate(null, ready))

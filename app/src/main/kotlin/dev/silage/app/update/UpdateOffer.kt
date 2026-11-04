@@ -107,9 +107,18 @@ class UpdateOffer(
     }
 }
 
-/** Opens [url] in the default browser (xdg-open where Java can't); throws when neither works. */
+enum class BrowserLauncher { XdgOpen, Desktop }
+
+/**
+ * Linux always hands links to xdg-open as a separate program: Java's Desktop.browse loads GTK
+ * into Silage there and has frozen the whole app (Send hardware report). Elsewhere, Java's own.
+ */
+fun browserLauncher(osName: String = System.getProperty("os.name")): BrowserLauncher =
+    if (osName.startsWith("Linux")) BrowserLauncher.XdgOpen else BrowserLauncher.Desktop
+
+/** Opens [url] in the default browser; throws when it can't. */
 fun openInBrowser(url: String) {
-    val desktop = if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
+    val desktop = if (browserLauncher() == BrowserLauncher.Desktop && Desktop.isDesktopSupported()) Desktop.getDesktop() else null
     if (desktop != null && desktop.isSupported(Desktop.Action.BROWSE)) {
         desktop.browse(URI(url))
         return
