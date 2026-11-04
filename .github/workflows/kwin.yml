@@ -1,0 +1,154 @@
+# Keeps the opt-in Silage KWin (Dolby Vision) repositories current with Arch's and Fedora's own
+# kwin: when either ships a version we haven't built, apply packaging/kwin/silage-dv-<minor>.patch
+# to that distro's recipe, build, sign and publish (pacman: release tag kwin-arch; dnf: release
+# tag kwin-fedora + Pages kwin-rpm/). Until then systems simply run the stock kwin.
+# See docs/superpowers/specs/2026-11-04-kwin-dolby-vision-design.md.
+#
+# Pushes to other branches only build (testing a patch); nothing is published from them.
+name: KWin for Dolby Vision
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if the published version is current
+        type: boolean
+        default: false
+  push:
+    branches-ignore: [main]
+    paths:
+      - packaging/kwin/**
+      - scripts/build-kwin-repos.sh
+      - .github/workflows/kwin.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kwin
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  PUBLISH: ${{ github.event_name != 'push' }}
+  FORCE: ${{ inputs.force || false }}
+
+jobs:
+  arch:
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - name: Install build tools
+        run: pacman -Syu --noconfirm --needed base-devel git github-cli sudo
+      - uses: actions/checkout@v7
+      - name: Arch's current kwin
+        id: version
+        run: |
+          git config --global --add safe.directory "$PWD"
+          current=$(pacman -Si kwin | awk -F': *' '/^Version/{print $2; exit}')   # e.g. 6.8.2-2
+          published=$(gh release view kwin-arch --json assets -q '.assets[].name' 2>/dev/null \
+            | sed -n 's/^kwin-\([0-9.]*-[0-9]*\)\.99-x86_64\.pkg\.tar\.zst$/\1/p' | head -1 || true)
+          echo "Arch kwin $current, published ${published:-none}"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          if [ "$PUBLISH" = false ] || [ "$FORCE" = true ] || [ "$current" != "$published" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build Arch's kwin with the Silage patch
+        if: steps.version.outputs.build
+        run: |
+          v="${{ steps.version.outputs.current }}"
+          useradd -m builder
+          packaging/kwin/arch/prepare.sh "${v%-*}" "${v##*-}" /home/builder/kwin
+          cd /home/builder/kwin
+          makepkg --printsrcinfo | awk '$1 ~ /^(make)?depends$/ {print $3}' | sed 's/[<>=].*//' \
+            | xargs pacman -S --noconfirm --needed >/dev/null
+          chown -R builder: /home/builder/kwin
+          sudo -u builder MAKEFLAGS="-j$(nproc)" makepkg --skippgpcheck --noconfirm
+          mkdir -p "$GITHUB_WORKSPACE/out" && cp ./*.pkg.tar.zst "$GITHUB_WORKSPACE/out/"
+      - name: Sign and publish the pacman repository
+        if: steps.version.outputs.build && env.PUBLISH == 'true'
+        env:
+          REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
+          REPO_GPG_KEY_ID: ${{ secrets.REPO_GPG_KEY_ID }}
+        run: |
+          printf '%s\n' "$REPO_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          scripts/build-kwin-repos.sh arch out repo
+          gh release view kwin-arch >/dev/null 2>&1 || gh release create kwin-arch --prerelease --latest=false \
+            --title "KWin for Silage Dolby Vision (Arch)" --notes "Opt-in pacman repository; see the Silage README."
+          # Replace the previous build's files.
+          gh release view kwin-arch --json assets -q '.assets[].name' | while read -r a; do gh release delete-asset kwin-arch "$a" -y; done
+          gh release upload kwin-arch repo/* --clobber
+
+  fedora:
+    runs-on: ubuntu-24.04
+    container: fedora:43
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+    steps:
+      - name: Install tools
+        run: dnf -y -q install git gh rpm-sign gnupg2 createrepo_c >/dev/null
+      - uses: actions/checkout@v7
+      - name: Fedora's current kwin
+        id: version
+        run: |
+          git config --global --add safe.directory "$PWD"
+          current=$(dnf -q repoquery --latest-limit 1 --qf '%{version}-%{release}' kwin | tail -1)
+          published=$(gh release view kwin-fedora --json assets -q '.assets[].name' 2>/dev/null \
+            | sed -n 's/^kwin-\([0-9.]*-[0-9]*\.fc[0-9]*\)\.99silage\.x86_64\.rpm$/\1/p' | head -1 || true)
+          echo "Fedora kwin $current, published ${published:-none}"
+          if [ "$PUBLISH" = false ] || [ "$FORCE" = true ] || [ "$current" != "$published" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build Fedora's kwin with the Silage patch
+        if: steps.version.outputs.build
+        run: packaging/kwin/fedora/build.sh out
+      - name: Sign and publish the RPMs
+        id: publish
+        if: steps.version.outputs.build && env.PUBLISH == 'true'
+        env:
+          REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
+          REPO_GPG_KEY_ID: ${{ secrets.REPO_GPG_KEY_ID }}
+        run: |
+          printf '%s\n' "$REPO_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          rpmsign --addsign --define "_gpg_name $REPO_GPG_KEY_ID" out/*.rpm
+          gh release view kwin-fedora >/dev/null 2>&1 || gh release create kwin-fedora --prerelease --latest=false \
+            --title "KWin for Silage Dolby Vision (Fedora)" --notes "Opt-in dnf repository; see the Silage README."
+          gh release view kwin-fedora --json assets -q '.assets[].name' | while read -r a; do gh release delete-asset kwin-fedora "$a" -y; done
+          gh release upload kwin-fedora out/*.rpm --clobber
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+  # The dnf metadata lives on Pages beside Silage's own: rebuild the whole site from the published
+  # releases (the latest Silage release and kwin-fedora), as the release workflow does.
+  pages:
+    needs: fedora
+    if: needs.fedora.outputs.published == 'true'
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed git github-cli apt createrepo_c
+      - uses: actions/checkout@v7
+      - name: Build the Pages site
+        env:
+          REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
+          REPO_GPG_KEY_ID: ${{ secrets.REPO_GPG_KEY_ID }}
+        run: |
+          printf '%s\n' "$REPO_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          tag=$(gh release view --json tagName -q .tagName); v="${tag#v}"
+          mkdir dist kwin
+          gh release download "$tag" -D dist -p "silage_${v}_amd64.deb" -p "silage-${v}-1.x86_64.rpm" -p "silage-bin-${v//-/_}-1-x86_64.pkg.tar.zst"
+          scripts/build-repos.sh dist "$v" pages
+          gh release download kwin-fedora -D kwin -p '*.rpm'
+          scripts/build-kwin-repos.sh fedora kwin pages
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: pages/
+      - uses: actions/deploy-pages@v5
