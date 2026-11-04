@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.2 — 2026-11-04
+
+- Show Dolby Vision on any GPU, over DisplayPort or HDMI, on Arch-based systems and
+  Fedora: Settings → Video → Dolby Vision through KDE installs an opt-in version of
+  KDE's KWin with a small Silage patch (and can restore the standard one). It stays
+  current with normal system updates. Tested on an RTX 5090 over HDMI. See
+  DOLBY_VISION.md.
+- Play Dolby Vision Profile 7 with hardware decoding on NVIDIA (direct NVDEC) as well
+  as Intel (VAAPI).
+- Wait on the first frame of a Dolby Vision title while the monitor switches, so the
+  opening isn't missed and no frames drop.
+- Show the Dolby Vision status in Playback Info, and copy Playback Info to the
+  clipboard (C, or the Copy details button).
+- Add Settings → Video → Send hardware report, to help bring Dolby Vision to more
+  GPUs and monitors.
+- Fix restarting after a Linux update (“Failed to exec spawn helper”).
+- Restart Silage instead of freezing when the playback engine stops responding.
+- Load subtitles stored on the server when the video comes from the server's proxy.
+- Ctrl+Q quits during playback too.
+- Write the title on posters that are missing or fail to load.
+- Show download progress in the sidebar while an update downloads, retry a failed
+  update check later, and clean up old update downloads.
+- Fix opening links (such as the hardware report) freezing Silage on some Linux
+  desktops.
+
 ## 0.5.1 — 2026-11-03
 
 - Fix playback failing (HTTP 403) on current Silo server versions: Silage now

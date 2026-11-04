@@ -46,6 +46,11 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.5.2" date="2026-11-04">
+      <description>
+        <p>Dolby Vision on any GPU on Arch-based systems and Fedora through an opt-in version of KDE's KWin, over DisplayPort or HDMI, with hardware decoding for every profile. Dolby Vision titles wait for the monitor to switch before playing. Playback Info can be copied, and updates restart properly on Linux.</p>
+      </description>
+    </release>
     <release version="0.5.1" date="2026-11-03">
       <description>
         <p>Fixes playback on current Silo server versions and puts the best matches first in search. Enter now presses Skip Intro, Recap or Credits while it is on screen, playback goes up to 3x speed, Ctrl+Q quits, and Windows can play audio in exclusive mode. On Linux, sign-ins are saved in the desktop keyring again.</p>

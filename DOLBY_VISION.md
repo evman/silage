@@ -1,8 +1,51 @@
 # Experimental Dolby Vision on Linux
 
-Silage includes the display helper and a private mpv/libplacebo renderer in
-the Linux download. No separate helper download, custom KWin build, or system
-library replacement is needed. The feature is disabled by default.
+There are two ways Silage switches a monitor into Dolby Vision:
+
+- **Through KDE (any GPU, DisplayPort or HDMI)** on Arch-based systems and Fedora:
+  an opt-in version of KDE's KWin with a small Silage patch. Below.
+- **The display helper** (Intel Arc A380 over DisplayPort, no KWin change):
+  [further down](#enable-it).
+
+Both play through a private mpv/libplacebo renderer in the Linux download, and both
+are disabled by default.
+
+## Through KDE: any GPU
+
+Tested on an NVIDIA RTX 5090 (HDMI) and Intel Arc A380 (DisplayPort) with an ASUS
+PG32UCDM. Profiles 5, 7 and 8 play with hardware decoding (VAAPI or NVDEC).
+
+1. Turn on HDR for the monitor in KDE's display settings.
+2. Open **Settings → Video → Dolby Vision through KDE → Install Dolby Vision KWin**
+   and enter your password (or answer yes when `install.sh` offers it).
+3. Log out and back in.
+4. Turn on **Settings → Video → Experimental Dolby Vision** and restart Silage.
+5. Play a Dolby Vision title fullscreen on the monitor. It waits on the first frame
+   while the monitor switches (a few seconds of black), then plays. Press **I**:
+   *Dolby Vision* reads *Signal active (via KWin)*.
+
+**What it installs.** KDE's own `kwin` package, rebuilt by Silage's CI from Arch's or
+Fedora's recipe with [the patch](packaging/kwin/) added, from a separate signed
+repository (`[silage-kwin]` for pacman, `silage-kwin` for dnf). The patch adds one
+D-Bus interface that only Silage's executable may use: while Silage renews a lease,
+KWin sends the Dolby Vision trigger metadata to that monitor; when Silage stops,
+quits or crashes, KWin restores normal HDR within 5 seconds.
+
+**Updates.** It stays current with normal system updates. When KDE releases a new
+KWin, your system takes KDE's (Dolby Vision pauses; *Settings* says it's waiting),
+and Silage's build of it follows within hours.
+
+**Only verified monitors.** Settings offers it when a monitor whose switch is verified
+is connected (so far the ASUS PG32UCDM). To get yours added, use **Settings → Video →
+Send hardware report**.
+
+**Remove it.** **Settings → Video → Restore standard KWin**, or
+`sudo /usr/libexec/silage-kwin-dv/silage-kwin-dv disable`, then log out and back in.
+
+## The display helper (Intel Arc)
+
+Silage includes the display helper in the Linux download. No separate helper
+download or system library replacement is needed.
 
 This is an experimental, hardware-specific implementation. Monitor mode
 activation, source reshaping and Profile 7 enhancement processing have been

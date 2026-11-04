@@ -1,19 +1,18 @@
 ## Silage @VERSION@ — Linux and Windows
 
-This release fixes playback on current Silo server versions and adds a few
-small requests. If you have 0.5.0, Silage offers it as **Update ready** in the
-sidebar above Settings.
+This release brings Dolby Vision to any GPU on Linux through KDE, and fixes
+restarting after an update. If you have 0.5.0 or 0.5.1, Silage offers it as
+**Update ready** in the sidebar above Settings.
 
 ### What's new
 
-- **Playback fix.** Current Silo server versions refused original-file streams (HTTP 403). Silage now sends its sign-in with them, as Silo's own apps do, and keeps it fresh during long films.
-- **Skip with one press.** While Skip Intro, Skip Recap or Skip Credits is on screen, Enter presses it.
-- **Better search.** Shows and movies whose titles match come first; episodes with the same name come last.
-- **3× speed** in the player's Speed menu.
-- **Ctrl+Q** quits Silage from anywhere. Esc on the home page still asks first.
-- **Exclusive audio on Windows.** Settings → Playback → Exclusive audio gives Silage the sound device to itself during playback, so Windows doesn't mix or resample it.
-- **Linux sign-in back in your keyring.** Since 0.2.0 a library conflict had quietly disabled the desktop keyring, so Remember me kept sign-ins in an owner-only file instead. Silage now saves them in KDE Wallet or GNOME Keyring again and moves an existing sign-in there automatically. Settings → About shows where it's saved.
-- The experimental Dolby Vision setting now appears only on hardware it supports.
+- **Dolby Vision on any GPU** (Arch-based systems and Fedora with KDE Plasma). Settings → Video → **Dolby Vision through KDE** installs an opt-in version of KDE's KWin with a small Silage patch, from a separate signed repository; it stays current with normal system updates and Settings can restore the standard KWin. Works over DisplayPort and HDMI. Tested on an NVIDIA RTX 5090 and Intel Arc A380 with the ASUS PG32UCDM. See [Dolby Vision](https://github.com/evman/silage/blob/v@VERSION@/DOLBY_VISION.md).
+- **Hardware decoding for every Dolby Vision profile**, including Profile 7 on NVIDIA.
+- **No missed openings.** A Dolby Vision title waits on its first frame while the monitor switches, then plays.
+- **Copy Playback Info** with C (or Copy details), and a Dolby Vision status row.
+- **Send hardware report** (Settings → Video) helps add Dolby Vision for more monitors and GPUs.
+- **Updates restart properly on Linux** (0.5.1 could fail with "Failed to exec spawn helper").
+- Silage restarts instead of freezing if the playback engine stops responding; server-stored subtitles load when video comes through the server's proxy; Ctrl+Q works during playback; posters without artwork show their title.
 
 **Upgrading from 0.4.x.** Windows: install `Silage-Setup.exe` once and sign in again; the old portable folder can then be deleted. Linux: run the one-command installer below once; updates then arrive with normal system updates.
 
