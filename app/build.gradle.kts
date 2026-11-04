@@ -35,7 +35,7 @@ dependencies {
     implementation(compose.materialIconsExtended)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.ktor3)
-    implementation("io.coil-kt.coil3:coil-svg:3.1.0")
+    implementation("io.coil-kt.coil3:coil-svg:${libs.versions.coil.get()}")
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.zxing.core)

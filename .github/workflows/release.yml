@@ -7,8 +7,8 @@ permissions:
   contents: write
 
 env:
-  NFPM_VERSION: '2.47.0'
-  NFPM_SHA256: '0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783'
+  NFPM_VERSION: '2.48.0'
+  NFPM_SHA256: '6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750'
 
 jobs:
   runtime:
