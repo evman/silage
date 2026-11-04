@@ -148,7 +148,18 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
             val mounted = dev.silage.app.playback.hud.Tracks.parse(mpv.getProperty("track-list") ?: "[]").audio
             nativeAudioId(mounted, ordinal)?.let { mpv.command("set", "aid", it.toString()) }
         }
-        ready.subtitles.forEach { mpv.command(*SubtitleCommands.add(it)) }
+        ready.subtitles.forEach { load ->
+            // Stored on the server while the video comes from its proxy: fetch it with the sign-in first.
+            val usable = if (!load.fetchWithSignIn) load else {
+                val auth = runCatching { mediaAuthHeaders(koin) }.getOrDefault(emptyMap())
+                val file = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    SubtitleFetch.download(load.url, auth, dev.silage.app.XdgPaths.cache.resolve("subtitles"))
+                }
+                file?.let { load.copy(url = it.toString()) }
+            }
+            if (usable != null) mpv.command(*SubtitleCommands.add(usable))
+            else System.err.println("Silage: couldn't download the subtitle \"${load.title}\" from the server")
+        }
         ready.embeddedSubtitleStream?.let { stream ->
             SubtitleCommands.sidForStream(mpv.getProperty("track-list") ?: "[]", stream)?.let { mpv.command("set", "sid", it.toString()) }
         }

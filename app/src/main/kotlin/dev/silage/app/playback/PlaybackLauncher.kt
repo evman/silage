@@ -60,7 +60,12 @@ fun playStart(userData: org.siloserver.silo.model.catalog.LeafItemUserData?, fro
     if (fromStart) null else userData.resumePosition()
 
 /** A subtitle mpv loads from the server (`sub-add`), selected when the profile wants it shown. */
-data class SubtitleLoad(val url: String, val title: String, val language: String?, val select: Boolean)
+data class SubtitleLoad(val url: String, val title: String, val language: String?, val select: Boolean,
+    /**
+     * On the Silo server while the video comes from elsewhere (its proxy): mpv
+     * sends no sign-in there, so Silage downloads it with the sign-in first.
+     */
+    val fetchWithSignIn: Boolean = false)
 
 private fun subtitleTitle(item: PlaybackSubtitleInventoryItemV3): String {
     val language = item.language?.let { java.util.Locale.forLanguageTag(it).getDisplayLanguage(java.util.Locale.ENGLISH).ifBlank { null } }
@@ -209,7 +214,8 @@ class PlaybackLauncher(
             .filter { it.delivery == SUBTITLE_DELIVERY_SIDECAR && it.url != null && !(direct && it.source == "embedded") }
             .map { s ->
                 val link = s.url!!.let { if (it.startsWith("/")) base + it else it }
-                SubtitleLoad(link, subtitleTitle(s), s.language, select = s.trackId == selectedId)
+                SubtitleLoad(link, subtitleTitle(s), s.language, select = s.trackId == selectedId,
+                    fetchWithSignIn = !needsMediaAuth && sameOrigin(link, base))
             }
         val embeddedStream = if (direct) {
             plan.subtitle.inventory.firstOrNull { it.trackId == selectedId && it.source == "embedded" }?.let { sel ->

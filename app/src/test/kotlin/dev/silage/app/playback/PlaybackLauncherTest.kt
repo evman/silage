@@ -100,10 +100,10 @@ class PlaybackLauncherTest {
         assertEquals(PlaybackMeta("Dune", "2021"), r.meta)
     }
 
-    private fun withSubs(delivery: String, selected: String?, embedded: String = "") = SiloJson.decodeFromString(
+    private fun withSubs(delivery: String, selected: String?, embedded: String = "", stream: String = "/v") = SiloJson.decodeFromString(
         PlaybackDecisionResponseV3.serializer(),
         """{"protocol_version":3,"session_id":"s","playback_plan":{"plan_id":"p","delivery":"$delivery",
-            "stream":{"url":"/v","protocol":"hls","headers":{}},"decision_reason":"r",
+            "stream":{"url":"$stream","protocol":"hls","headers":{}},"decision_reason":"r",
             ${selected?.let { "\"selected_tracks\":{\"subtitle\":{\"id\":\"$it\"}}," } ?: ""}
             "subtitle":{"mode":"${if (selected != null) "render" else "off"}"$embedded,"inventory":[
               {"track_id":"e0","combined_index":0,"source":"embedded","language":"en","label":"SUBRIP","delivery":"sidecar","url":"/s/0.vtt?embedded_stream_index=2"},
@@ -123,6 +123,20 @@ class PlaybackLauncherTest {
             r.subtitles,
         )
         assertEquals(null, r.embeddedSubtitleStream)
+    }
+
+    /**
+     * A video from the server's proxy carries no sign-in to mpv, but a subtitle
+     * stored on the server still needs one: Silage fetches those itself.
+     */
+    @Test fun serverSubtitlesOfAProxiedStreamAreFetchedWithTheSignIn() = runTest {
+        val proxied = launcher(response = ApiResult.Success(withSubs("original_http", selected = null,
+            stream = "https://proxy.example/stream/direct/abc"))).launch("m")
+        assertIs<LaunchResult.Ready>(proxied)
+        assertEquals(listOf(true), proxied.subtitles.map { it.fetchWithSignIn })
+        val sameServer = launcher(response = ApiResult.Success(withSubs("original_http", selected = null))).launch("m")
+        assertIs<LaunchResult.Ready>(sameServer)
+        assertEquals(listOf(false), sameServer.subtitles.map { it.fetchWithSignIn }, "mpv already sends the sign-in")
     }
 
     @Test fun directPlayKeepsBuiltInSubtitlesAndLoadsOnlyExternalOnes() = runTest {
