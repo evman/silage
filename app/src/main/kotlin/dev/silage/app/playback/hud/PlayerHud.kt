@@ -13,6 +13,9 @@ import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import dev.silage.app.playback.PlaybackMeta
 import dev.silage.app.playback.PlaybackFullscreen
+import dev.silage.app.playback.SeekThumbnail
+import dev.silage.app.playback.SeekThumbnails
+import dev.silage.app.playback.thumbnailSlot
 import dev.silage.app.playback.VideoSession
 import dev.silage.app.playback.VideoControls
 import dev.silage.player.MpvPlayer
@@ -58,7 +61,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val fullscreenWindow: PlaybackFullscreen? = null,
     private val videoSession: VideoSession = VideoSession(),
     /** Markers to jump past by itself, each once per playback. */
-    private val autoSkip: AutoSkip = AutoSkip(),
+    private val autoSkipDefaults: AutoSkip = AutoSkip(),
     /** Whether a next episode is known yet; while it is, the credits button reads "Next Episode". */
     private val hasNextEpisode: () -> Boolean = { false },
     /** Ends this episode and moves on to the next. */
@@ -81,8 +84,55 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val selectQuality: ((String) -> Unit)? = null,
     /** Told the volume (0–130) and mute after a shortcut changes them, so the next video starts the same. */
     private val onVolumeChange: (volume: Int, muted: Boolean) -> Unit = { _, _ -> },
+    /** Makes the seek bar's previews, given where to send each frame; null shows only the time. */
+    thumbnails: ((onFrame: (SeekThumbnail) -> Unit) -> SeekThumbnails)? = null,
+    /** In a Watch Party, where play, pause and seeks go instead of straight to mpv. */
+    private val party: PartyTransport? = null,
+    /** How subtitles look now, and where a change is kept. */
+    subtitleLook: dev.silage.app.playback.SubtitleStyle = dev.silage.app.playback.SubtitleStyle(),
+    private val onSubtitleLook: (dev.silage.app.playback.SubtitleStyle) -> Unit = {},
+    /** What this profile chose for this show; null when it isn't one. */
+    private val showMemory: dev.silage.app.playback.ShowMemory? = null,
+    /** What to do about repeated buffering; null leaves it alone (a Watch Party, a local file). */
+    private val bufferingPlan: BufferingPlan? = null,
 ) : AutoCloseable {
-    private val ui = mutableStateOf(HudUi(meta = meta, hasSubtitleTools = subtitleTools != null, qualities = if (selectQuality != null) qualities else emptyList()))
+    private val bufferingGuard = BufferingGuard().also { it.started(System.currentTimeMillis()) }
+    private var offerAccept: (() -> Unit)? = null
+    private var offerUntil = 0L
+
+    private fun showOffer(offer: QualityOffer, onAccept: () -> Unit) {
+        offerAccept = onAccept
+        offerUntil = System.currentTimeMillis() + OfferShownMs
+        ui.value = ui.value.copy(qualityOffer = offer)
+    }
+
+    private fun clearOffer() { offerAccept = null; ui.value = ui.value.copy(qualityOffer = null) }
+
+    /** Looks at the player once a frame: enough stops, and it moves to the 1080p copy or asks. */
+    private fun watchBuffering(s: dev.silage.player.PlayerState, now: Long) {
+        val plan = bufferingPlan
+        if (ui.value.qualityOffer != null && now > offerUntil) clearOffer()
+        if (plan == null || !bufferingGuard.update(s.buffering, !s.paused, now)) return
+        if (plan.automatic) plan.switch()
+        else showOffer(QualityOffer("This 4K video keeps stopping to buffer.", "Play in 1080p", "Stay in 4K"), plan.switch)
+    }
+
+    private val clock = HudClock()
+    private val autoSkip: AutoSkip get() = dev.silage.app.playback.autoSkipFor(autoSkipDefaults, ui.value.showAutoSkip)
+    private val previews: SeekThumbnails? = thumbnails?.invoke { frame -> inbox += { ui.value = ui.value.copy(thumbnail = frame) } }
+    /** The preview slot asked for last, so moving within a slot asks nothing more. */
+    private var previewSlot: Double? = null
+    /** The newest pointer move not yet passed on: a fast mouse sends many per frame and only the last matters. */
+    private val pendingMove = java.util.concurrent.atomic.AtomicReference<Triple<Float, Float, Boolean>?>(null)
+    // Reading these from mpv takes its lock, so the 60 Hz loop only asks now and then.
+    private var nextOsdCheck = 0L
+    private var nextBufferCheck = 0L
+    private var cachedW = 0
+    private var cachedH = 0
+    private var cachedFullscreen = false
+
+    private val ui = mutableStateOf(HudUi(meta = meta, hasSubtitleTools = subtitleTools != null, qualities = if (selectQuality != null) qualities else emptyList(),
+        subtitleLook = subtitleLook, hasShowMemory = showMemory != null, showAutoSkip = showMemory?.current?.autoSkip))
     private val visibility = HudVisibility(hideAfterMs = 3_000)
     private val inbox = ConcurrentLinkedQueue<() -> Unit>()
     private val nativeMouseMoved = AtomicBoolean(false)
@@ -94,27 +144,67 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         private set
 
     // HUD-thread state.
-    private var nav = HudNav(hasQuality = ui.value.qualities.isNotEmpty())
+    private var nav = HudNav(hasSleep = party == null)
     private var keyboardFocus = false
 
     private val actions = object : HudActions {
-        override fun togglePause() { mpv.command("cycle", "pause") }
-        override fun seekBy(seconds: Double) { mpv.command("seek", seconds.toString(), "relative+exact") }
-        override fun seekTo(seconds: Double) { mpv.command(*HudCommands.seekTo(seconds)) }
+        override fun answerQualityOffer(accept: Boolean) {
+            val action = offerAccept
+            clearOffer()
+            if (accept) action?.invoke()
+        }
+        override fun uploadSubtitle() {
+            val tools = subtitleTools ?: return
+            nav = nav.copy(menu = HudMenu.None)
+            scope.launch {
+                val file = dev.silage.app.playback.chooseSubtitleFile() ?: return@launch
+                inbox += {
+                    nav = nav.copy(menu = HudMenu.FindSubtitles, menuIndex = 0, menuSize = 0)
+                    setFinder { it.copy(status = "Uploading ${file.fileName}…", busy = true, hits = emptyList()) }
+                }
+                val result = tools.upload(file)
+                inbox += {
+                    result.onSuccess { id ->
+                        setFinder { it.copy(status = "Loading the subtitles…", busy = true) }
+                        tools.use(id)
+                    }.onFailure { e -> setFinder { it.copy(busy = false, status = "Couldn't upload: ${e.message ?: "unknown error"}") } }
+                }
+            }
+        }
+        override fun togglePause() {
+            if (party != null) party.playPause(!mpv.state.value.paused)?.let(::toast) else mpv.command("cycle", "pause")
+        }
+        override fun seekBy(seconds: Double) {
+            bufferingGuard.seeked(System.currentTimeMillis())
+            if (party != null) party.seekTo((mpv.state.value.positionSeconds + seconds).coerceAtLeast(0.0))?.let(::toast)
+            else mpv.command("seek", seconds.toString(), "relative+exact")
+        }
+        override fun seekTo(seconds: Double) {
+            bufferingGuard.seeked(System.currentTimeMillis())
+            if (party != null) party.seekTo(seconds)?.let(::toast) else mpv.command(*HudCommands.seekTo(seconds))
+        }
+        override fun previewAt(seconds: Double?) {
+            val p = previews ?: return
+            val slot = seconds?.let { thumbnailSlot(it, ui.value.duration) }
+            if (slot == previewSlot) return
+            previewSlot = slot
+            if (slot != null) p.request(slot)
+        }
         override fun openMenu(menu: HudMenu) {
             if (nav.menu == menu) {
                 nav = nav.copy(menu = HudMenu.None)
                 return
             }
-            if (menu == HudMenu.Audio || menu == HudMenu.Subtitles) refreshTracks()
+            if (menu == HudMenu.Audio || menu == HudMenu.Subtitles || menu == HudMenu.Playback) refreshTracks()
             val rows = rowsOf(menu)
             nav = nav.copy(menu = menu, menuIndex = rows.indexOfFirst { it }.coerceAtLeast(0), menuSize = rows.size)
         }
         override fun audio(id: Int) {
+            showMemory?.audio(ui.value.tracks.audio.firstOrNull { it.id == id }?.language)
             if (selectSourceAudio != null) selectSourceAudio.invoke(id) else mpv.command(*HudCommands.audio(id))
             refreshTracks(); nav = nav.copy(menu = HudMenu.None)
         }
-        override fun subtitle(id: Int?) { mpv.command(*HudCommands.subtitle(id)); refreshTracks(); nav = nav.copy(menu = HudMenu.None) }
+        override fun subtitle(id: Int?) { showMemory?.subtitle(ui.value.tracks.subtitles.firstOrNull { it.id == id }?.language, off = id == null); mpv.command(*HudCommands.subtitle(id)); refreshTracks(); nav = nav.copy(menu = HudMenu.None) }
         override fun speed(value: Double) {
             mpv.command(*HudCommands.speed(value))
             ui.value = ui.value.copy(speed = value)
@@ -210,6 +300,17 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             nav = nav.copy(menu = HudMenu.None)
             if (choice != SleepChoice.Off) toast("Sleep timer: ${choice.label.replaceFirstChar { it.lowercase() }}")
         }
+        override fun subtitleLook(index: Int, step: Int) {
+            val next = dev.silage.app.playback.SubtitleLookRows.stepped(ui.value.subtitleLook, index, step)
+            next.mpvOptions().forEach { (name, value) -> mpv.setProperty(name, value) }
+            ui.value = ui.value.copy(subtitleLook = next)
+            onSubtitleLook(next)
+        }
+        override fun showAutoSkip(value: Boolean?) {
+            showMemory?.autoSkip(value)
+            ui.value = ui.value.copy(showAutoSkip = value)
+            nav = nav.copy(menu = HudMenu.None)
+        }
         override fun quality(id: String) {
             nav = nav.copy(menu = HudMenu.None)
             selectQuality?.invoke(id)
@@ -225,6 +326,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     /** Which rows of [menu] are selected, in display order. */
     private fun rowsOf(menu: HudMenu): List<Boolean> = when (menu) {
         HudMenu.Audio -> ui.value.tracks.audio.map { it.selected }
+        HudMenu.Playback -> playbackEntries(ui.value).map { false }
+        HudMenu.Picture -> pictureEntries(ui.value).map { false }
         HudMenu.Subtitles -> listOf(ui.value.tracks.subtitles.none { it.selected }) + ui.value.tracks.subtitles.map { it.selected } +
             subtitleExtras(subtitleTools != null, ui.value.finder).map { false }
         HudMenu.FindSubtitles -> ui.value.finder.hits.map { false }
@@ -232,6 +335,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         HudMenu.Speed -> SPEEDS.map { it == ui.value.speed }
         HudMenu.Quality -> ui.value.qualities.map { it.selected }
         HudMenu.Sync -> List(SyncControls.RowCount) { false }
+        HudMenu.SubtitleLook -> List(dev.silage.app.playback.SubtitleLookRows.Count) { false }
+        HudMenu.ThisShow -> ShowAutoSkipChoices.map { it.first == ui.value.showAutoSkip }
         HudMenu.Sleep -> SleepChoice.entries.map { it == ui.value.sleep }
         HudMenu.Video -> List(VideoControls.RowCount) { false }
         HudMenu.Chapters -> Chapter.indexAt(ui.value.chapters, mpv.state.value.positionSeconds).let { current ->
@@ -243,6 +348,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private fun selectRow(menu: HudMenu, index: Int) {
         when (menu) {
             HudMenu.Audio -> ui.value.tracks.audio.getOrNull(index)?.let { actions.audio(it.id) }
+            HudMenu.Playback -> playbackEntries(ui.value).getOrNull(index)?.let { actions.openMenu(it.first) }
+            HudMenu.Picture -> pictureEntries(ui.value).getOrNull(index)?.let { actions.openMenu(it.first) }
             HudMenu.Subtitles -> {
                 val tracks = ui.value.tracks.subtitles
                 when {
@@ -250,6 +357,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                     index - 1 < tracks.size -> actions.subtitle(tracks[index - 1].id)
                     else -> when (subtitleExtras(subtitleTools != null, ui.value.finder).getOrNull(index - 1 - tracks.size)) {
                         SubtitleExtra.Find -> actions.findSubtitles()
+                        SubtitleExtra.Upload -> actions.uploadSubtitle()
                         SubtitleExtra.Ai -> actions.createSubtitles()
                         null -> Unit
                     }
@@ -261,6 +369,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             HudMenu.Quality -> ui.value.qualities.getOrNull(index)?.let { actions.quality(it.id) }
             HudMenu.Sleep -> SleepChoice.entries.getOrNull(index)?.let { actions.sleep(it) }
             HudMenu.Chapters -> actions.chapter(index)
+            HudMenu.ThisShow -> ShowAutoSkipChoices.getOrNull(index)?.let { actions.showAutoSkip(it.first) }
             else -> Unit
         }
     }
@@ -303,6 +412,12 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     /** Opens (or toggles) a menu, as its HUD button would. */
     fun open(menu: HudMenu) { inbox += { visibility.activity(); nav = nav.copy(visible = true); actions.openMenu(menu) } }
 
+    /** A short message over the video, shown even with the HUD hidden. */
+    fun notice(message: String) { inbox += { toast(message) } }
+
+    /** The Watch Party line under the title. */
+    fun partyLine(line: String?) { inbox += { ui.value = ui.value.copy(partyLine = line) } }
+
     /** A key from any source (AWT or mpv). */
     fun key(key: HudKey) {
         inbox += {
@@ -313,6 +428,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             nav = next
             when (effect) {
                 HudEffect.None -> Unit
+                is HudEffect.OpenMenu -> actions.openMenu(effect.menu)
                 HudEffect.Exit -> actions.exit()
                 HudEffect.TogglePause -> actions.togglePause()
                 HudEffect.ToggleFullscreen -> actions.fullscreen()
@@ -320,11 +436,12 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                 is HudEffect.SeekBy -> actions.seekBy(effect.seconds)
                 is HudEffect.SelectRow -> selectRow(effect.menu, effect.index)
                 is HudEffect.AdjustSync -> actions.sync(effect.index, effect.step)
+                is HudEffect.AdjustSubtitleLook -> actions.subtitleLook(effect.index, effect.step)
                 is HudEffect.Volume -> changeVolume(effect.step)
                 HudEffect.Mute -> toggleMute()
                 HudEffect.CycleSubtitles -> cycleSubtitles()
                 HudEffect.CycleAudio -> cycleAudio()
-                is HudEffect.Speed -> nextSpeed(SPEEDS, ui.value.speed, effect.step).let { s ->
+                is HudEffect.Speed -> if (party != null) toast("A Watch Party plays at normal speed") else nextSpeed(SPEEDS, ui.value.speed, effect.step).let { s ->
                     actions.speed(s); toast(if (s == 1.0) "Normal speed" else "Speed ${s}×")
                 }
                 HudEffect.NextEpisode -> if (onNextEpisode != null && hasNextEpisode()) actions.nextEpisode() else toast("No next episode")
@@ -333,17 +450,15 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                 HudEffect.ToggleDolbyVision -> toast(onToggleDolbyVision?.invoke() ?: "Dolby Vision isn't in use", 3_000)
                 is HudEffect.Activate -> when (effect.control) {
                     HudFocus.Skip -> ui.value.skip?.let { if (it.kind == SkipPrompt.Kind.NextEpisode) actions.nextEpisode() else actions.seekTo(it.target) }
+                        ?: actions.answerQualityOffer(true)
                     HudFocus.Seek, HudFocus.PlayPause -> actions.togglePause()
                     HudFocus.Back10 -> actions.seekBy(-10.0)
                     HudFocus.Fwd10 -> actions.seekBy(10.0)
                     HudFocus.Audio -> actions.openMenu(HudMenu.Audio)
-                    HudFocus.Subtitles -> actions.openMenu(HudMenu.Subtitles)
-                    HudFocus.Speed -> actions.openMenu(HudMenu.Speed)
-                    HudFocus.Quality -> actions.openMenu(HudMenu.Quality)
+                    HudFocus.Playback -> actions.openMenu(HudMenu.Playback)
                     HudFocus.Chapters -> actions.openMenu(HudMenu.Chapters)
                     HudFocus.Info -> actions.openMenu(HudMenu.Info)
-                    HudFocus.Video -> actions.openMenu(HudMenu.Video)
-                    HudFocus.Sync -> actions.openMenu(HudMenu.Sync)
+                    HudFocus.Picture -> actions.openMenu(pictureMenu(ui.value))
                     HudFocus.Sleep -> actions.openMenu(HudMenu.Sleep)
                     HudFocus.Fullscreen -> actions.fullscreen()
                 }
@@ -380,14 +495,19 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
 
     /** A press, release or move as fractions (0..1) of the video surface, so the seek bar can be dragged. */
     fun pointerEvent(fx: Float, fy: Float, type: PointerEventType, buttonHeld: Boolean = type == PointerEventType.Press) {
+        if (type == PointerEventType.Move) { pendingMove.set(Triple(fx, fy, buttonHeld)); return }
         inbox += {
-            val b = bitmap
-            if (b != null) {
-                // A release that never arrived (the button was let go elsewhere) must not leave a drag running.
-                if (type == PointerEventType.Move && !buttonHeld && primaryDown) pointerNow(PointerEventType.Release, fx * b.width, fy * b.height)
-                pointerNow(type, fx * b.width, fy * b.height)
-            }
+            flushPointerMove()
+            bitmap?.let { b -> pointerNow(type, fx * b.width, fy * b.height) }
         }
+    }
+
+    private fun flushPointerMove() {
+        val (fx, fy, held) = pendingMove.getAndSet(null) ?: return
+        val b = bitmap ?: return
+        // A release that never arrived (the button was let go elsewhere) must not leave a drag running.
+        if (!held && primaryDown) pointerNow(PointerEventType.Release, fx * b.width, fy * b.height)
+        pointerNow(PointerEventType.Move, fx * b.width, fy * b.height)
     }
 
     /** Pointer input as fractions (0..1) of the video surface, from the Silage window. */
@@ -466,6 +586,11 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         }
     }
 
+    /** After playback moved to the 1080p copy: the way back, for a moment. */
+    fun offerBackTo4k(onBack: () -> Unit) {
+        inbox += { showOffer(QualityOffer("Playing the 1080p version because of buffering.", "Back to 4K"), onBack) }
+    }
+
     /** Shows a short message over the video, as the keyboard shortcuts do. */
     fun notice(message: String, forMs: Long = 1_600) { inbox += { toast(message, forMs) } }
 
@@ -538,7 +663,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         ui.value = ui.value.copy(tracks = mounted.copy(audio = audioRows?.invoke(mounted.audio) ?: mounted.audio))
     }
 
-    private fun isFullscreen() = fullscreenWindow?.active ?: (mpv.getProperty("fullscreen") == "yes")
+    private fun isFullscreen() = fullscreenWindow?.active ?: cachedFullscreen
 
     private fun loop() {
         while (running) {
@@ -553,15 +678,22 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     }
 
     private fun tick() {
-        val w = mpv.getProperty("osd-width")?.toIntOrNull() ?: 0
-        val h = mpv.getProperty("osd-height")?.toIntOrNull() ?: 0
+        val now = System.currentTimeMillis()
+        if (now >= nextOsdCheck) {
+            nextOsdCheck = now + 250
+            cachedW = mpv.getProperty("osd-width")?.toIntOrNull() ?: 0
+            cachedH = mpv.getProperty("osd-height")?.toIntOrNull() ?: 0
+            if (fullscreenWindow == null) cachedFullscreen = mpv.getProperty("fullscreen") == "yes"
+        }
+        val w = cachedW
+        val h = cachedH
         if (w <= 0 || h <= 0) return
         ensureScene(w, h)
         while (true) inbox.poll()?.invoke() ?: break
+        flushPointerMove()
         if (nativeMouseMoved.getAndSet(false)) mousePos()?.let { pointerNow(PointerEventType.Move, it.x, it.y) }
 
         val s = mpv.state.value
-        val now = System.currentTimeMillis()
         // Chapters are known once the file is loaded (it has a duration).
         if (!chaptersLoaded && s.durationSeconds > 0) {
             chaptersLoaded = true
@@ -580,7 +712,9 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         // Hiding keeps the ring on a showing Skip button: Enter presses it.
         if (nav.visible && !visibility.visible(now, s.paused, nav.menu != HudMenu.None))
             nav = nav.copy(visible = false, focus = if (nav.hasSkip) HudFocus.Skip else HudFocus.PlayPause)
-        nav = nav.withSkip(skip != null)
+        watchBuffering(s, now)
+        // A buffering offer takes the Skip button's place: Enter presses it.
+        nav = nav.withSkip(skip != null || ui.value.qualityOffer != null)
         val visible = nav.visible
         hudVisible = visible
         val info = if (nav.menu == HudMenu.Info && now - lastInfoAt > 1_000) {
@@ -589,11 +723,17 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         } else {
             ui.value.info
         }
-        // Quantized so a static HUD doesn't redraw every frame.
+        val duration = knownDuration ?: s.durationSeconds
+        // Rounded so a playing video redraws the whole HUD about once a second, not every frame.
+        if (visible) {
+            clock.position = hudPosition(s.positionSeconds, duration)
+            if (now >= nextBufferCheck) {
+                nextBufferCheck = now + 1_000
+                clock.bufferedTo = kotlin.math.floor(mpv.getProperty("demuxer-cache-time")?.toDoubleOrNull() ?: 0.0)
+            }
+        }
         val next = ui.value.copy(
-            position = if (visible) (s.positionSeconds * 4).toLong() / 4.0 else ui.value.position,
-            duration = knownDuration ?: s.durationSeconds,
-            bufferedTo = if (visible) mpv.getProperty("demuxer-cache-time")?.toDoubleOrNull() ?: 0.0 else ui.value.bufferedTo,
+            duration = duration,
             paused = s.paused,
             buffering = s.buffering,
             visible = visible,
@@ -626,7 +766,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         val (sw, sh) = hudSceneSize(w, h)
         if (host != null && bitmap!!.width == sw && bitmap!!.height == sh) return
         host?.close()
-        host = HudSceneHost(sw, sh, Density(sh / 1080f)) { HudContent(ui.value, actions) }
+        host = HudSceneHost(sw, sh, Density(sh / 1080f)) { HudContent(ui.value, actions, clock) }
         bitmap = Bitmap().apply { allocPixels(ImageInfo(sw, sh, ColorType.BGRA_8888, ColorAlphaType.PREMUL)) }
         native = Memory(sw.toLong() * sh * 4)
     }
@@ -652,6 +792,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         running = false
+        previews?.close()
         scope.cancel()
         thread.join(1_000)
         runCatching { mpv.command("overlay-remove", "0") }

@@ -36,7 +36,10 @@ import dev.silage.app.ui.isActive
 import kotlinx.coroutines.launch
 
 @Composable
-fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit, onChangeServer: () -> Unit) {
+fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit, onChangeServer: () -> Unit,
+    onManage: () -> Unit = {},
+    /** With no server to pick a profile from: the last profile's downloads, if it has any. */
+    onDownloads: () -> Unit = {}, hasDownloads: suspend () -> Boolean = { false }) {
     var state by remember { mutableStateOf<ProfilesState>(ProfilesState.Loading) }
     var profiles by remember { mutableStateOf(emptyList<ProfileRow>()) }
     var pinTarget by remember { mutableStateOf<ProfileRow?>(null) }
@@ -86,6 +89,8 @@ fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit, onChang
                     is ProfilesState.Error -> {
                         Text(s.message, color = Silage.Text2, fontSize = 20.sp)
                         TextLink("Retry") { loadAttempt++ }
+                        val offline by produceState(false) { value = runCatching { hasDownloads() }.getOrDefault(false) }
+                        if (offline) TextLink("Watch downloads", onDownloads)
                     }
                     else -> Row(horizontalArrangement = Arrangement.spacedBy(48.dp)) {
                         profiles.forEachIndexed { i, p ->
@@ -93,6 +98,7 @@ fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit, onChang
                         }
                     }
                 }
+                if (profiles.isNotEmpty()) TextLink("Manage profiles", onManage)
                 TextLink("Change server", onChangeServer)
             } else {
                 PinPad(target, pin, (state as? ProfilesState.PinError)?.message,
@@ -126,7 +132,7 @@ private fun AvatarTile(p: ProfileRow, modifier: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PinPad(target: ProfileRow, pin: String, error: String?, onDigit: (Char) -> Unit, onDelete: () -> Unit, onSubmit: () -> Unit, onCancel: () -> Unit) {
+internal fun PinPad(target: ProfileRow, pin: String, error: String?, onDigit: (Char) -> Unit, onDelete: () -> Unit, onSubmit: () -> Unit, onCancel: () -> Unit) {
     val first = remember { FocusRequester() }
     LaunchedEffect(target.id) { runCatching { first.requestFocus() } }
     Column(

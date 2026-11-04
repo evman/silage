@@ -22,6 +22,7 @@ class CatalogApi(client: HttpClient, private val v2: CatalogV2Api = CatalogV2Api
         namePrefix: String? = null, yearMin: Int? = null, yearMax: Int? = null,
         queryGroups: List<CatalogQueryGroup> = emptyList(), match: String? = null,
         skipTotal: Boolean = false,
+        seek: Int? = null,
     ): ApiResult<CatalogResponse> {
         val groups = queryGroups.toV2Groups().toMutableList()
         val implicit = buildList {
@@ -39,9 +40,12 @@ class CatalogApi(client: HttpClient, private val v2: CatalogV2Api = CatalogV2Api
         }
         return v2.browse(CatalogQueryV2(source = source ?: "query", q = query, type = mediaType,
             libraryId = libraryId?.toString(), sort = sort, order = order, limit = limit ?: 50,
-            namePrefix = namePrefix, groups = groups, match = match, skipTotal = skipTotal), continuation)
+            namePrefix = namePrefix, groups = groups, match = match, skipTotal = skipTotal, seek = seek), continuation)
             .map { it.toCatalogResponse() }
     }
+
+    suspend fun getLetters(libraryId: Int?, queryGroups: List<CatalogQueryGroup>, match: String?, order: String?) =
+        v2.letters(libraryId?.toString(), queryGroups.toV2Groups(), match, order)
 
     suspend fun getAudiobookGroups(libraryId: Int, groupBy: String, sort: String = "name",
         continuation: CatalogContinuationV2? = null, limit: Int? = null, query: String? = null,

@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.History
@@ -104,6 +105,8 @@ fun Sidebar(
     unread: Int = 0,
     /** The server offers media requests to this profile. */
     requestsEnabled: Boolean = false,
+    watchPartyOffered: Boolean = false,
+    downloadsOffered: Boolean = false,
     /** The server has an in-app inbox. */
     notificationsAvailable: Boolean = true,
     /** A newer Silage to install, restart into or download; null shows no entry. */
@@ -141,6 +144,7 @@ fun Sidebar(
                 Entry(Icons.Outlined.Home, "Home", current == Route.Home, open) { go(Route.Home) }
                 Entry(Icons.Outlined.AutoAwesome, "For You", current == Route.ForYou, open) { go(Route.ForYou) }
                 Entry(Icons.Outlined.CalendarMonth, "Calendar", current == Route.Calendar, open) { go(Route.Calendar) }
+                if (watchPartyOffered) Entry(dev.silage.app.watchparty.WatchPartyIcon, "Watch Together", current is Route.WatchParty, open) { go(Route.WatchParty()) }
                 if (requestsEnabled) Entry(Icons.Outlined.AddCircleOutline, "Requests", current == Route.Requests, open) { go(Route.Requests) }
                 if (libraries.isNotEmpty()) Box(Modifier.padding(vertical = 10.dp, horizontal = 12.dp).fillMaxWidth().height(1.dp).background(Silage.Hairline))
                 libraries.filter { it.visible }.forEach { lib ->
@@ -151,6 +155,7 @@ fun Sidebar(
                 Entry(Icons.Outlined.FavoriteBorder, "Favorites", current == Route.Favorites, open) { go(Route.Favorites) }
                 Entry(Icons.Outlined.History, "History", current == Route.History, open) { go(Route.History) }
                 Entry(Icons.Outlined.CollectionsBookmark, "Collections", current == Route.Collections || current is Route.Collection, open) { go(Route.Collections) }
+                if (downloadsOffered) Entry(Icons.Outlined.FileDownload, "Downloads", current == Route.Downloads, open) { go(Route.Downloads) }
             }
             if (notificationsAvailable) {
                 Entry(Icons.Outlined.Notifications, if (unread > 0) "Notifications ($unread)" else "Notifications", current == Route.Notifications, open,

@@ -17,6 +17,13 @@ sealed interface Route {
     data object Calendar : Route
     data object Notifications : Route
     data object Requests : Route
+    /** The Watch Together hub; [host]: a title to host a party with straight away; [invite]: a clicked invitation to offer. */
+    data class WatchParty(val host: org.siloserver.silo.viewmodel.WatchPartyItem? = null,
+        val invite: org.siloserver.silo.watchtogether.WatchPartyInvite? = null) : Route
+    data class PartyLobby(val roomId: String) : Route
+    data object Downloads : Route
+    data object TastePicker : Route
+    data object ManageProfiles : Route
     data object Collections : Route
     data object Settings : Route
     data class Library(val id: Int, val name: String) : Route
@@ -28,7 +35,11 @@ sealed interface Route {
     data class RequestDetail(val mediaType: String, val tmdbId: Int) : Route
     /** [trailer]: a provider trailer (YouTube) played in the same player, rather than a title from the server. */
     data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null, val shuffleId: String? = null,
-        val trailer: Trailer? = null) : Route
+        val trailer: Trailer? = null,
+        /** A Watch Party's room: it decides what plays, and [contentId] only names the page. */
+        val partyRoom: String? = null,
+        /** A finished download's id: plays from this PC, with no server. */
+        val offlineId: String? = null) : Route
 }
 
 /** A trailer to play: the page mpv's YouTube support opens, and its name for the player. */

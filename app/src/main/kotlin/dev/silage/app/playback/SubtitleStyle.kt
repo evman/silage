@@ -10,6 +10,8 @@ import kotlin.math.roundToInt
 enum class SubtitleColor(val wire: String, val label: String, val rgb: String) {
     White("white", "White", "#FFFFFF"),
     Yellow("yellow", "Yellow", "#FFE14D"),
+    Cyan("cyan", "Cyan", "#7FE7FF"),
+    Green("green", "Green", "#9CF07A"),
     ;
 
     companion object {
@@ -80,4 +82,30 @@ data class SubtitleStyle(
             SubtitlePositionPreset.Bottom to "Bottom", SubtitlePositionPreset.LowerThird to "Raised", SubtitlePositionPreset.Top to "Top",
         )
     }
+}
+
+/** The rows of the player's Subtitle look menu. */
+object SubtitleLookRows {
+    const val Count = 5
+    private const val ResetIndex = 4
+
+    private fun <T> List<T>.after(current: T, step: Int): T = this[(indexOf(current) + step).mod(size)]
+
+    /** [style] after moving row [index] by [step]; the last row puts everything back. */
+    fun stepped(style: SubtitleStyle, index: Int, step: Int): SubtitleStyle = when (index) {
+        0 -> style.copy(size = SubtitleStyle.sizeLabels.keys.toList().after(style.size, step))
+        1 -> style.copy(background = SubtitleStyle.backgroundLabels.keys.toList().after(style.background, step))
+        2 -> style.copy(color = SubtitleColor.entries.after(style.color, step))
+        3 -> style.copy(position = SubtitleStyle.positionLabels.keys.toList().after(style.position, step))
+        ResetIndex -> SubtitleStyle()
+        else -> style
+    }
+
+    fun labels(style: SubtitleStyle): List<String> = listOf(
+        "Size · ${SubtitleStyle.sizeLabels[style.size]}",
+        "Background · ${SubtitleStyle.backgroundLabels[style.background]}",
+        "Color · ${style.color.label}",
+        "Position · ${SubtitleStyle.positionLabels[style.position]}",
+        "Reset to default",
+    )
 }

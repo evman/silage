@@ -1,5 +1,6 @@
 package dev.silage.app.playback
 
+import kotlinx.coroutines.swing.Swing
 import dev.silage.app.playback.hud.AiOption
 import dev.silage.app.playback.hud.SubtitleHit
 import dev.silage.app.playback.hud.SubtitleTools
@@ -11,6 +12,17 @@ import org.siloserver.silo.model.subtitles.SubtitleTranslateRequest
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.repository.SubtitlesRepository
 import java.util.Locale
+
+/** Asks Windows or Linux for a subtitle file, over the player. Null when cancelled. */
+internal suspend fun chooseSubtitleFile(): java.nio.file.Path? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Swing) {
+    val owner = java.awt.Window.getWindows().firstOrNull { it.isShowing } as? java.awt.Frame
+    val dialog = java.awt.FileDialog(owner, "Upload a subtitle file", java.awt.FileDialog.LOAD)
+    dialog.setFilenameFilter { _, name -> name.substringAfterLast('.', "").lowercase() in dev.silage.app.server.SubtitleExtensions }
+    dialog.file = "*.srt;*.vtt;*.ass;*.ssa;*.sub"
+    dialog.isVisible = true
+    val name = dialog.file ?: return@withContext null
+    java.nio.file.Path.of(dialog.directory ?: "", name)
+}
 
 /** A two-letter language code ("en") for "en", "eng", "en-US" or "English"; null when unknown. */
 fun languageCode(value: String?): String? {
@@ -69,7 +81,17 @@ class ServerSubtitleTools(
     private val audioLanguage: String?,
     private val profileLanguage: String?,
     private val onUse: (Int) -> Unit,
+    private val extras: dev.silage.app.server.SiloExtras? = null,
 ) : SubtitleTools {
+    override suspend fun upload(file: java.nio.file.Path): Result<Int> {
+        val server = extras ?: return Result.failure(Exception("not available"))
+        val name = file.fileName.toString()
+        val size = runCatching { java.nio.file.Files.size(file) }.getOrElse { return Result.failure(Exception("can't read that file")) }
+        dev.silage.app.server.subtitleFileProblem(name, size)?.let { return Result.failure(Exception(it)) }
+        val bytes = runCatching { java.nio.file.Files.readAllBytes(file) }.getOrElse { return Result.failure(Exception("can't read that file")) }
+        return server.uploadSubtitle(mediaFileId, name, bytes)
+    }
+
     override val searchLabel: String = languages.joinToString(" or ") { languageName(it) }
 
     override suspend fun search(): Result<List<SubtitleHit>> =

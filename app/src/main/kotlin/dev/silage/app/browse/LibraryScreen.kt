@@ -50,12 +50,24 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
     LaunchedEffect(libraryId) {
         (catalog.getFilters(libraryId = libraryId, includeTechnical = true) as? ApiResult.Success)?.let { vocabulary = it.data }
     }
-    val pager = rememberEntry("library:$libraryId:$tab:${if (tab == 0) filters.key else ""}") {
+    // Sorted by title, the A–Z bar jumps: the list then starts at that letter, until cleared.
+    val byTitle = tab == 0 && filters.sort == LibrarySortField.Title
+    var letters by remember(libraryId) { mutableStateOf(emptyList<org.siloserver.silo.network.apiv2.CatalogLetterV2>()) }
+    var jumpLetter by rememberSaveable { mutableStateOf<String?>(null) }
+    var jumpPosition by rememberSaveable { mutableStateOf(0) }
+    var jumpFilters by rememberSaveable { mutableStateOf("") }
+    val jump = jumpLetter?.takeIf { byTitle && jumpFilters == filters.key }
+    LaunchedEffect(libraryId, byTitle, filters.key) {
+        letters = emptyList()
+        if (byTitle) (catalog.letters(libraryId, filters.groups(), filters.match.takeIf { filters.activeCount > 0 }, filters.state.order) as? ApiResult.Success)?.let { letters = it.data }
+    }
+    val pager = rememberEntry("library:$libraryId:$tab:${if (tab == 0) filters.key else ""}:${jump.orEmpty()}") {
         if (tab == 0) {
             val f = filters
+            val seek = jumpPosition.takeIf { jump != null }
             LibraryPager<CatalogContinuationV2> { c ->
                 catalog.browse(libraryId = libraryId, sort = f.state.sort, order = f.state.order, continuation = c, limit = 60,
-                    queryGroups = f.groups(), match = f.match.takeIf { f.activeCount > 0 }).toPage()
+                    queryGroups = f.groups(), match = f.match.takeIf { f.activeCount > 0 }, seek = seek).toPage()
             }
         } else {
             LibraryPager<Unit> {
@@ -76,7 +88,7 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
     Box(Modifier.fillMaxSize()) {
         PageBackdrop(focused)
         // Each tab/sort keeps its own scroll position.
-        key(tab, filters.state.sort) { PosterGrid(
+        key(tab, filters.state.sort, jump) { PosterGrid(
             state,
             onLoadMore = { scope.launch { pager.loadMore() } },
             onRetry = { scope.launch { pager.retry() } },
@@ -97,6 +109,7 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
                                 SortControls(filters, setFilters)
                                 Pill(if (filters.activeCount > 0) "Filters · ${filters.activeCount}" else "Filters", selected = panelOpen || filters.activeCount > 0) { panelOpen = !panelOpen }
                                 shuffle?.let { start -> Pill("Shuffle", onClick = start) }
+                                jump?.let { letter -> Pill("From $letter · Show all", selected = true) { jumpLetter = null } }
                             }
                         }
                         if (tab == 0 && panelOpen) FilterPanel(filters, vocabulary, setFilters)
@@ -104,6 +117,12 @@ fun LibraryScreen(koin: Koin, libraryId: Int, name: String, onOpen: (CardModel) 
                 }
             },
         ) }
+        if (byTitle && letters.isNotEmpty()) LetterBar(letters, jump, Modifier.align(Alignment.CenterEnd).padding(end = 18.dp, top = 16.dp, bottom = 16.dp)) { entry ->
+            jumpPosition = entry.position
+            jumpFilters = filters.key
+            jumpLetter = entry.letter
+            lastFocused = null
+        }
     }
 }
 

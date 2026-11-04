@@ -102,11 +102,17 @@ internal fun withoutRemovedShows(
 
 /** For You: the server's personal recommendation rows, laid out like Home. */
 @Composable
-fun ForYouScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> Unit) {
+fun ForYouScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> Unit, onPickTaste: () -> Unit = {}) {
     val vm = rememberEntryViewModel { org.siloserver.silo.viewmodel.RecommendationsViewModel(koin.get()) }
     val state by vm.uiState.collectAsState()
+    // Back from the picker with new favorites: ask for the rows again.
+    LaunchedEffect(Unit) {
+        val extras = koin.get<dev.silage.app.server.SiloExtras>()
+        if (extras.tasteChanged) { extras.tasteChanged = false; vm.refresh() }
+    }
     SectionRowsScreen(state.sections, state.isLoading, state.error, onRetry = { vm.refresh() },
-        emptyText = "No recommendations yet. Watch a few things and check back.", onOpen = onOpen, onPlay = onPlay)
+        emptyText = "No recommendations yet. Watch a few things and check back.", onOpen = onOpen, onPlay = onPlay,
+        header = { TasteHeader(koin, onPickTaste) })
 }
 
 /** A marquee for the focused card over rows of cards (Home, For You). */
@@ -119,6 +125,8 @@ fun SectionRowsScreen(
     emptyText: String,
     onOpen: (CardModel) -> Unit,
     onPlay: (CardModel) -> Unit,
+    /** Above the rows, and under the empty message when there are none. */
+    header: (@Composable () -> Unit)? = null,
 ) {
     val rows = remember(sections) {
         sections.filter { it.items.isNotEmpty() }.map { section ->
@@ -146,8 +154,15 @@ fun SectionRowsScreen(
         when {
             rows.isEmpty() && isLoading -> { Marquee(marquee); Skeleton() }
             rows.isEmpty() && error != null -> { Marquee(marquee); ErrorState(error, onRetry) }
-            rows.isEmpty() -> { Marquee(marquee); Text(emptyText, color = Silage.Text2, fontSize = 24.sp, modifier = Modifier.align(Alignment.Center)) }
+            rows.isEmpty() -> {
+                Marquee(marquee)
+                Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Text(emptyText, color = Silage.Text2, fontSize = 24.sp)
+                    header?.invoke()
+                }
+            }
             else -> HomeLayout(marquee = { collapse -> FocusedMarquee(focused, marquee, collapse) }, listState = listState) {
+                header?.let { content -> item(key = "header") { content() } }
                 items(rows, key = { it.first.id }) { (section, progress, cards) ->
                     CardRow(
                         section.title, cards,

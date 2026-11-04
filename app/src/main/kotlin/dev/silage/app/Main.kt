@@ -83,6 +83,10 @@ fun main(args: Array<String>) {
         println("${BuildInfo.NAME} ${BuildInfo.VERSION}")
         return
     }
+    // A clicked party link: the Silage already open takes it; otherwise this one starts on it.
+    val appLinks = dev.silage.app.desktop.AppLinkChannel(XdgPaths.state.resolve("app-link"))
+    val inviteLink = dev.silage.app.desktop.inviteLinkIn(args)
+    if (inviteLink != null && appLinks.forward(inviteLink)) return
     val mpv = dev.silage.player.MpvRuntime.check()
     if ("--check" in args) {
         println(mpvCheckLine(mpv))
@@ -109,6 +113,8 @@ fun main(args: Array<String>) {
     }
     val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
     val crashLog = CrashLog()
+    inviteLink?.let { (org.siloserver.silo.watchtogether.parseWatchPartyInvite(it))?.let { invite -> dev.silage.app.desktop.PendingInvite.value.value = invite } }
+    appLinks.listen { invite -> dev.silage.app.desktop.PendingInvite.value.value = invite }
     // Windows opens as a borderless fullscreen window (never AWT's exclusive mode); Settings →
     // Interface → Window → Normal window opens it as a normal window where it was left instead.
     val uiPrefs = koin.get<dev.silage.app.ui.UiPrefs>()
@@ -224,7 +230,8 @@ fun main(args: Array<String>) {
                             // browsers: as the Back key, so open dialogs close first and the player steps back.
                             DisposableEffect(window) {
                                 val backInputs = dev.silage.app.nav.BackInput.install(window)
-                                onDispose { backInputs.close() }
+                                val gamepads = dev.silage.app.input.GamepadInput.install(window)
+                                onDispose { gamepads.close(); backInputs.close() }
                             }
                             // A clicked notification toast: bring the window forward on the inbox.
                             LaunchedEffect(nav) {
@@ -240,9 +247,25 @@ fun main(args: Array<String>) {
                             val ui by profileUi.state.collectAsState()
                             val signedIn = route !in setOf(Route.Connect, Route.SignIn, Route.Profiles)
                             LaunchedEffect(signedIn) { if (signedIn) profileUi.load() else koin.get<dev.silage.app.shell.SidebarStore>().clear() }
+                            // A clicked party link: bring the window forward on it, once a profile is open and nothing is playing.
+                            val pendingInvite by dev.silage.app.desktop.PendingInvite.value.collectAsState()
+                            LaunchedEffect(pendingInvite, signedIn, route is Route.Playing) {
+                                val invite = pendingInvite ?: return@LaunchedEffect
+                                if (windowState.isMinimized) windowState.isMinimized = false
+                                window.toFront(); window.requestFocus()
+                                if (signedIn && route !is Route.Playing) {
+                                    dev.silage.app.desktop.PendingInvite.value.value = null
+                                    nav.go(Route.WatchParty(invite = invite))
+                                }
+                            }
+                            // Finishes interrupted downloads and keeps this profile's list current.
+                            LaunchedEffect(signedIn) { if (signedIn) koin.get<dev.silage.app.downloads.DesktopDownloads>().start() }
                             CompositionLocalProvider(dev.silage.app.settings.LocalProfileUi provides ui) {
                             KeyRoot(route, onBack = nav::back, onQuit = closeSilage,
-                                onFullscreen = { playbackFullscreen.toggle() }, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
+                                onFullscreen = { playbackFullscreen.toggle() }, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) {
+                                EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } }
+                                dev.silage.app.input.OnScreenKeyboardHost()
+                            }
                             }
                         }
                         if (!splashDone) SplashScreen(ready = navigator != null) { splashDone = true }
@@ -385,11 +408,18 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
                     }
                 },
                 select = { id, token -> profiles.selectProfile(id, token) },
+                forgetProfile = { profiles.clearProfile() },
             ),
             onSelected = { nav.root(Route.Home) },
             onChangeServer = { nav.root(Route.Connect) },
+            onManage = { nav.go(Route.ManageProfiles) },
+            // No server to pick a profile from: what's already downloaded still plays.
+            onDownloads = { nav.go(Route.Downloads) },
+            hasDownloads = { koin.get<dev.silage.app.downloads.DesktopDownloads>().hasDownloadsOffline() },
         )
-        is Route.Playing -> PlayingScreen(koin, route.contentId, route.fromStart, route.fileId,
+        is Route.Playing -> if (route.offlineId != null) dev.silage.app.downloads.OfflinePlayingScreen(koin, route.offlineId, onDone = { if (!nav.back()) nav.root(Route.Home) })
+        else if (route.partyRoom != null) dev.silage.app.playback.PartyPlayingScreen(koin, route.partyRoom, onDone = { if (!nav.back()) nav.root(Route.Home) })
+        else PlayingScreen(koin, route.contentId, route.fromStart, route.fileId,
             trailer = route.trailer,
             onDone = { if (!nav.back()) nav.root(Route.Home) },
             shuffleId = route.shuffleId,
@@ -405,14 +435,16 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             CollectionScreen(koin, route.id, route.name, personal = route.personal, onOpen = { nav.go(Route.Detail(it.openTarget)) },
                 onShuffle = { first, shuffleId -> nav.go(Route.Playing(first, shuffleId = shuffleId)) })
         }
-        Route.ForYou -> AppShell(nav, koin, route) {
-            dev.silage.app.home.ForYouScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) })
+        Route.ForYou ->AppShell(nav, koin, route) {
+            dev.silage.app.home.ForYouScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) },
+                onPickTaste = { nav.go(Route.TastePicker) })
         }
         Route.Calendar -> AppShell(nav, koin, route) {
             dev.silage.app.calendar.CalendarScreen(koin, onOpen = { id -> nav.go(Route.Detail(id)) })
         }
         is Route.Detail -> DetailScreen(koin, route.contentId, initialSeason = route.season, focusEpisode = route.episode,
             onPlay = { id, fromStart, fileId -> nav.go(Route.Playing(id, fromStart, fileId)) },
+            onWatchTogether = { item -> nav.go(Route.WatchParty(item)) },
             onPerson = { id, name -> nav.go(Route.Person(id, name)) },
             onShuffle = { first, shuffleId -> nav.go(Route.Playing(first, shuffleId = shuffleId)) },
             onTrailer = { trailer -> nav.go(Route.Playing("trailer:${trailer.url}", trailer = trailer)) },
@@ -423,6 +455,19 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         Route.Search -> AppShell(nav, koin, route) {
             SearchScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onOpenRequest = { type, id -> nav.go(Route.RequestDetail(type, id)) })
         }
+        is Route.WatchParty -> AppShell(nav, koin, route) {
+            dev.silage.app.watchparty.WatchPartyHubScreen(koin, route.host, route.invite, onLobby = { nav.go(Route.PartyLobby(it)) })
+        }
+        Route.TastePicker -> AppShell(nav, koin, route) {
+            dev.silage.app.home.TastePickerScreen(koin, onDone = { if (!nav.back()) nav.root(Route.ForYou) })
+        }
+        Route.ManageProfiles -> dev.silage.app.profiles.ManageProfilesScreen(koin, onDone = { if (!nav.back()) nav.root(Route.Profiles) }, onOwnProfileDeleted = { nav.root(Route.Profiles) })
+        Route.Downloads -> AppShell(nav, koin, route) {
+            dev.silage.app.downloads.DownloadsScreen(koin, onPlay = { id -> nav.go(Route.Playing("offline:$id", offlineId = id)) })
+        }
+        is Route.PartyLobby -> dev.silage.app.watchparty.WatchPartyLobbyScreen(koin, route.roomId,
+            onPlay = { nav.go(Route.Playing("party:${route.roomId}", partyRoom = route.roomId)) },
+            onExit = { nav.replace(Route.WatchParty()) })
         Route.Requests -> AppShell(nav, koin, route) {
             dev.silage.app.requests.RequestsScreen(koin, onOpenLibrary = { nav.go(Route.Detail(it)) },
                 onOpenRequest = { type, id -> nav.go(Route.RequestDetail(type, id)) }, onSearch = { nav.go(Route.Search) })
@@ -439,7 +484,8 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         Route.Favorites -> AppShell(nav, koin, route) { dev.silage.app.browse.FavoritesScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         Route.History -> AppShell(nav, koin, route) { dev.silage.app.browse.HistoryScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }) }
         Route.Settings -> AppShell(nav, koin, route) {
-            SettingsScreen(koin, onSwitchProfile = { nav.root(Route.Profiles) }, onSwitchServer = { nav.root(Route.Connect) }, onSignedOut = { nav.root(Route.SignIn) })
+            SettingsScreen(koin, onSwitchProfile = { nav.root(Route.Profiles) }, onSwitchServer = { nav.root(Route.Connect) }, onSignedOut = { nav.root(Route.SignIn) },
+                onManageProfiles = { nav.go(Route.ManageProfiles) })
         }
     }
 }

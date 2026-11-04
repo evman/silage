@@ -76,7 +76,7 @@ class HudKeysTest {
         val nav = HudNav(menu = HudMenu.Sync, menuIndex = SyncControls.SubtitleIndex, menuSize = SyncControls.RowCount)
         assertEquals(HudEffect.AdjustSync(SyncControls.SubtitleIndex, -1), nav.on(HudKey.Left).second)
         assertEquals(HudEffect.AdjustSync(SyncControls.SubtitleIndex, 1), nav.on(HudKey.Right).second)
-        assertEquals(Sleep, shown.copy(focus = Sync).on(HudKey.Right).first.focus)
+        assertEquals(Sleep, shown.copy(focus = Info).on(HudKey.Right).first.focus)
         assertEquals(Fullscreen, shown.copy(focus = Sleep).on(HudKey.Right).first.focus)
     }
 
@@ -148,7 +148,7 @@ class HudKeysTest {
         assertEquals(Fwd10, shown.on(HudKey.Right).first.focus)
         assertEquals(Back10, shown.on(HudKey.Left).first.focus)
         assertEquals(Back10, shown.copy(focus = Back10).on(HudKey.Left).first.focus)
-        assertEquals(Video, shown.copy(focus = Info).on(HudKey.Right).first.focus)
+        assertEquals(Info, shown.copy(focus = Picture).on(HudKey.Right).first.focus)
         assertEquals(Fullscreen, shown.copy(focus = Fullscreen).on(HudKey.Right).first.focus)
         assertEquals(Audio, shown.copy(focus = Fwd10).on(HudKey.Right).first.focus)
     }

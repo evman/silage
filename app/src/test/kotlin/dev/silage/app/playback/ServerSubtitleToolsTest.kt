@@ -44,9 +44,9 @@ class ServerSubtitleToolsTest {
 
     @Test fun subtitlesMenuExtras() {
         assertEquals(emptyList(), subtitleExtras(false, FinderUi()))
-        assertEquals(listOf(SubtitleExtra.Find), subtitleExtras(true, FinderUi()))
+        assertEquals(listOf(SubtitleExtra.Find, SubtitleExtra.Upload), subtitleExtras(true, FinderUi()))
         val withAi = FinderUi(aiOptions = aiChoices("en", "en"))
-        assertEquals(listOf(SubtitleExtra.Find, SubtitleExtra.Ai), subtitleExtras(true, withAi))
+        assertEquals(listOf(SubtitleExtra.Find, SubtitleExtra.Upload, SubtitleExtra.Ai), subtitleExtras(true, withAi))
         assertEquals("Creating subtitles · 42%", extraLabel(SubtitleExtra.Ai, FinderUi(aiProgress = aiProgressLabel(0.42, ""))))
         assertEquals("Creating subtitles · 100% · aligning", aiProgressLabel(1.7, "aligning"))
     }

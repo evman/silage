@@ -29,6 +29,8 @@ data class PlaybackMeta(
     val seasonNumber: Int? = null,
     val episodeNumber: Int? = null,
     val recap: TimeRange? = null,
+    /** A picture for the system's media controls, when the server sent one with the item. */
+    val artworkUrl: String? = null,
 ) {
     companion object {
         fun of(item: WatchDetail) = PlaybackMeta(
@@ -48,6 +50,7 @@ data class PlaybackMeta(
             seasonNumber = item.seasonNumber,
             episodeNumber = item.episodeNumber,
             recap = item.recap,
+            artworkUrl = item.posterUrl ?: item.backdropUrl,
         )
     }
 }
@@ -112,6 +115,8 @@ sealed interface LaunchResult {
         /** The player's Quality menu (Auto, then the server's rungs), and the row now playing. */
         val qualities: List<org.siloserver.silo.model.playback.PlaybackQualityOption> = emptyList(),
         val activeQuality: String? = null,
+        /** The title's copies, for moving between 4K and 1080p when buffering. */
+        val versions: List<org.siloserver.silo.model.catalog.FileVersion> = emptyList(),
     ) : LaunchResult {
         fun sourcePositionSeconds(playerSeconds: Double): Double = playerSeconds + timelineOffsetSeconds
     }
@@ -135,6 +140,8 @@ class PlaybackLauncher(
     private val languages: () -> LanguagePrefs = { LanguagePrefs() },
     /** Streaming quality and bitrate limit on this PC (Settings → Video). */
     private val quality: () -> QualityPrefs = { QualityPrefs() },
+    /** What this profile chose for a show, on top of [languages]. */
+    private val showPrefs: (seriesId: String) -> dev.silage.app.ui.ShowPrefs? = { null },
 ) {
     /**
      * [fileId]: the copy the user chose on the detail page. Without one (Home,
@@ -145,16 +152,18 @@ class PlaybackLauncher(
         /** A subtitle stored on the server (downloaded or AI-made) to switch on instead of the plan's choice. */
         storedSubtitleId: Int? = null,
         /** A quality picked in the player for this playback, instead of the one in Settings. */
-        qualityPreference: String? = null): LaunchResult {
+        qualityPreference: String? = null,
+        /** A Watch Party's file or a move to 1080p: exactly this copy or nothing, so the server can't swap in another. */
+        fixedFile: Boolean = false): LaunchResult {
         val item = when (val r = detail(contentId)) {
             is ApiResult.Success -> r.data
             is ApiResult.Error -> return LaunchResult.Failed("Couldn't load this item: ${r.message}")
             is ApiResult.NetworkError -> return LaunchResult.Failed("Can't reach the server. Try again.")
         }
-        val chosen = item.versions.firstOrNull { it.fileId == fileId } ?: defaultCopy(item.versions, item.userData?.lastFileId, preferLastPlayed())
+        val chosen = item.versions.firstOrNull { it.fileId == fileId } ?: if (fixedFile) null else defaultCopy(item.versions, item.userData?.lastFileId, preferLastPlayed())
         val playFileId = chosen?.fileId ?: return LaunchResult.Failed("This item has no playable file.")
         val profile = profileId() ?: return LaunchResult.Failed("No profile selected.")
-        val prefs = languages()
+        val prefs = languages().let { base -> item.seriesId?.let(showPrefs)?.let { base.forShow(it) } ?: base }
         // An audio switch in the player names its track; otherwise the preferred language's.
         val preferredAudio = if (audioTrackIndex == null) preferredAudioOrdinal(chosen.audioTracks.orEmpty(), prefs.audio) else null
         val requestedAudio = audioTrackIndex ?: preferredAudio
@@ -173,6 +182,7 @@ class PlaybackLauncher(
             subtitleFidelityPreference = SubtitleFidelityPreference.PRESERVE,
             capabilities = capabilities,
             clientPlaybackContext = context,
+            allowAlternateVersions = if (fixedFile) false else null,
         )
         val decision = when (val r = start(request)) {
             is ApiResult.Success -> r.data
@@ -245,6 +255,7 @@ class PlaybackLauncher(
             versionLabel = listOf(chosen.toOption().short, if (direct) "original file" else "converted by the server").joinToString(" · "),
             qualities = qualityOptions,
             activeQuality = org.siloserver.silo.model.playback.activePlaybackQualityId(qualityOptions, wantedQuality, plan.effectiveRecipe),
+            versions = item.versions,
         )
     }
 }

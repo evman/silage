@@ -21,6 +21,28 @@ class ProfilesPresenterTest {
         assertEquals(listOf("Ann", "Kids"), (presenter().load() as ProfilesState.Loaded).profiles.map { it.name })
     }
 
+    @Test fun aDeletedSavedProfileIsForgottenAndTheListComesBack() = runTest {
+        var saved = true
+        val rows = listOf(ProfileRow("p1", "Ann", hasPin = false))
+        val p = ProfilesPresenter(
+            list = { if (saved) ApiResult.Error(404, "not_found", "Profile not found") else ApiResult.Success(rows) },
+            verifyPin = { _, _ -> ApiResult.Success(null) }, select = { _, _ -> ProfileCommitResult.Committed },
+            forgetProfile = { saved = false },
+        )
+        assertEquals(rows, (p.load() as ProfilesState.Loaded).profiles)
+    }
+
+    @Test fun otherFailuresKeepTheSavedProfile() = runTest {
+        var forgot = false
+        val p = ProfilesPresenter(
+            list = { ApiResult.Error(500, "oops", "Broken") },
+            verifyPin = { _, _ -> ApiResult.Success(null) }, select = { _, _ -> ProfileCommitResult.Committed },
+            forgetProfile = { forgot = true },
+        )
+        assertIs<ProfilesState.Error>(p.load())
+        assertEquals(false, forgot)
+    }
+
     @Test fun onlyASingleProfileIsPickedOnItsOwn() = runTest {
         val one = ProfilesPresenter(list = { ApiResult.Success(listOf(ProfileRow("p1", "Ann", hasPin = false))) },
             verifyPin = { _, _ -> ApiResult.Success(null) }, select = { _, _ -> ProfileCommitResult.Committed })

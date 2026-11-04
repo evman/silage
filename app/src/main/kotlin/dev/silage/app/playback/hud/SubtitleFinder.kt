@@ -17,6 +17,8 @@ interface SubtitleTools {
     suspend fun search(): Result<List<SubtitleHit>>
     /** Stores [hit] on the server; returns its stored subtitle id. */
     suspend fun download(hit: SubtitleHit): Result<Int>
+    /** Stores a subtitle file from this PC; returns its stored subtitle id. */
+    suspend fun upload(file: java.nio.file.Path): Result<Int> = Result.failure(UnsupportedOperationException("not available"))
     /** The AI options this server and profile have; empty when AI subtitles are off. */
     suspend fun aiOptions(): List<AiOption>
     /** Starts AI creation and waits for it; returns the stored subtitle id. */
@@ -37,13 +39,14 @@ data class FinderUi(
 )
 
 /** The extra rows after the tracks in the Subtitles menu. */
-enum class SubtitleExtra { Find, Ai }
+enum class SubtitleExtra { Find, Upload, Ai }
 
 fun subtitleExtras(hasTools: Boolean, finder: FinderUi): List<SubtitleExtra> =
-    if (!hasTools) emptyList() else listOfNotNull(SubtitleExtra.Find, SubtitleExtra.Ai.takeIf { finder.aiOptions.isNotEmpty() || finder.aiProgress != null })
+    if (!hasTools) emptyList() else listOfNotNull(SubtitleExtra.Find, SubtitleExtra.Upload, SubtitleExtra.Ai.takeIf { finder.aiOptions.isNotEmpty() || finder.aiProgress != null })
 
 fun extraLabel(extra: SubtitleExtra, finder: FinderUi): String = when (extra) {
     SubtitleExtra.Find -> "Find subtitles…"
+    SubtitleExtra.Upload -> "Upload a subtitle file…"
     SubtitleExtra.Ai -> finder.aiProgress ?: "Create subtitles with AI…"
 }
 

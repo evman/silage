@@ -58,6 +58,13 @@ Source: "{#AppDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cre
 Name: "{userprograms}\Silage"; Filename: "{app}\silage.exe"; AppUserModelID: "dev.silage.Silage"
 Name: "{userdesktop}\Silage"; Filename: "{app}\silage.exe"; AppUserModelID: "dev.silage.Silage"
 
+[Registry]
+; silo:// links (Watch Party invitations) open Silage. Per-user, removed on uninstall.
+Root: HKCU; Subkey: "Software\Classes\silo"; ValueType: string; ValueName: ""; ValueData: "URL:Silo link"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\silo"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\silo\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\silage.exe,0"
+Root: HKCU; Subkey: "Software\Classes\silo\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\silage.exe"" ""%1"""
+
 [Run]
 Filename: "{app}\silage.exe"; Description: "Start Silage"; Flags: nowait postinstall; Check: ShouldStartSilage
 

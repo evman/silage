@@ -83,6 +83,22 @@ private data class UiPrefsFile(
     val libraryViews: JsonElement? = null,
     /** Download updates in the background; off still checks, and downloads once the update is chosen. */
     val automaticUpdates: Boolean = true,
+    /** The quality asked for when downloading (see DownloadQuality), by wire name. */
+    val downloadQuality: String = "original",
+    /** What repeated buffering does: "auto", "ask" or "off". */
+    val bufferingMode: String = "auto",
+    /** What each profile chose for each show, by "profile|series". */
+    val showPrefs: Map<String, ShowPrefs> = emptyMap(),
+)
+
+/** What a profile chose while watching a show, used for its other episodes. Null fields follow Settings. */
+@Serializable
+data class ShowPrefs(
+    val audio: String? = null,
+    val subtitleMode: String? = null,
+    val subtitle: String? = null,
+    /** Skip this show's intros and recaps by themselves, or never. */
+    val autoSkip: Boolean? = null,
 )
 
 /** Device-only interface preferences in `ui.json`; unreadable files fall back to defaults. */
@@ -200,6 +216,19 @@ class UiPrefs(private val path: Path) {
         val others = (it.libraryViews as? JsonObject).orEmpty()
         it.copy(libraryViews = JsonObject(others + (libraryId.toString() to json.encodeToJsonElement(SavedLibraryView.serializer(), view))))
     }
+
+    var downloadQuality: String
+        get() = read().downloadQuality
+        set(value) = write { it.copy(downloadQuality = value) }
+
+    var bufferingMode: String
+        get() = read().bufferingMode
+        set(value) = write { it.copy(bufferingMode = value) }
+
+
+    fun showPrefs(key: String): ShowPrefs = read().showPrefs[key] ?: ShowPrefs()
+
+    fun updateShowPrefs(key: String, change: (ShowPrefs) -> ShowPrefs) = write { it.copy(showPrefs = it.showPrefs + (key to change(it.showPrefs[key] ?: ShowPrefs()))) }
 
     var subtitleStyle: dev.silage.app.playback.SubtitleStyle
         get() = read().let { dev.silage.app.playback.SubtitleStyle.of(it.subtitleSize, it.subtitleBackground, it.subtitlePosition, it.subtitleColor) }

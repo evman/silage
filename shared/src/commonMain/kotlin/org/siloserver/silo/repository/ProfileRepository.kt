@@ -58,6 +58,10 @@ open class ProfileRepository(
     open suspend fun updateProfile(id: String, request: UpdateProfileRequest): ApiResult<Profile> =
         householdManagement.run { profileApi.updateProfile(id, request, it) }
 
+    /** The same, with fields that can be cleared (a PIN, a rating limit), which a request can't say. */
+    suspend fun patchProfile(id: String, update: org.siloserver.silo.network.apiv2.ProfileUpdate): ApiResult<Profile> =
+        householdManagement.run { profileApi.updateProfile(id, update, it) }
+
     /** Updates the selected profile as itself, even while manage mode is on. */
     suspend fun updateActiveProfile(request: UpdateProfileRequest): ApiResult<Profile> {
         val profileId = getActiveProfileId()

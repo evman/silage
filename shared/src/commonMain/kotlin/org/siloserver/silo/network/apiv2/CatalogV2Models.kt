@@ -28,7 +28,15 @@ data class CatalogQueryV2(
     @SerialName("query_limit") val queryLimit: Int? = null,
     @SerialName("skip_total") val skipTotal: Boolean = false,
     val limit: Int = 50,
+    /** The list position to start from, for the first page only (a jump to a letter). */
+    val seek: Int? = null,
 )
+
+@Serializable
+data class CatalogLetterV2(val letter: String, val count: Int, val position: Int)
+
+@Serializable
+internal data class CatalogLettersWireV2(val letters: List<CatalogLetterV2> = emptyList())
 
 @Serializable
 data class CatalogRuleGroupV2(val match: String, val rules: List<CatalogRuleV2>)

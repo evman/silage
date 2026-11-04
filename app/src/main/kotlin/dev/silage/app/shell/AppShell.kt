@@ -73,7 +73,11 @@ fun AppShell(nav: AppNavigator, koin: Koin, current: Route, content: @Composable
     }
 
     CompositionLocalProvider(dev.silage.app.browse.LocalCardMenu provides menu) {
-        AppShellContent(nav, current, profile, libraries, unread, requestsEnabled, notificationsAvailable = capability?.inApp?.enabled != false,
+        val watchPartyOffered = dev.silage.app.watchparty.rememberWatchPartyOffered(koin)
+        // Also with no server, while there's something saved to play.
+        val saved by remember { koin.get<dev.silage.app.downloads.DesktopDownloads>() }.rows.collectAsState()
+        val downloadsOffered = dev.silage.app.downloads.rememberDownloadsOffered(koin) || saved.isNotEmpty()
+        AppShellContent(nav, current, profile, libraries, unread, requestsEnabled, watchPartyOffered = watchPartyOffered, downloadsOffered = downloadsOffered, notificationsAvailable = capability?.inApp?.enabled != false,
             notice = notice, update = update, content = content)
         updateNotice?.let { UpdateNoticeDialog(it) { updates?.dismissNotice() } }
     }
@@ -82,11 +86,14 @@ fun AppShell(nav: AppNavigator, koin: Koin, current: Route, content: @Composable
 /** Stateless shell seam: navigation chrome can be exercised without a server. */
 @Composable
 internal fun AppShellContent(nav: AppNavigator, current: Route, profile: SidebarProfile?, libraries: List<SidebarLibrary>,
-    unread: Int = 0, requestsEnabled: Boolean = false, notificationsAvailable: Boolean = true, notice: String? = null,
+    unread: Int = 0, requestsEnabled: Boolean = false, watchPartyOffered: Boolean = false, downloadsOffered: Boolean = false, notificationsAvailable: Boolean = true, notice: String? = null,
     update: SidebarUpdate? = null, content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize().background(Silage.Black)) {
-        Box(Modifier.fillMaxSize().padding(start = SidebarRail)) { content() }
-        Sidebar(current, profile, libraries, onGo = nav::go, onProfile = { nav.root(Route.Profiles) }, unread = unread, requestsEnabled = requestsEnabled, notificationsAvailable = notificationsAvailable, update = update)
+        // A row of its own for Back, so the button never covers the page's title.
+        val showBack = nav.liveIds.size > 1 && dev.silage.app.nav.backButtonSharesShell(current)
+        Box(Modifier.fillMaxSize().padding(start = SidebarRail, top = if (showBack) 84.dp else 0.dp)) { content() }
+        if (showBack) dev.silage.app.nav.BackButton({ nav.back() }, Modifier.padding(start = SidebarRail + 24.dp, top = 24.dp))
+        Sidebar(current, profile, libraries, onGo = nav::go, onProfile = { nav.root(Route.Profiles) }, unread = unread, requestsEnabled = requestsEnabled, watchPartyOffered = watchPartyOffered, downloadsOffered = downloadsOffered, notificationsAvailable = notificationsAvailable, update = update)
         androidx.compose.animation.AnimatedVisibility(notice != null, Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 48.dp),
             enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
             // Keeps the last text while fading out.

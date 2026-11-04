@@ -1,6 +1,19 @@
 package dev.silage.app.playback.hud
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
+import dev.silage.app.playback.SeekThumbnail
+import org.siloserver.silo.model.catalog.TimeRange
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,9 +35,6 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Speed
-import androidx.compose.material.icons.outlined.HighQuality
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Subtitles
@@ -38,7 +48,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,8 +67,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
 import kotlin.math.abs
 import androidx.compose.runtime.rememberUpdatedState
 import dev.silage.app.playback.PlaybackMeta
@@ -73,16 +80,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 
-enum class HudMenu { None, Audio, Subtitles, Speed, Quality, Chapters, Info, Video, Sync, Sleep, FindSubtitles, AiSubtitles }
+/** [Playback] groups subtitles, speed and sync; [Picture] groups quality and the video settings. */
+enum class HudMenu { None, Audio, Playback, Subtitles, Speed, Sync, Picture, Quality, Video, Chapters, Info, Sleep, FindSubtitles, AiSubtitles, SubtitleLook, ThisShow }
 
 /** One row of the player's Quality menu: a `quality_preference` [id], its name and bitrate. */
 data class QualityRow(val id: String, val label: String, val detail: String?, val selected: Boolean)
 
 data class HudUi(
     val meta: PlaybackMeta = PlaybackMeta(),
-    val position: Double = 0.0,
     val duration: Double = 0.0,
-    val bufferedTo: Double = 0.0,
     val paused: Boolean = false,
     val buffering: Boolean = false,
     val visible: Boolean = true,
@@ -94,6 +100,8 @@ data class HudUi(
     val speed: Double = 1.0,
     val info: List<Pair<String, String>> = emptyList(),
     val skip: SkipPrompt? = null,
+    /** "Play in 1080p?" or "Back to 4K", after repeated buffering. */
+    val qualityOffer: QualityOffer? = null,
     val chapters: List<Chapter> = emptyList(),
     val video: VideoSettings = VideoSettings(),
     val videoError: String? = null,
@@ -111,9 +119,22 @@ data class HudUi(
     val sleepDetail: String? = null,
     /** A short message from a shortcut ("Volume 70%"), shown for a moment even with the HUD hidden. */
     val toast: String? = null,
+    /** The newest preview frame for the seek bar; null shows only the time. */
+    val thumbnail: SeekThumbnail? = null,
+    /** In a Watch Party: who is here, under the title. Null outside one. */
+    val partyLine: String? = null,
+    /** How subtitles look, changed live from the Playback menu. */
+    val subtitleLook: dev.silage.app.playback.SubtitleStyle = dev.silage.app.playback.SubtitleStyle(),
+    /** This show's own auto-skip choice; null follows Settings. */
+    val showAutoSkip: Boolean? = null,
+    /** The player can remember choices for this show. */
+    val hasShowMemory: Boolean = false,
 )
 
 interface HudActions {
+    fun uploadSubtitle() {}
+    /** Takes the buffering offer on screen, or turns it down. */
+    fun answerQualityOffer(accept: Boolean) {}
     fun togglePause()
     fun seekBy(seconds: Double)
     fun seekTo(seconds: Double)
@@ -140,6 +161,11 @@ interface HudActions {
     /** Nudges the audio ([SyncControls.AudioIndex]) or subtitles later or earlier; [SyncControls.ResetIndex] puts both back. */
     fun sync(index: Int, step: Int) {}
     fun sleep(choice: SleepChoice) {}
+    /** Steps a row of the subtitle look; the last row puts it back to the default. */
+    fun subtitleLook(index: Int, step: Int) {}
+    fun showAutoSkip(value: Boolean?) {}
+    /** The pointer is over this time on the seek bar; null once it has left. */
+    fun previewAt(seconds: Double?) {}
 }
 
 val SPEEDS = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0)
@@ -148,10 +174,14 @@ private val Text = Color(0xFFEDEDED)
 private val Dim = Color.White.copy(alpha = 0.78f)
 private val Amber = Color(0xFFE8B86E)
 private val Panel = Color(0xF2171717)
+private val TrackColor = Color.White.copy(alpha = 0.2f)
+private val BufferedColor = Color.White.copy(alpha = 0.22f)
+private val HighlightColor = Color.White.copy(alpha = 0.26f)
+private val HoverColor = Color.White.copy(alpha = 0.4f)
 
 /** The player HUD, laid out for a 1920×1080 dp canvas (scaled by density). */
 @Composable
-fun HudContent(ui: HudUi, act: HudActions) {
+fun HudContent(ui: HudUi, act: HudActions, clock: HudClock = remember { HudClock() }) {
     Box(Modifier.fillMaxSize()) {
         // Clicking the picture away from an open menu closes it (the controls above still work).
         if (ui.menu != HudMenu.None) Box(Modifier.fillMaxSize().pointerInput(ui.menu) { detectTapGestures { act.openMenu(ui.menu) } })
@@ -164,7 +194,7 @@ fun HudContent(ui: HudUi, act: HudActions) {
                         .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.56f), Color.Black.copy(alpha = 0.82f)))),
                 )
                 UtilityButton(Icons.AutoMirrored.Filled.ArrowBack, Modifier.padding(40.dp), size = 52, onClick = act::exit)
-                BottomHud(ui, act, Modifier.align(Alignment.BottomCenter))
+                BottomHud(ui, act, clock, Modifier.align(Alignment.BottomCenter))
             }
         }
         if (ui.buffering) {
@@ -179,12 +209,32 @@ fun HudContent(ui: HudUi, act: HudActions) {
                     .padding(horizontal = 28.dp, vertical = 14.dp),
             ) { Text(skip.label, color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) }
         }
+        ui.qualityOffer?.takeIf { ui.menu == HudMenu.None && ui.skip == null }?.let { offer ->
+            Column(
+                Modifier.align(Alignment.BottomEnd).padding(end = 64.dp, bottom = if (ui.visible) 200.dp else 72.dp).widthIn(max = 460.dp),
+                horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(offer.message, color = Text, fontSize = 17.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Panel).padding(horizontal = 14.dp, vertical = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    offer.decline?.let { label ->
+                        Box(
+                            Modifier.clip(RoundedCornerShape(10.dp)).background(Panel).clickable { act.answerQualityOffer(false) }
+                                .padding(horizontal = 24.dp, vertical = 14.dp),
+                        ) { Text(label, color = Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) }
+                    }
+                    Box(
+                        Modifier.focusRing(ui.focus == HudFocus.Skip, RoundedCornerShape(12.dp)).clip(RoundedCornerShape(10.dp)).background(Color.White)
+                            .clickable { act.answerQualityOffer(true) }.padding(horizontal = 28.dp, vertical = 14.dp),
+                    ) { Text(offer.accept, color = Color.Black, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+        }
         AnimatedVisibility(
             ui.menu != HudMenu.None && ui.menu != HudMenu.Info,
             Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = 150.dp),
             enter = fadeIn(tween(150)) + slideInVertically { it / 8 },
             exit = fadeOut(tween(150)) + slideOutVertically { it / 8 },
-        ) { Box(Modifier.pointerInput(Unit) { detectTapGestures { } }) { MenuPanel(ui, act) } }
+        ) { Box(Modifier.pointerInput(Unit) { detectTapGestures { } }) { MenuPanel(ui, act, clock) } }
         if (ui.menu == HudMenu.Info) InfoPanel(ui.info, act::copyInfo, Modifier.align(Alignment.TopEnd).padding(40.dp))
         ui.toast?.let { message ->
             Box(Modifier.align(Alignment.TopCenter).padding(top = 64.dp).clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.78f))
@@ -196,22 +246,26 @@ fun HudContent(ui: HudUi, act: HudActions) {
 }
 
 @Composable
-private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
+private fun BottomHud(ui: HudUi, act: HudActions, clock: HudClock, modifier: Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 48.dp).padding(bottom = 36.dp)) {
-        SeekBar(ui.position, ui.duration, ui.bufferedTo, focused = ui.focus == HudFocus.Seek, onSeek = act::seekTo, markers = listOfNotNull(ui.meta.intro, ui.meta.credits).map { it.start })
-        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            TimeLabel(clock, ui.duration, remaining = false)
+            SeekBar(
+                clock, ui.duration, focused = ui.focus == HudFocus.Seek, chapters = ui.chapters, thumbnail = ui.thumbnail,
+                highlights = listOfNotNull(ui.meta.recap, ui.meta.intro, ui.meta.credits),
+                onSeek = act::seekTo, onPreview = act::previewAt, modifier = Modifier.weight(1f),
+            )
+            TimeLabel(clock, ui.duration, remaining = true)
+        }
+        Spacer(Modifier.height(10.dp))
         Box(Modifier.fillMaxWidth()) {
             Column(Modifier.align(Alignment.CenterStart).fillMaxWidth(0.36f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(ui.meta.title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ui.meta.line?.let {
                         Text(it.uppercase(), color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("·", color = Color.White.copy(alpha = 0.25f), fontSize = 13.sp)
                     }
-                    Text(
-                        "${formatTime(ui.position)}  /  ${formatTime(ui.duration)}",
-                        color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp,
-                    )
+                    ui.partyLine?.let { Text(it, color = Amber, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
             }
             Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -220,34 +274,49 @@ private fun BottomHud(ui: HudUi, act: HudActions, modifier: Modifier) {
                 Disc(Icons.Filled.Forward10, primary = false, size = 52, focused = ui.focus == HudFocus.Fwd10) { act.seekBy(10.0) }
             }
             Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                UtilityButton(Icons.AutoMirrored.Outlined.VolumeUp, active = ui.menu == HudMenu.Audio, focused = ui.focus == HudFocus.Audio) { act.openMenu(HudMenu.Audio) }
-                UtilityButton(Icons.Outlined.Subtitles, active = ui.menu == HudMenu.Subtitles, focused = ui.focus == HudFocus.Subtitles) { act.openMenu(HudMenu.Subtitles) }
-                UtilityButton(Icons.Outlined.Speed, active = ui.menu == HudMenu.Speed, focused = ui.focus == HudFocus.Speed) { act.openMenu(HudMenu.Speed) }
-                if (ui.qualities.isNotEmpty()) {
-                    UtilityButton(Icons.Outlined.HighQuality, label = "Quality", active = ui.menu == HudMenu.Quality, focused = ui.focus == HudFocus.Quality) { act.openMenu(HudMenu.Quality) }
-                }
+                UtilityButton(Icons.AutoMirrored.Outlined.VolumeUp, label = "Audio", active = ui.menu == HudMenu.Audio, focused = ui.focus == HudFocus.Audio) { act.openMenu(HudMenu.Audio) }
+                UtilityButton(Icons.Outlined.Subtitles, label = if (ui.partyLine != null) "Subtitles and sync" else "Subtitles, speed and sync",
+                    active = ui.menu in PlaybackMenus, focused = ui.focus == HudFocus.Playback) { act.openMenu(HudMenu.Playback) }
                 if (ui.chapters.isNotEmpty()) {
                     UtilityButton(Icons.Outlined.Bookmarks, label = "Chapters", active = ui.menu == HudMenu.Chapters, focused = ui.focus == HudFocus.Chapters) { act.openMenu(HudMenu.Chapters) }
                 }
-                Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(28.dp).background(Color.White.copy(alpha = 0.14f)))
-                UtilityButton(Icons.Outlined.Info, active = ui.menu == HudMenu.Info, focused = ui.focus == HudFocus.Info) { act.openMenu(HudMenu.Info) }
-                UtilityButton(Icons.Outlined.Tune, label = "Video settings", caption = "Video", active = ui.menu == HudMenu.Video, focused = ui.focus == HudFocus.Video) { act.openMenu(HudMenu.Video) }
-                UtilityButton(Icons.Outlined.Sync, label = "Audio and subtitle sync", caption = "Sync", active = ui.menu == HudMenu.Sync, focused = ui.focus == HudFocus.Sync) { act.openMenu(HudMenu.Sync) }
-                UtilityButton(Icons.Outlined.Bedtime, label = "Sleep timer", caption = "Sleep", active = ui.menu == HudMenu.Sleep || ui.sleep != SleepChoice.Off, focused = ui.focus == HudFocus.Sleep) { act.openMenu(HudMenu.Sleep) }
+                UtilityButton(Icons.Outlined.Tune, label = "Video settings", active = ui.menu in PictureMenus, focused = ui.focus == HudFocus.Picture) { act.openMenu(pictureMenu(ui)) }
+                UtilityButton(Icons.Outlined.Info, label = "Playback info", active = ui.menu == HudMenu.Info, focused = ui.focus == HudFocus.Info) { act.openMenu(HudMenu.Info) }
+                if (ui.partyLine == null) {
+                    UtilityButton(Icons.Outlined.Bedtime, label = "Sleep timer", active = ui.menu == HudMenu.Sleep || ui.sleep != SleepChoice.Off, focused = ui.focus == HudFocus.Sleep) { act.openMenu(HudMenu.Sleep) }
+                }
                 UtilityButton(if (ui.fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
-                    label = if (ui.fullscreen) "Exit fullscreen (F)" else "Enter fullscreen (F)", caption = "Fullscreen", focused = ui.focus == HudFocus.Fullscreen, onClick = act::fullscreen)
+                    label = if (ui.fullscreen) "Exit fullscreen (F)" else "Enter fullscreen (F)", focused = ui.focus == HudFocus.Fullscreen, onClick = act::fullscreen)
             }
         }
     }
 }
 
+/** Elapsed or remaining time beside the seek bar: only this text recomposes as the clock ticks. */
+@Composable
+private fun TimeLabel(clock: HudClock, duration: Double, remaining: Boolean) {
+    val text by remember(duration, remaining) {
+        derivedStateOf { if (remaining) "-" + formatTime((duration - clock.position).coerceAtLeast(0.0)) else formatTime(clock.position) }
+    }
+    Text(
+        text, color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, fontFamily = FontFamily.Monospace,
+        textAlign = if (remaining) TextAlign.Start else TextAlign.End, maxLines = 1, modifier = Modifier.width(88.dp),
+    )
+}
+
 /**
- * The seek bar: a white thumb on the played part that grows under the
- * pointer and can be dragged; a click jumps there; hovering or dragging
- * shows the time at that point above the bar.
+ * The seek bar: a track split at the chapters, with the played part in amber
+ * and marked intros and credits picked out; it thickens under the pointer, a
+ * click jumps there and the thumb can be dragged. Hovering or dragging shows a
+ * preview above the bar. All of it is one Canvas, and the changing values are
+ * read while drawing or placing, so neither the clock nor the pointer recomposes
+ * anything but the preview's text.
  */
 @Composable
-private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, focused: Boolean, onSeek: (Double) -> Unit, markers: List<Double>) {
+private fun SeekBar(
+    clock: HudClock, duration: Double, focused: Boolean, chapters: List<Chapter>, thumbnail: SeekThumbnail?,
+    highlights: List<TimeRange>, onSeek: (Double) -> Unit, onPreview: (Double?) -> Unit, modifier: Modifier = Modifier,
+) {
     var widthPx by remember { mutableIntStateOf(1) }
     var hoverX by remember { mutableStateOf<Float?>(null) }
     var dragFrac by remember { mutableStateOf<Float?>(null) }
@@ -255,12 +324,11 @@ private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, focu
     // player reports it (a network seek takes a moment) instead of jumping
     // back to the old position and forward again.
     var pending by remember { mutableStateOf<Pair<Double, Long>?>(null) }
-    val waiting = pending?.takeIf { (target, at) -> abs(position - target) >= 3.0 && System.currentTimeMillis() - at <= 8_000 }
     // The gesture handlers outlive recompositions: they read the latest values.
     val currentDuration by rememberUpdatedState(duration)
     val currentSeek by rememberUpdatedState(onSeek)
+    val currentPreview by rememberUpdatedState(onPreview)
     fun fracAt(x: Float) = (x / widthPx).coerceIn(0f, 1f)
-    fun frac(v: Double) = if (duration > 0) (v / duration).coerceIn(0.0, 1.0).toFloat() else 0f
     fun seekTo(f: Float) {
         val d = currentDuration
         if (d <= 0) return
@@ -268,18 +336,22 @@ private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, focu
         pending = target to System.currentTimeMillis()
         currentSeek(target)
     }
-    val shown = dragFrac ?: waiting?.let { frac(it.first) } ?: frac(position)
-    val active = hoverX != null || dragFrac != null || focused
-    val barHeight by animateDpAsState(if (active) 8.dp else 5.dp, tween(120))
-    val thumb by animateDpAsState(if (dragFrac != null) 24.dp else if (active) 20.dp else 14.dp, tween(120))
+    val engaged by remember { derivedStateOf { hoverX != null || dragFrac != null } }
+    val dragging by remember { derivedStateOf { dragFrac != null } }
+    val emphasized = engaged || focused
+    val barHeight by animateDpAsState(if (emphasized) 8.dp else 4.dp, tween(120))
+    val thumbSize by animateDpAsState(if (dragging) 22.dp else if (emphasized) 18.dp else 12.dp, tween(120))
+    val edges = remember(chapters, duration) { chapters.map { it.start }.filter { it > 1.0 && it < duration - 1.0 } }
     Box(
-        Modifier.fillMaxWidth().height(40.dp).onSizeChanged { widthPx = it.width.coerceAtLeast(1) }
+        modifier.height(40.dp).onSizeChanged { widthPx = it.width.coerceAtLeast(1) }
             .pointerHoverIcon(PointerIcon.Hand)
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
                         val e = awaitPointerEvent()
-                        hoverX = if (e.type == PointerEventType.Exit) null else e.changes.firstOrNull()?.position?.x
+                        val x = if (e.type == PointerEventType.Exit) null else e.changes.firstOrNull()?.position?.x
+                        hoverX = x
+                        currentPreview(x?.let { currentDuration * fracAt(it) })
                     }
                 }
             }
@@ -289,36 +361,69 @@ private fun SeekBar(position: Double, duration: Double, bufferedTo: Double, focu
                     onDragStart = { o -> dragFrac = fracAt(o.x) },
                     onDragEnd = { dragFrac?.let { seekTo(it) }; dragFrac = null },
                     onDragCancel = { dragFrac = null },
-                ) { change, _ -> change.consume(); dragFrac = fracAt(change.position.x) }
+                ) { change, _ ->
+                    change.consume()
+                    fracAt(change.position.x).let { dragFrac = it; currentPreview(currentDuration * it) }
+                }
             },
-        contentAlignment = Alignment.CenterStart,
     ) {
-        Box(Modifier.fillMaxWidth().height(barHeight).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)))
-        Box(Modifier.fillMaxWidth(frac(bufferedTo)).height(barHeight).clip(CircleShape).background(Color.White.copy(alpha = 0.32f)))
-        Box(Modifier.fillMaxWidth(shown).height(barHeight).clip(CircleShape).background(Amber))
-        markers.forEach { m ->
-            Box(Modifier.fillMaxWidth(frac(m)).height(14.dp)) {
-                Box(Modifier.align(Alignment.CenterEnd).width(2.dp).height(14.dp).background(Color.White.copy(alpha = 0.55f)))
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = barHeight.toPx()
+            val top = (size.height - h) / 2
+            val corner = CornerRadius(h / 2)
+            fun x(seconds: Double) = if (duration > 0) (seconds / duration).coerceIn(0.0, 1.0).toFloat() * w else 0f
+            val waiting = pending?.takeIf { (target, at) -> abs(clock.position - target) >= 3.0 && System.currentTimeMillis() - at <= 8_000 }
+            val played = dragFrac?.let { it * w } ?: waiting?.let { x(it.first) } ?: x(clock.position)
+            val buffered = x(clock.bufferedTo)
+            val hover = hoverX?.coerceIn(0f, w)
+            val gap = 3.dp.toPx()
+            fun fill(from: Float, to: Float, color: Color) {
+                if (to > from) drawRoundRect(color, Offset(from, top), Size(to - from, h), corner)
+            }
+            var start = 0f
+            (edges.map { x(it) } + w).forEach { edge ->
+                val end = if (edge >= w) w else edge - gap
+                fill(start, end, TrackColor)
+                fill(start, minOf(end, buffered), BufferedColor)
+                highlights.forEach { r -> fill(maxOf(start, x(r.start)), minOf(end, x(r.end)), HighlightColor) }
+                if (hover != null && hover > played) fill(maxOf(start, played), minOf(end, hover), HoverColor)
+                fill(start, minOf(end, played), Amber)
+                start = edge
+            }
+            val radius = thumbSize.toPx() / 2
+            val center = Offset(played.coerceIn(0f, w), size.height / 2)
+            drawCircle(Color.Black.copy(alpha = 0.35f), radius + 2.dp.toPx(), center)
+            drawCircle(Color.White, radius, center)
+            if (focused) drawCircle(Amber, radius, center, style = Stroke(3.dp.toPx()))
+        }
+        val previewing by remember { derivedStateOf { hoverX != null || dragFrac != null } }
+        if (previewing && duration > 0) {
+            val seconds by remember(duration) {
+                derivedStateOf { (duration * fracAt(dragFrac?.let { it * widthPx } ?: hoverX ?: 0f)).toLong() }
+            }
+            SeekPreview(seconds.toDouble(), thumbnail, chapters) { width ->
+                ((dragFrac?.let { it * widthPx } ?: hoverX ?: 0f) - width / 2f).toInt().coerceIn(0, (widthPx - width).coerceAtLeast(0))
             }
         }
-        // The thumb, centred on the end of the played part.
-        Box(Modifier.fillMaxWidth(shown).height(thumb)) {
-            Box(
-                Modifier.align(Alignment.CenterEnd).offset(x = thumb / 2).size(thumb)
-                    .shadow(6.dp, CircleShape).clip(CircleShape).background(Color.White)
-                    .then(if (focused) Modifier.border(3.dp, Amber, CircleShape) else Modifier),
-            )
-        }
-        val bubbleAt = dragFrac?.let { it * widthPx } ?: hoverX
-        if (bubbleAt != null && duration > 0) {
-            Box(
-                Modifier.offset {
-                    val w = 84.dp.roundToPx()
-                    IntOffset((bubbleAt - w / 2f).roundToInt().coerceIn(0, (widthPx - w).coerceAtLeast(0)), -46.dp.roundToPx())
-                }.width(84.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.85f))
-                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(8.dp)).padding(vertical = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text(formatTime(duration * fracAt(bubbleAt)), color = Color.White, fontSize = 15.sp, fontFamily = FontFamily.Monospace) }
+    }
+}
+
+/** The card above the seek bar: a frame when one is ready, the time and the chapter there. Placed by [xFor], from its width. */
+@Composable
+private fun SeekPreview(seconds: Double, thumbnail: SeekThumbnail?, chapters: List<Chapter>, xFor: (width: Int) -> Int) {
+    val chapter = chapters.getOrNull(Chapter.indexAt(chapters, seconds))?.title
+    Column(
+        Modifier.layout { measurable, _ ->
+            val card = measurable.measure(Constraints())
+            layout(0, 0) { card.place(xFor(card.width), -card.height - 2.dp.roundToPx()) }
+        }.clip(RoundedCornerShape(10.dp)).background(Color(0xF0101010)).border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(10.dp)),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        thumbnail?.let { Image(it.image, null, Modifier.width(320.dp).height(180.dp), contentScale = ContentScale.Crop) }
+        Column(Modifier.widthIn(min = 84.dp, max = 320.dp).padding(horizontal = 14.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(formatTime(seconds), color = Color.White, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+            chapter?.let { Text(it, color = Dim, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
 }
@@ -335,7 +440,7 @@ private fun Disc(icon: ImageVector, primary: Boolean, size: Int, focused: Boolea
 }
 
 @Composable
-private fun UtilityButton(icon: ImageVector, modifier: Modifier = Modifier, size: Int = 48, active: Boolean = false, focused: Boolean = false, label: String = icon.name.substringAfterLast('.'), caption: String? = null, onClick: () -> Unit) {
+private fun UtilityButton(icon: ImageVector, modifier: Modifier = Modifier, size: Int = 48, active: Boolean = false, focused: Boolean = false, label: String = icon.name.substringAfterLast('.'), onClick: () -> Unit) {
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     Box(
@@ -345,17 +450,17 @@ private fun UtilityButton(icon: ImageVector, modifier: Modifier = Modifier, size
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, null, tint = if (hovered || active || focused) Color.White else Dim, modifier = Modifier.size((size * 0.5).dp))
-        caption?.let { Text(it, color = Dim, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomCenter).offset(y = 12.dp)) }
         if (active) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp).size(5.dp).clip(CircleShape).background(Amber))
     }
 }
 
 @Composable
-private fun MenuPanel(ui: HudUi, act: HudActions) {
+private fun MenuPanel(ui: HudUi, act: HudActions, clock: HudClock) {
     if (ui.menu == HudMenu.Video) { VideoPanel(ui, act); return }
     if (ui.menu == HudMenu.FindSubtitles || ui.menu == HudMenu.AiSubtitles) { FinderPanel(ui, act); return }
     if (ui.menu == HudMenu.Quality) { QualityPanel(ui, act); return }
     if (ui.menu == HudMenu.Sync) { SyncPanel(ui, act); return }
+    if (ui.menu == HudMenu.SubtitleLook) { SubtitleLookPanel(ui, act); return }
     Column(
         Modifier.width(400.dp).heightIn(max = 620.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
             .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
@@ -364,18 +469,21 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
     ) {
         val (title, rows) = when (ui.menu) {
             HudMenu.Audio -> "Audio" to ui.tracks.audio.map { t -> Triple(t.label, t.selected) { act.audio(t.id) } }
+            HudMenu.Playback -> "Playback" to playbackEntries(ui).map { (menu, label) -> Triple(label, false) { act.openMenu(menu) } }
+            HudMenu.Picture -> "Video" to pictureEntries(ui).map { (menu, label) -> Triple(label, false) { act.openMenu(menu) } }
             HudMenu.Subtitles -> "Subtitles" to (
                 listOf(Triple("Off", ui.tracks.subtitles.none { it.selected }) { act.subtitle(null) }) +
                     ui.tracks.subtitles.map { t -> Triple(t.label, t.selected) { act.subtitle(t.id) } } +
                     subtitleExtras(ui.hasSubtitleTools, ui.finder).map { e ->
-                        Triple(extraLabel(e, ui.finder), false) { if (e == SubtitleExtra.Find) act.findSubtitles() else act.createSubtitles() }
+                        Triple(extraLabel(e, ui.finder), false) { when (e) { SubtitleExtra.Find -> act.findSubtitles(); SubtitleExtra.Upload -> act.uploadSubtitle(); SubtitleExtra.Ai -> act.createSubtitles() } }
                     }
                 )
+            HudMenu.ThisShow -> "Auto-skip in this show" to ShowAutoSkipChoices.map { (value, label) -> Triple(label, ui.showAutoSkip == value) { act.showAutoSkip(value) } }
             HudMenu.Speed -> "Speed" to SPEEDS.map { s -> Triple(if (s == 1.0) "Normal" else "${s}×", ui.speed == s) { act.speed(s) } }
             HudMenu.Sleep -> (ui.sleepDetail?.let { "Sleep timer · $it" } ?: "Sleep timer") to
                 SleepChoice.entries.map { c -> Triple(c.label, ui.sleep == c) { act.sleep(c) } }
             HudMenu.Chapters -> {
-                val current = Chapter.indexAt(ui.chapters, ui.position)
+                val current = Chapter.indexAt(ui.chapters, clock.position)
                 "Chapters" to ui.chapters.mapIndexed { i, c -> Triple("${formatTime(c.start)}   ${c.title}", i == current) { act.chapter(i) } }
             }
             else -> "" to emptyList()
@@ -385,6 +493,46 @@ private fun MenuPanel(ui: HudUi, act: HudActions) {
         rows.forEachIndexed { i, (label, selected, onClick) -> MenuRow(label, selected, highlighted = i == ui.menuIndex && ui.focus != null, onClick = onClick) }
     }
 }
+
+/** What the Subtitles button groups, each with its current value. Speed isn't offered in a Watch Party, which plays at the room's pace. */
+internal fun playbackEntries(ui: HudUi): List<Pair<HudMenu, String>> = buildList {
+    add(HudMenu.Subtitles to "Subtitles · ${ui.tracks.subtitles.firstOrNull { it.selected }?.label ?: "Off"}")
+    if (ui.partyLine == null) add(HudMenu.Speed to "Speed · ${if (ui.speed == 1.0) "Normal" else "${ui.speed}×"}")
+    add(HudMenu.Sync to "Sync · ${if (ui.audioDelay == 0.0 && ui.subtitleDelay == 0.0) "In sync" else "Adjusted"}")
+    add(HudMenu.SubtitleLook to "Subtitle look · size, color, position")
+    if (ui.hasShowMemory && ui.partyLine == null) add(HudMenu.ThisShow to "Auto-skip in this show · ${ShowAutoSkipChoices.first { it.first == ui.showAutoSkip }.second}")
+}
+
+/** What the Video button groups. */
+internal fun pictureEntries(ui: HudUi): List<Pair<HudMenu, String>> = listOf(
+    HudMenu.Quality to "Quality · ${ui.qualities.firstOrNull { it.selected }?.label ?: "Auto"}",
+    HudMenu.Video to "Picture · fit, aspect and zoom",
+)
+
+/** The Video button's menu: with no qualities to choose from, there is nothing to group. */
+internal fun pictureMenu(ui: HudUi): HudMenu = if (ui.qualities.isEmpty()) HudMenu.Video else HudMenu.Picture
+
+private val PlaybackMenus = setOf(HudMenu.Playback, HudMenu.Subtitles, HudMenu.Speed, HudMenu.Sync, HudMenu.FindSubtitles, HudMenu.AiSubtitles, HudMenu.SubtitleLook, HudMenu.ThisShow)
+
+/** The choices for a show's intros and recaps. */
+internal val ShowAutoSkipChoices: List<Pair<Boolean?, String>> = listOf(null to "As in Settings", true to "Skip by themselves", false to "Show a Skip button")
+
+/** Size, background, color and position, applied to the playing video as they change. */
+@Composable
+private fun SubtitleLookPanel(ui: HudUi, act: HudActions) {
+    val look = dev.silage.app.playback.SubtitleLookRows
+    Column(
+        Modifier.width(400.dp).clip(RoundedCornerShape(14.dp)).background(Panel)
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp)).padding(vertical = 8.dp),
+    ) {
+        Text("SUBTITLE LOOK", color = Color.White.copy(alpha = 0.55f), fontSize = 13.sp, letterSpacing = 2.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
+        look.labels(ui.subtitleLook).forEachIndexed { i, label ->
+            MenuRow(label, false, highlighted = i == ui.menuIndex && ui.focus != null) { act.subtitleLook(i, 1) }
+        }
+        Text("Shows on the playing subtitles. Files with their own styling keep it, apart from the size.", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
+    }
+}
+private val PictureMenus = setOf(HudMenu.Picture, HudMenu.Quality, HudMenu.Video)
 
 /** The server's qualities for this video, each with its bitrate; picking one restarts playback where it is. */
 @Composable

@@ -26,7 +26,8 @@
 - **Full quality, no transcoding.** Your files play as they are, through mpv with hardware decoding.
 - **Real HDR on Linux.** True HDR output on KDE Plasma, plus [experimental Dolby Vision](docs/DOLBY_VISION.md).
 - **Made for the couch.** Everything works with a remote or arrow keys, Enter and Esc.
-- **Everything you use in Silo.** Libraries, collections, watchlist, requests, notifications, subtitles, Up next and Skip Intro.
+- **Everything you use in Silo.** Libraries, collections, watchlist, ratings, profiles, requests, notifications, subtitles, Up next, Skip Intro and Watch Together.
+- **Watch offline.** Download titles, episodes or whole seasons, where your server allows it.
 - **Updates itself.** New versions are signature-checked and installed with one click.
 
 ## Install
@@ -77,7 +78,22 @@ When a new version is ready, **Update ready** appears in the sidebar, never duri
 | Ctrl + / − / 0 | Interface size | — |
 | Ctrl Q | Quit Silage | Quit Silage |
 
-Media keys work too.
+Media keys work too, and on Windows the system's media overlay shows what's playing with its buttons. The taskbar thumbnail has play controls, and the icon shows the position.
+
+On a text box, a controller's A opens an on-screen keyboard.
+
+**Game controllers** work on the pages and in the player, with Xbox and PlayStation pads on Windows and Linux:
+
+| Button | Browsing | Playing |
+|---|---|---|
+| D-pad / left stick | Move around | Skip 10 s, or move between controls |
+| A / Cross | Open | Press the focused control |
+| B / Circle | Back | Close a menu, then leave the player |
+| X / Square, Menu / Options | — | Play / pause |
+| Y / Triangle | Search | Next subtitle track |
+| Bumpers | — | Skip 10 s |
+| Triggers | — | Volume |
+| View / Create | — | Playback info |
 
 ## Help
 

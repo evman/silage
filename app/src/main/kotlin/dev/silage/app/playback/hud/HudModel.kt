@@ -1,5 +1,7 @@
 package dev.silage.app.playback.hud
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import dev.silage.app.playback.experimentalDvRenderPasses
 
 import kotlinx.serialization.json.Json
@@ -20,6 +22,23 @@ fun formatTime(seconds: Double): String {
     val m = (total % 3600) / 60
     val s = total % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+/**
+ * [position] rounded to what the HUD can show: the clock's whole seconds, or
+ * finer on a clip so short that the bar visibly moves between them. Every change
+ * redraws and copies a full frame, so this sets how often that happens.
+ */
+fun hudPosition(position: Double, duration: Double): Double {
+    val step = (duration / 1800).coerceIn(0.1, 1.0)
+    return kotlin.math.floor(position / step) * step
+}
+
+/** The parts of the seek bar's time that change while playing, read where they are drawn so the HUD isn't recomposed. */
+@androidx.compose.runtime.Stable
+class HudClock {
+    var position by androidx.compose.runtime.mutableDoubleStateOf(0.0)
+    var bufferedTo by androidx.compose.runtime.mutableDoubleStateOf(0.0)
 }
 
 /** Shows the HUD on activity and hides it [hideAfterMs] later, unless paused or in a menu. */
@@ -55,7 +74,7 @@ class CursorAutoHide(private val hideAfterMs: Long = 3_000, now: Long = System.c
     fun hidden(now: Long, hudVisible: Boolean): Boolean = !hudVisible && now - lastMove >= hideAfterMs
 }
 
-data class Track(val id: Int, val label: String, val selected: Boolean)
+data class Track(val id: Int, val label: String, val selected: Boolean, val language: String? = null)
 
 /** A chapter from the file (mpv's `chapter-list`), by start time. */
 data class Chapter(val title: String, val start: Double) {
@@ -85,7 +104,7 @@ data class Tracks(val audio: List<Track>, val subtitles: List<Track>) {
             val all = Json.parseToJsonElement(json).jsonArray.map { it.jsonObject }
             fun of(type: String) = all.filter { it.str("type") == type }
                 .let { if (type == "sub") withoutDuplicateSubtitles(it) else it }
-                .map { t -> Track(t.int("id") ?: 0, label(t, type), t.bool("selected")) }
+                .map { t -> Track(t.int("id") ?: 0, label(t, type), t.bool("selected"), t.str("lang")) }
             Tracks(of("audio"), of("sub"))
         }.getOrDefault(Empty)
 
@@ -175,7 +194,9 @@ enum class HudKey {
     // Ctrl+Q: quits Silage, as it does outside the player.
     Quit,
     // D: Dolby Vision off and on, to compare it with the HDR10 base layer.
-    ToggleDolbyVision;
+    ToggleDolbyVision,
+    // A controller's bumpers: skip wherever the focus is.
+    SkipBack, SkipForward;
 
     companion object {
         fun ofAwt(code: Int): HudKey? = when (code) {
@@ -253,10 +274,12 @@ enum class HudKey {
 }
 
 /** The HUD controls reachable with the arrow keys. */
-enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Subtitles, Speed, Quality, Chapters, Video, Sync, Sleep, Fullscreen, Info }
+enum class HudFocus { Skip, Seek, Back10, PlayPause, Fwd10, Audio, Playback, Chapters, Picture, Info, Sleep, Fullscreen }
 
 sealed interface HudEffect {
     data object None : HudEffect
+    /** Back from a sub-menu: reopen the menu it was chosen from. */
+    data class OpenMenu(val menu: HudMenu) : HudEffect
     data object Exit : HudEffect
     data object TogglePause : HudEffect
     data object ToggleFullscreen : HudEffect
@@ -265,6 +288,7 @@ sealed interface HudEffect {
     data class Activate(val control: HudFocus) : HudEffect
     data class SelectRow(val menu: HudMenu, val index: Int) : HudEffect
     data class AdjustSync(val index: Int, val step: Int) : HudEffect
+    data class AdjustSubtitleLook(val index: Int, val step: Int) : HudEffect
     data class Volume(val step: Int) : HudEffect
     data object Mute : HudEffect
     data object CycleSubtitles : HudEffect
@@ -291,10 +315,10 @@ data class HudNav(
     val fullscreen: Boolean = false,
     /** The Chapters button only exists (and takes focus) when the file has chapters. */
     val hasChapters: Boolean = false,
-    /** Likewise the Quality button, when the server offers qualities. */
-    val hasQuality: Boolean = false,
+    /** A Watch Party has no sleep timer: pausing belongs to the room. */
+    val hasSleep: Boolean = true,
 ) {
-    private val row get() = ROW.filter { (it != HudFocus.Chapters || hasChapters) && (it != HudFocus.Quality || hasQuality) }
+    private val row get() = ROW.filter { (it != HudFocus.Chapters || hasChapters) && (it != HudFocus.Sleep || hasSleep) }
 
     /**
      * A Skip button appearing takes the default focus (Play/Pause) for as long as
@@ -310,6 +334,8 @@ data class HudNav(
     fun on(key: HudKey): Pair<HudNav, HudEffect> {
         if (key == HudKey.Fullscreen) return copy(visible = true) to HudEffect.ToggleFullscreen
         if (key == HudKey.CopyInfo) return this to if (menu == HudMenu.Info) HudEffect.CopyInfo else HudEffect.None
+        if (key == HudKey.SkipBack) return copy(visible = true) to HudEffect.SeekBy(-10.0)
+        if (key == HudKey.SkipForward) return copy(visible = true) to HudEffect.SeekBy(10.0)
         HudKey.shortcut(key)?.let { return this to it }
         if (key == HudKey.Escape) return if (menu != HudMenu.None) copy(menu = HudMenu.None) to HudEffect.None
             else this to HudEffect.Exit
@@ -317,6 +343,8 @@ data class HudNav(
             return this to HudEffect.AdjustVideo(menuIndex, if (key == HudKey.Left) -1 else 1)
         if (menu == HudMenu.Sync && key in listOf(HudKey.Left, HudKey.Right, HudKey.Enter))
             return this to HudEffect.AdjustSync(menuIndex, if (key == HudKey.Left) -1 else 1)
+        if (menu == HudMenu.SubtitleLook && key in listOf(HudKey.Left, HudKey.Right, HudKey.Enter))
+            return this to HudEffect.AdjustSubtitleLook(menuIndex, if (key == HudKey.Left) -1 else 1)
         if (key == HudKey.PlayPause) return copy(visible = true) to HudEffect.TogglePause
         if (key == HudKey.Info) return copy(visible = true, menu = if (menu == HudMenu.Info) HudMenu.None else HudMenu.Info) to HudEffect.None
         if (!visible) return when (key) {
@@ -328,7 +356,7 @@ data class HudNav(
             else -> copy(visible = true, focus = if (hasSkip) HudFocus.Skip else HudFocus.PlayPause) to HudEffect.None
         }
         if (menu != HudMenu.None && menu != HudMenu.Info) return when (key) {
-            HudKey.Back -> copy(menu = HudMenu.None) to HudEffect.None
+            HudKey.Back -> copy(menu = HudMenu.None) to (parentMenu(menu)?.let { HudEffect.OpenMenu(it) } ?: HudEffect.None)
             HudKey.Up -> copy(menuIndex = (menuIndex - 1).coerceAtLeast(0)) to HudEffect.None
             HudKey.Down -> copy(menuIndex = (menuIndex + 1).coerceAtMost((menuSize - 1).coerceAtLeast(0))) to HudEffect.None
             HudKey.Enter -> copy(menu = HudMenu.None) to HudEffect.SelectRow(menu, menuIndex)
@@ -361,8 +389,26 @@ data class HudNav(
     }
 
     companion object {
-        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Subtitles, HudFocus.Speed, HudFocus.Quality, HudFocus.Chapters, HudFocus.Info, HudFocus.Video, HudFocus.Sync, HudFocus.Sleep, HudFocus.Fullscreen)
+        private val ROW = listOf(HudFocus.Back10, HudFocus.PlayPause, HudFocus.Fwd10, HudFocus.Audio, HudFocus.Playback, HudFocus.Chapters, HudFocus.Picture, HudFocus.Info, HudFocus.Sleep, HudFocus.Fullscreen)
     }
+}
+
+/** The menu [menu] was chosen from, which Back returns to; null for a top-level one. */
+fun parentMenu(menu: HudMenu): HudMenu? = when (menu) {
+    HudMenu.Subtitles, HudMenu.Speed, HudMenu.Sync, HudMenu.SubtitleLook, HudMenu.ThisShow -> HudMenu.Playback
+    HudMenu.Quality -> HudMenu.Picture
+    HudMenu.FindSubtitles, HudMenu.AiSubtitles -> HudMenu.Subtitles
+    else -> null
+}
+
+/**
+ * The room owns the transport in a Watch Party: pausing and seeking are requests
+ * it may refuse. Each returns what to tell the viewer, or null if it went through.
+ */
+interface PartyTransport {
+    fun playPause(pause: Boolean): String?
+    /** On the player's clock. */
+    fun seekTo(seconds: Double): String?
 }
 
 /**

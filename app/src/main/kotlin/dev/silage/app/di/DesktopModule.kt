@@ -76,6 +76,41 @@ val desktopModule = module {
     single { org.siloserver.silo.network.apiv2.HistoryRemovalV2Api(get(), get(), get()) }
     single { org.siloserver.silo.network.apiv2.LoginSessionsV2Api(get(), get(), get()) }
     // Updates (see dev.silage.app.update). Resolve these off the UI thread: detecting the install type runs commands.
+    // Watch Together: the shared code owns rooms and sync; these are its platform pieces.
+    single {
+        val tokens = get<TokenManager>()
+        org.siloserver.silo.watchtogether.WatchPartyAvailabilityRepository(
+            roomCapabilities = { scope -> get<org.siloserver.silo.network.api.WatchTogetherApi>().capabilities(scope) },
+            playbackCapabilities = { scope -> get<PlaybackV2Api>().capabilities(scope) },
+            authScopeProvider = { tokens.snapshotCurrentScope() },
+        )
+    }
+    single {
+        val prefs = get<SharedPreferences>()
+        val durable = get<DurableLoginAuthorityProvider>()
+        org.siloserver.silo.watchtogether.RecentWatchParties(
+            // With the rest of the signed-in session; it holds a room code, never a room token.
+            storage = object : org.siloserver.silo.watchtogether.RecentWatchPartyStorage {
+                override fun read() = prefs.getString("watch_party.recent", null)
+                override fun write(value: String?) { prefs.edit().putString("watch_party.recent", value).commit() }
+            },
+            owner = {
+                durable.snapshotDurableLoginAuthority()?.let { a ->
+                    a.scope.profileId?.let { org.siloserver.silo.watchtogether.RecentPartyOwner(a.scope.serverId, a.loginId, it) }
+                }
+            },
+        )
+    }
+    single(createdAtStart = true) {
+        val room = get<org.siloserver.silo.repository.WatchTogetherRepository>()
+        org.siloserver.silo.watchtogether.WatchPartyRecentsRecorder(
+            get(), room.roomSnapshot, room.ended, CoroutineScope(SupervisorJob() + Dispatchers.Default), get(), room.closedByThisDevice,
+        )
+    }
+    single { dev.silage.app.watchparty.PartyPlayerMemory() }
+    single { dev.silage.app.server.SiloExtras(get(), get()) }
+    single<org.siloserver.silo.repository.port.DownloadDeletionPort> { dev.silage.app.downloads.FileDownloadDeletions(XdgPaths.state.resolve("download-deletions.json"), get(), get()) }
+    single { dev.silage.app.downloads.DesktopDownloads(get(), get(), get(), XdgPaths.data.resolve("downloads")) }
     single { dev.silage.app.AppExit() }
     single<InstallType> {
         detectInstallType(

@@ -9,7 +9,7 @@ fun audioMenuTracks(source: List<AudioTrack>, mounted: List<Track>, direct: Bool
     return source.mapIndexed { ordinal, track ->
         val label = listOfNotNull(track.title, track.language, track.codec?.uppercase(), track.channels?.let { "${it}ch" })
             .joinToString(" · ").ifBlank { "Track ${ordinal + 1}" }
-        Track(ordinal, label, ordinal == selectedOrdinal)
+        Track(ordinal, label, ordinal == selectedOrdinal, track.language)
     }
 }
 

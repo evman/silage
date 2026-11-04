@@ -55,11 +55,11 @@ import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.repository.AuthRepository
 import org.siloserver.silo.repository.PersonalDataRepository
 
-private enum class Section(val label: String) { Interface("Interface"), Posters("Posters"), TitlePages("Title pages"), Playback("Playback"), Video("Video"), Subtitles("Subtitles"), Account("Account"), Devices("Devices"), About("About") }
+private enum class Section(val label: String) { Interface("Interface"), HomeScreen("Home screen"), Posters("Posters"), TitlePages("Title pages"), Playback("Playback"), Video("Video"), Subtitles("Subtitles"), Account("Account"), Devices("Devices"), About("About") }
 
 /** Settings: sections on the left, the chosen section's rows on the right. */
 @Composable
-fun SettingsScreen(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServer: () -> Unit, onSignedOut: () -> Unit) {
+fun SettingsScreen(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServer: () -> Unit, onSignedOut: () -> Unit, onManageProfiles: () -> Unit = {}) {
     var section by remember { mutableStateOf(Section.Interface) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
@@ -73,12 +73,13 @@ fun SettingsScreen(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServer: () -
         Box(Modifier.padding(start = 56.dp, top = 112.dp).weight(1f)) {
             when (section) {
                 Section.Interface -> InterfaceSection(koin)
+                Section.HomeScreen -> HomeRowsSection(koin)
                 Section.Posters -> PostersSection(koin)
                 Section.TitlePages -> TitlePagesSection(koin)
                 Section.Playback -> PlaybackSection(koin)
                 Section.Video -> VideoSection(koin)
                 Section.Subtitles -> SubtitlesSection(koin)
-                Section.Account -> AccountSection(koin, onSwitchProfile, onSwitchServer, onSignedOut)
+                Section.Account -> AccountSection(koin, onSwitchProfile, onManageProfiles, onSwitchServer, onSignedOut)
                 Section.Devices -> DevicesSection(koin)
                 Section.About -> AboutSection(koin)
             }
@@ -207,6 +208,14 @@ private fun VideoSection(koin: Koin) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             dev.silage.app.playback.QualityPrefs.Limits.forEach { (kbps, label) ->
                 Pill(label, selected = quality.maxBitrateKbps == kbps) { prefs.quality = quality.copy(maxBitrateKbps = kbps) }
+            }
+        }
+        Spacer(Modifier.height(40.dp))
+        var buffering by remember { mutableStateOf(dev.silage.app.playback.hud.BufferingMode.of(prefs.bufferingMode)) }
+        Heading("Switch to 1080p when 4K buffers", "If a 4K video keeps stopping to buffer and your server has a 1080p version of it, play that version from the same moment. Nothing is converted, and the player offers Back to 4K.")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            dev.silage.app.playback.hud.BufferingMode.entries.forEach { mode ->
+                Pill(mode.label, selected = buffering == mode) { buffering = mode; prefs.bufferingMode = mode.wire }
             }
         }
         Spacer(Modifier.height(40.dp))
@@ -389,7 +398,7 @@ private fun SubtitlesSection(koin: Koin) {
     Column(Modifier.verticalScroll(rememberScrollState())) {
         DefaultSubtitles(languages) { prefs.languages = it }
         Spacer(Modifier.height(40.dp))
-        Heading("Appearance", "How subtitles look on this PC. Changes apply from the next video you play.")
+        Heading("Appearance", "How subtitles look on this PC. Changes apply from the next video you play; in the player, Subtitle look changes them as you watch.")
         SubtitlePreview(style)
         Spacer(Modifier.height(32.dp))
         Heading("Size")
@@ -444,7 +453,7 @@ private fun DefaultSubtitles(languages: dev.silage.app.playback.LanguagePrefs, o
 /** A 16:9 frame with a sample line drawn roughly as mpv will draw it. */
 @Composable
 private fun SubtitlePreview(style: SubtitleStyle) {
-    val textColor = if (style.color == SubtitleColor.Yellow) Color(0xFFFFE14D) else Color.White
+    val textColor = Color(java.lang.Long.parseLong("FF" + style.color.rgb.removePrefix("#"), 16))
     val fontSize = (style.size.pointSize * 0.42).sp
     val shadow = when (style.background) {
         SubtitleBackgroundStylePreset.Shadow -> androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.85f), androidx.compose.ui.geometry.Offset(3f, 3f), 4f)
@@ -471,7 +480,7 @@ private fun SubtitlePreview(style: SubtitleStyle) {
 }
 
 @Composable
-private fun AccountSection(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServer: () -> Unit, onSignedOut: () -> Unit) {
+private fun AccountSection(koin: Koin, onSwitchProfile: () -> Unit, onManageProfiles: () -> Unit, onSwitchServer: () -> Unit, onSignedOut: () -> Unit) {
     val scope = rememberCoroutineScope()
     val rememberedSettings = remember { koin.get<dev.silage.app.signin.RememberSignInSettings>() }
     var remembered by remember { mutableStateOf(rememberedSettings.enabled) }
@@ -484,6 +493,7 @@ private fun AccountSection(koin: Koin, onSwitchProfile: () -> Unit, onSwitchServ
         }
         saveError?.let { Text(it, color = Silage.Error, fontSize = 18.sp) }
         Pill("Switch profile", onClick = onSwitchProfile)
+        Pill("Manage profiles", onClick = onManageProfiles)
         Pill("Switch server", onClick = onSwitchServer)
         Pill("Sign out") { scope.launch {
             if (signOutAccount(

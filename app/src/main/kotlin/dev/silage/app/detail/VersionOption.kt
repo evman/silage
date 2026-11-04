@@ -93,6 +93,35 @@ fun FileVersion.toOption(): VersionOption {
 fun EpisodeFile.toOption(): VersionOption =
     option(fileId, heightOf(resolution, null), if (hdr) "HDR" else null, if (hdr) 1 else 0, codecVideo, channelsName(audioChannels), fileSize, 0, null)
 
+/** Whether this copy is 4K or 1080p, going by width too: a wide film at 3840x1600 is still 4K. */
+private fun FileVersion.resolutionClass(): Int {
+    val track = videoTracks?.firstOrNull()
+    val width = track?.width?.takeIf { it > 0 }
+    val height = heightOf(resolution, track?.height)
+    return when {
+        (width ?: 0) >= 3000 || height >= 2000 -> 2160
+        width != null && width >= 1700 -> 1080
+        width == null && height >= 1000 -> 1080
+        else -> 0
+    }
+}
+
+/** How far two copies' running times may differ and still be the same cut. */
+private const val SameCutSeconds = 60.0
+
+/**
+ * The 1080p copy to fall back on from the 4K copy [fileId], with the same edition and running
+ * time so the position still means the same moment. The smallest, to best stop the buffering.
+ */
+fun hdCopyOf(versions: List<FileVersion>, fileId: Int?): FileVersion? {
+    val playing = versions.firstOrNull { it.fileId == fileId }?.takeIf { it.resolutionClass() == 2160 } ?: return null
+    return versions.filter { copy ->
+        copy.fileId != playing.fileId && copy.resolutionClass() == 1080 && copy.editionRaw.orEmpty() == playing.editionRaw.orEmpty() &&
+            (copy.duration <= 0 || playing.duration <= 0 || kotlin.math.abs(copy.duration - playing.duration) <= SameCutSeconds) &&
+            (copy.fileSize <= 0 || playing.fileSize <= 0 || copy.fileSize < playing.fileSize)
+    }.minByOrNull { it.fileSize.takeIf { size -> size > 0 } ?: Long.MAX_VALUE }
+}
+
 /** Highest quality first. */
 fun List<VersionOption>.sortedBest(): List<VersionOption> = sortedByDescending { it.rank }
 

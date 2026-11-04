@@ -1,5 +1,6 @@
 package dev.silage.app.browse
 
+import dev.silage.app.input.textEntry
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -170,7 +171,9 @@ fun SearchField(text: String, onChange: (String) -> Unit, focusRequester: FocusR
                 textStyle = TextStyle(color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Medium),
                 cursorBrush = SolidColor(Silage.Amber),
                 // A single-line field keeps the arrows for its cursor; Down/Enter go to the results.
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).onPreviewKeyEvent { e ->
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
+                    .textEntry(text, onChange, "Search") { focus.moveFocus(FocusDirection.Down) }
+                    .onPreviewKeyEvent { e ->
                     if (e.type == KeyEventType.KeyDown && (e.key == Key.DirectionDown || e.key == Key.Enter || e.key == Key.NumPadEnter)) {
                         focus.moveFocus(FocusDirection.Down)
                     } else {

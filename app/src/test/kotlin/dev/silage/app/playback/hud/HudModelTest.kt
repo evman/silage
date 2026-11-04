@@ -148,20 +148,32 @@ class HudModelTest {
     }
 
     @Test fun theChaptersButtonIsOnlyAFocusStopWhenThereAreChapters() {
-        val without = HudNav(focus = HudFocus.Speed)
-        assertEquals(HudFocus.Info, without.on(HudKey.Right).first.focus)
-        val with = HudNav(focus = HudFocus.Speed, hasChapters = true)
+        val without = HudNav(focus = HudFocus.Playback)
+        assertEquals(HudFocus.Picture, without.on(HudKey.Right).first.focus)
+        val with = HudNav(focus = HudFocus.Playback, hasChapters = true)
         assertEquals(HudFocus.Chapters, with.on(HudKey.Right).first.focus)
         assertEquals(HudEffect.Activate(HudFocus.Chapters), with.copy(focus = HudFocus.Chapters).on(HudKey.Enter).second)
     }
 
-    @Test fun theQualityButtonIsAFocusStopOnlyWhenTheServerOffersQualities() {
-        assertEquals(HudFocus.Info, HudNav(focus = HudFocus.Speed).on(HudKey.Right).first.focus)
-        val with = HudNav(focus = HudFocus.Speed, hasQuality = true)
-        assertEquals(HudFocus.Quality, with.on(HudKey.Right).first.focus)
-        assertEquals(HudEffect.Activate(HudFocus.Quality), with.copy(focus = HudFocus.Quality).on(HudKey.Enter).second)
-        // From Quality the next stop is Chapters when there are chapters, else Info.
-        assertEquals(HudFocus.Chapters, with.copy(focus = HudFocus.Quality, hasChapters = true).on(HudKey.Right).first.focus)
-        assertEquals(HudFocus.Info, with.copy(focus = HudFocus.Quality).on(HudKey.Right).first.focus)
+    @Test fun backFromAGroupedMenuReturnsToItsGroup() {
+        val sync = HudNav(menu = HudMenu.Sync, menuSize = SyncControls.RowCount)
+        assertEquals(HudEffect.OpenMenu(HudMenu.Playback), sync.on(HudKey.Back).second)
+        assertEquals(HudEffect.OpenMenu(HudMenu.Picture), HudNav(menu = HudMenu.Quality, menuSize = 2).on(HudKey.Back).second)
+        assertEquals(HudEffect.OpenMenu(HudMenu.Subtitles), HudNav(menu = HudMenu.FindSubtitles).on(HudKey.Back).second)
+        assertEquals(HudEffect.None, HudNav(menu = HudMenu.Playback, menuSize = 3).on(HudKey.Back).second)
+        // Escape closes everything at once.
+        assertEquals(HudMenu.None, sync.on(HudKey.Escape).first.menu)
+        assertEquals(HudEffect.None, sync.on(HudKey.Escape).second)
+    }
+
+    @Test fun theGroupsOfferWhatTheVideoAndRoomAllow() {
+        assertEquals(listOf(HudMenu.Subtitles, HudMenu.Speed, HudMenu.Sync, HudMenu.SubtitleLook), playbackEntries(HudUi()).map { it.first })
+        assertEquals(listOf(HudMenu.Subtitles, HudMenu.Sync, HudMenu.SubtitleLook), playbackEntries(HudUi(partyLine = "Together")).map { it.first })
+        assertEquals(HudMenu.Video, pictureMenu(HudUi()))
+        assertEquals(HudMenu.Picture, pictureMenu(HudUi(qualities = listOf(QualityRow("auto", "Auto", null, true)))))
+    }
+
+    @Test fun aWatchPartyHasNoSleepStop() {
+        assertEquals(HudFocus.Fullscreen, HudNav(focus = HudFocus.Info, hasSleep = false).on(HudKey.Right).first.focus)
     }
 }

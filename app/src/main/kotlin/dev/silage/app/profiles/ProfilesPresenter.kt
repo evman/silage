@@ -19,8 +19,18 @@ class ProfilesPresenter(
     private val list: suspend () -> ApiResult<List<ProfileRow>>,
     private val verifyPin: suspend (profileId: String, pin: String) -> ApiResult<String?>,
     private val select: suspend (profileId: String, token: String?) -> ProfileCommitResult,
+    /** Forgets the profile this PC last used. */
+    private val forgetProfile: suspend () -> Unit = {},
 ) {
-    suspend fun load(): ProfilesState = when (val r = list()) {
+    /** The saved profile goes with every request: once it's deleted, the server refuses even the list until it's forgotten. */
+    private suspend fun listWithoutStaleProfile(): ApiResult<List<ProfileRow>> {
+        val first = list()
+        if (first !is ApiResult.Error || first.code != 404) return first
+        forgetProfile()
+        return list()
+    }
+
+    suspend fun load(): ProfilesState = when (val r = listWithoutStaleProfile()) {
         is ApiResult.Success -> ProfilesState.Loaded(r.data)
         is ApiResult.Error -> ProfilesState.Error("Couldn't load profiles: ${r.message}")
         is ApiResult.NetworkError -> ProfilesState.Error("Can't reach the server. Try again.")

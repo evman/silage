@@ -227,7 +227,7 @@ holding isn't available to Silage.
   add Windows DV output.
 - Mostly tested on a single monitor; multi-monitor and mixed-DPI setups have
   had less testing.
-- Watch Together, TV sign-in and offline downloads are not available yet.
+- TV sign-in is not available yet.
 
 ## Building from source
 

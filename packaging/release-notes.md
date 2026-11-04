@@ -28,7 +28,7 @@ compositor is needed. See [setup and validation status](https://github.com/evman
 
 Linux retains native Wayland/Vulkan HDR playback. Windows currently tone-maps HDR
 to SDR. Server features depend on your Silo server's capabilities and profile
-permissions. Watch Together, TV sign-in and offline downloads are not included.
+permissions. TV sign-in is not included.
 
 ### Windows 10/11 x64
 

@@ -32,6 +32,11 @@ class DesktopModuleTest {
         koin.get<PlaybackRepository>()
         koin.get<ServerRegistry>()
         koin.get<HomeViewModel>()
+        koin.get<org.siloserver.silo.watchtogether.WatchPartyAvailabilityRepository>()
+        koin.get<org.siloserver.silo.watchtogether.RecentWatchParties>()
+        koin.get<org.siloserver.silo.watchtogether.RoomSession>()
+        koin.get<dev.silage.app.watchparty.PartyPlayerMemory>()
+        koin.get<dev.silage.app.downloads.DesktopDownloads>()
         assertEquals("EncryptedTokenManagerImpl", koin.get<TokenManager>()::class.simpleName)
     }
 }

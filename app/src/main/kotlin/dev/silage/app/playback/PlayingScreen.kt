@@ -36,6 +36,7 @@ import org.siloserver.silo.repository.PlaybackRepository
 import org.siloserver.silo.repository.ProfileRepository
 import org.siloserver.silo.repository.CatalogRepository
 import org.siloserver.silo.model.catalog.EpisodeListItem
+import org.siloserver.silo.watchtogether.playbackContext
 
 /** How often a converted stream's sign-in headers are renewed (access tokens last longer). */
 private const val MediaAuthRefreshMs = 4 * 60_000L
@@ -50,7 +51,7 @@ internal suspend fun mediaAuthHeaders(koin: Koin): Map<String, String> {
     }
 }
 
-private class Surface(val canvas: Canvas, val wid: Long?)
+internal class Surface(val canvas: Canvas, val wid: Long?)
 
 /** The KDE output under the canvas, to see whether its monitor has HDR on. */
 private fun outputUnder(canvas: Canvas): Output? = runCatching {
@@ -61,7 +62,7 @@ private fun outputUnder(canvas: Canvas): Output? = runCatching {
     KwinOutputs.outputAt(KwinOutputs.parse(config.readText(), origins), p.x + canvas.width / 2, p.y + canvas.height / 2)
 }.getOrNull()
 
-private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, paused: Boolean = false,
+internal fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, paused: Boolean = false,
     fullscreen: PlaybackFullscreen? = null, video: VideoSession = VideoSession(),
     dvAuthorization: DvHelperAuthorization? = null,
     hasNextEpisode: () -> Boolean = { false }, onNextEpisode: (() -> Unit)? = null,
@@ -69,6 +70,17 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     extraOptions: Map<String, String> = emptyMap(),
     /** A quality picked in the player: restart the session with it, at this position. */
     onQuality: ((quality: String, position: Double, paused: Boolean) -> Unit)? = null,
+    /** The room's title revision, in a Watch Party: the room then drives this player. */
+    partyRevision: Long? = null,
+    /** A copy to move to when buffering won't stop, with what to carry over; null stays on this one. */
+    bufferingCopy: org.siloserver.silo.model.catalog.FileVersion? = null,
+    /** Asks before moving to [bufferingCopy], even under Automatically. */
+    askBeforeSwitch: Boolean = false,
+    /** Just moved to 1080p: the 4K copy to offer going back to. */
+    backTo: org.siloserver.silo.model.catalog.FileVersion? = null,
+    /** The subtitle to find again in this copy. */
+    keepSubtitle: dev.silage.app.playback.hud.CarriedSubtitle? = null,
+    onCopy: ((copy: org.siloserver.silo.model.catalog.FileVersion, position: Double, paused: Boolean, subtitle: dev.silage.app.playback.hud.CarriedSubtitle?) -> Unit)? = null,
     onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     // In a normal window (issue #7), HDR video opens in a normal window too.
@@ -98,7 +110,27 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val compositorSession = AtomicReference<ExperimentalDvSession?>()
     // D in the player: Dolby Vision off (HDR10 base layer) to compare.
     val dvComparedOff = java.util.concurrent.atomic.AtomicBoolean(false)
-    val sourceSwitch = !ready.direct && ready.sourceAudio.isNotEmpty()
+    // A restart for a converted stream's audio would drop this viewer out of the room's timing.
+    val sourceSwitch = !ready.direct && ready.sourceAudio.isNotEmpty() && partyRevision == null
+    val partyPlayback = partyRevision?.let { dev.silage.app.watchparty.PartyPlayback(koin.get(), mpv, ready, it) }
+    val prefs = koin.get<dev.silage.app.ui.UiPrefs>()
+    fun restartAt(quality: String, restart: (String, Double, Boolean) -> Unit) {
+        restart(quality, ready.sourcePositionSeconds(mpv.state.value.positionSeconds), mpv.state.value.paused)
+        mpv.command("stop")
+    }
+    val bufferingMode = dev.silage.app.playback.hud.BufferingMode.of(prefs.bufferingMode)
+    fun switchTo(copy: org.siloserver.silo.model.catalog.FileVersion) {
+        val s = mpv.state.value
+        val showing = dev.silage.app.playback.hud.Tracks.parse(mpv.getProperty("track-list") ?: "[]").subtitles
+        onCopy?.invoke(copy, ready.sourcePositionSeconds(s.positionSeconds), s.paused, dev.silage.app.playback.hud.carriedSubtitle(showing))
+        mpv.command("stop")
+    }
+    val bufferingPlan = bufferingCopy?.takeIf { partyRevision == null && onCopy != null && bufferingMode != dev.silage.app.playback.hud.BufferingMode.Off }?.let { copy ->
+        dev.silage.app.playback.hud.BufferingPlan(
+            automatic = bufferingMode == dev.silage.app.playback.hud.BufferingMode.Auto && !askBeforeSwitch,
+            switch = { switchTo(copy) },
+        )
+    }
     // A deadlocked mpv can't be closed and keeps the keyboard: after 20 s of a
     // silent player loop, save a note and restart Silage instead of staying frozen.
     val watchdog = PlaybackWatchdog()
@@ -110,9 +142,15 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     }, "silage-watchdog").apply { isDaemon = true; start() }
     val hud = try { PlayerHud(mpv, ready.meta,
         watchdog = watchdog,
+        bufferingPlan = bufferingPlan,
         fullscreenWindow = if (output is VideoOutput.Embedded) fullscreen else null,
         videoSession = video,
-        autoSkip = koin.get<dev.silage.app.ui.UiPrefs>().let { dev.silage.app.playback.hud.AutoSkip(it.autoSkipIntro, it.autoSkipRecap, it.autoSkipCredits) },
+        // In a party only the room moves playback, so nothing skips by itself.
+        autoSkipDefaults = if (partyRevision != null) dev.silage.app.playback.hud.AutoSkip() else koin.get<dev.silage.app.ui.UiPrefs>().let { dev.silage.app.playback.hud.AutoSkip(it.autoSkipIntro, it.autoSkipRecap, it.autoSkipCredits) },
+        party = partyPlayback?.transport,
+        subtitleLook = koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle,
+        onSubtitleLook = { koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle = it },
+        showMemory = if (partyRevision == null) showMemory(koin, ready.meta.seriesId) else null,
         infoRows = listOfNotNull(ready.versionLabel?.let { "Version" to it }),
         liveInfoRows = {
             if (dvComparedOff.get()) listOf("Dolby Vision" to "Off for comparison (D turns it back on) · HDR10")
@@ -135,11 +173,10 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         audioRows = { mounted -> audioMenuTracks(ready.sourceAudio, mounted, ready.direct, ready.selectedAudioOrdinal) },
         qualities = if (onQuality == null) emptyList() else qualityRows(ready.qualities, ready.activeQuality),
         onVolumeChange = { volume, muted -> koin.get<dev.silage.app.ui.UiPrefs>().playerVolume = volume to muted },
+        // The original file only: jumping around a converted stream would make the server convert elsewhere.
+        thumbnails = if (ready.direct && ready.fileId != null) ({ onFrame -> SeekThumbnails(ready.url, ready.headers, onFrame) }) else null,
         selectQuality = onQuality?.let { restart -> { id: String ->
-            if (id != ready.activeQuality) {
-                restart(id, ready.sourcePositionSeconds(mpv.state.value.positionSeconds), mpv.state.value.paused)
-                mpv.command("stop")
-            }
+            if (id != ready.activeQuality) restartAt(id, restart)
         } },
         selectSourceAudio = if (sourceSwitch) ({ ordinal ->
             if (ordinal != ready.selectedAudioOrdinal && ordinal in ready.sourceAudio.indices) {
@@ -147,7 +184,9 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
                 mpv.command("stop")
             }
         }) else null,
-    ) } catch (t: Throwable) { watchdog.stop(); watching.interrupt(); mpv.close(); steppedAside?.close(); throw t }
+    ) } catch (t: Throwable) { watchdog.stop(); watching.interrupt(); partyPlayback?.close(); mpv.close(); steppedAside?.close(); throw t }
+    partyPlayback?.start(hud)
+    backTo?.let { copy -> hud.offerBackTo4k { switchTo(copy) } }
     // Subscribed before the controller loads the file, so FileLoaded can't be missed.
     // A stream from the server fetches (segments, or byte ranges after a seek)
     // for as long as it plays: renew the sign-in headers before the access
@@ -197,14 +236,35 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
             SubtitleCommands.sidForStream(mpv.getProperty("track-list") ?: "[]", stream)?.let { mpv.command("set", "sid", it.toString()) }
         }
         if (ready.subtitlesOff) mpv.command("set", "sid", "no")
+        dev.silage.app.playback.hud.carriedSubtitleId(keepSubtitle, dev.silage.app.playback.hud.Tracks.parse(mpv.getProperty("track-list") ?: "[]").subtitles)
+            ?.let { mpv.command("set", "sid", it) }
     }
     val canvas = surface?.canvas
     val detach = if (output is VideoOutput.Embedded && canvas != null) attachEmbeddedInput(canvas, hud) else ({})
     // Play/Pause, Next, Previous and Stop on the keyboard, only while this video is open.
-    val mediaKeys: AutoCloseable = if (System.getProperty("os.name").startsWith("Windows"))
-        WindowsMediaKeys { hud.mediaKey(it) }
-    else dev.silage.app.desktop.LinuxMediaSession(mpv.state, hud::mediaKey,
+    val mediaKeys: AutoCloseable = if (System.getProperty("os.name").startsWith("Windows")) {
+        val keys = WindowsMediaKeys { hud.mediaKey(it) }
+        // The Windows media overlay, with what is playing and its buttons.
+        val controls = WindowsMediaControls(
+            window = canvas?.let(javax.swing.SwingUtilities::getWindowAncestor) ?: java.awt.Window.getWindows().firstOrNull { it.isShowing },
+            info = MediaControlsInfo(ready.meta.title, ready.meta.line, ready.meta.artworkUrl),
+            state = mpv.state,
+            onKey = hud::mediaKey,
+            setPaused = { paused -> if (partyPlayback != null) partyPlayback.transport.playPause(paused) else mpv.setPaused(paused) },
+            seekTo = { seconds -> if (partyPlayback != null) partyPlayback.transport.seekTo(seconds) else mpv.seekAbsolute(seconds) },
+        )
+        val setPlaying: (Boolean) -> Unit = { paused -> if (partyPlayback != null) partyPlayback.transport.playPause(paused) else mpv.setPaused(paused) }
+        // The taskbar entry: buttons under its thumbnail and the position on its icon.
+        val taskbar = WindowsTaskbar.open(
+            canvas?.let(javax.swing.SwingUtilities::getWindowAncestor) ?: java.awt.Window.getWindows().firstOrNull { it.isShowing },
+            mpv.state, hud::mediaKey, setPlaying,
+        )
+        AutoCloseable { taskbar.close(); controls.close(); keys.close() }
+    } else dev.silage.app.desktop.LinuxMediaSession(mpv.state, hud::mediaKey,
         command = { mpv.command(*it); Unit }, property = mpv::getProperty, title = ready.meta.title)
+    // A controller drives this player until it closes; then it goes back to the pages.
+    val playerKeys: (dev.silage.app.playback.hud.HudKey) -> Unit = hud::key
+    dev.silage.app.input.GamepadInput.player = playerKeys
     val port = mpv.asOpened()
     val experimentalDv: AutoCloseable? = if (helperRequested || compositorDv) {
         (output as? VideoOutput.OwnWindow)?.screen?.let { screen ->
@@ -220,6 +280,8 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
             if (!closed.compareAndSet(false, true)) return
             watchdog.stop()
             watching.interrupt()
+            if (dev.silage.app.input.GamepadInput.player === playerKeys) dev.silage.app.input.GamepadInput.player = null
+            partyPlayback?.close()
             experimentalDv?.close()
             subtitles.cancel()
             authRefresh?.cancel()
@@ -269,6 +331,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             mediaAuth = { mediaAuthHeaders(koin) },
             languages = { koin.get<dev.silage.app.ui.UiPrefs>().languages },
             quality = { koin.get<dev.silage.app.ui.UiPrefs>().quality },
+            showPrefs = { series -> showMemory(koin, series)?.current },
         )
         // The canvas gets its native window on the next frame; without one in
         // time, mpv falls back to its own fullscreen window.
@@ -311,11 +374,20 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         // before requesting another source ordinal using the existing start API.
         // Also a stored subtitle to switch to (found or AI-made): the new session's plan lists it.
         // Also a quality picked in the player's Quality menu: the session restarts with it, where it was.
-        data class AudioChange(val ordinal: Int?, val position: Double, val paused: Boolean, val storedSubtitle: Int? = null, val quality: String? = null)
+        // Also a move between a title's 4K and 1080p copies when buffering won't stop.
+        data class AudioChange(val ordinal: Int?, val position: Double, val paused: Boolean, val storedSubtitle: Int? = null, val quality: String? = null,
+            val copy: org.siloserver.silo.model.catalog.FileVersion? = null, val from: org.siloserver.silo.model.catalog.FileVersion? = null,
+            val subtitle: dev.silage.app.playback.hud.CarriedSubtitle? = null)
         // Kept for later restarts (an audio switch) so the chosen subtitle stays on.
         var storedSubtitle: Int? = null
         // Kept for later restarts too, so an audio switch doesn't undo a quality picked in the player.
         var chosenQuality: String? = null
+        // The 4K copy while buffering has moved this playback to 1080p.
+        var switchedFrom: org.siloserver.silo.model.catalog.FileVersion? = null
+        // Back to 4K by hand means ask next time; a 1080p copy that failed isn't tried again.
+        var askBeforeSwitch = false
+        var switchFailed = false
+        var lastPosition = 0.0
         val profile = withContext(Dispatchers.IO) { runCatching { koin.get<ProfileRepository>().getActiveProfile() }.getOrNull() }
         val change = java.util.concurrent.atomic.AtomicReference<AudioChange?>(null)
         var requested: AudioChange? = null
@@ -332,7 +404,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
         while (true) {
             var handedBack = false
             val session = PlaybackSession(
-                launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position, storedSubtitle, chosenQuality) },
+                launch = { id -> launcher.launch(id, fromStart, selectedFile, requested?.ordinal, requested?.position, storedSubtitle, chosenQuality, fixedFile = switchedFrom != null) },
                 openPlayer = { ready ->
                     selectedFile = ready.fileId
                     meta = ready.meta
@@ -357,9 +429,19 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
                                 change.compareAndSet(null, AudioChange(ready.selectedAudioOrdinal, ready.sourcePositionSeconds(s.positionSeconds), s.paused, storedSubtitle = id))
                                 mpv.command("stop")
                             },
+                            extras = koin.get(),
                         )
                     } }
                     openMpv(koin, shown, ready, requested?.paused ?: false, fullscreen, video, dvAuthorization, subtitleTools = tools,
+                        // A quality picked in the player is the viewer's own answer to the buffering.
+                        bufferingCopy = dev.silage.app.detail.hdCopyOf(ready.versions, ready.fileId).takeIf { chosenQuality == null && !switchFailed },
+                        askBeforeSwitch = askBeforeSwitch,
+                        backTo = switchedFrom.takeIf { requested?.copy != null },
+                        keepSubtitle = requested?.subtitle,
+                        onCopy = { copy, position, paused, subtitle ->
+                            val audio = dev.silage.app.playback.hud.sameLanguageAudio(ready.sourceAudio, ready.selectedAudioOrdinal, copy.audioTracks.orEmpty())
+                            change.compareAndSet(null, AudioChange(audio, position, paused, copy = copy, from = ready.versions.firstOrNull { it.fileId == ready.fileId }, subtitle = subtitle))
+                        },
                         onQuality = { quality, position, paused ->
                             change.compareAndSet(null, AudioChange(ready.selectedAudioOrdinal, position, paused, quality = quality))
                         },
@@ -369,7 +451,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
                         change.compareAndSet(null, AudioChange(ordinal, position, paused))
                     }
                 },
-                progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
+                progress = { s, pos, paused -> lastPosition = pos; playback.updateProgress(s, pos, paused) },
                 stopSession = { s -> playback.stopPlayback(s) },
                 beforeClose = { outcome ->
                     if (outcome == PlayOutcome.Finished && change.get() == null && !nextRequested.get() && shuffle == null) {
@@ -386,9 +468,31 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
             )
             val outcome = withContext(Dispatchers.IO) { session.play(contentId) }
             if (handedBack) break
+            val previous = requested
             requested = change.getAndSet(null)
             requested?.storedSubtitle?.let { storedSubtitle = it }
             requested?.quality?.let { chosenQuality = it }
+            requested?.copy?.let { copy ->
+                // A stored subtitle belongs to the copy it was made for.
+                storedSubtitle = null
+                if (switchedFrom == null) {
+                    switchedFrom = requested?.from
+                } else {
+                    switchedFrom = null
+                    askBeforeSwitch = true
+                }
+                selectedFile = copy.fileId
+                lastPosition = requested?.position ?: 0.0
+            }
+            // The 1080p copy wouldn't play: carry on in 4K rather than end the film.
+            val from = switchedFrom
+            if (outcome is PlayOutcome.Failed && requested == null && from != null) {
+                switchedFrom = null
+                switchFailed = true
+                selectedFile = from.fileId
+                requested = AudioChange(null, maxOf(lastPosition, previous?.position ?: 0.0), previous?.paused ?: false, subtitle = previous?.subtitle)
+                continue
+            }
             if (outcome is PlayOutcome.Failed) { fullscreen?.leave(); error = outcome.message; break }
             if (requested == null && shuffle != null) {
                 if (outcome is PlayOutcome.Completed) {
@@ -463,3 +567,61 @@ internal fun PlaybackFailure(message: String, onDone: () -> Unit) {
 /** The player's Quality menu rows: the plan's options, with the one playing marked. */
 internal fun qualityRows(options: List<org.siloserver.silo.model.playback.PlaybackQualityOption>, active: String?): List<dev.silage.app.playback.hud.QualityRow> =
     options.map { dev.silage.app.playback.hud.QualityRow(it.id, it.name, it.bitrateLabel, selected = it.id == active) }
+
+/**
+ * The player for a Watch Party's current title: the room's exact file, from the
+ * room's position, paused until the room says to play. Leaving it keeps the
+ * membership; a new title from the host restarts it.
+ */
+@Composable
+fun PartyPlayingScreen(koin: Koin, roomId: String, onDone: () -> Unit) {
+    val repository = remember { koin.get<org.siloserver.silo.repository.WatchTogetherRepository>() }
+    val room by repository.roomSnapshot.collectAsState()
+    val fullscreen = LocalPlaybackFullscreen.current
+    val video = remember(roomId) { VideoSession() }
+    DisposableEffect(fullscreen, roomId) { onDispose { fullscreen?.leave() } }
+    LaunchedEffect(Unit) { runCatching { dev.silage.app.ui.Images.loader.memoryCache?.trimToSize(48L shl 20) } }
+    var error by remember { mutableStateOf<String?>(null) }
+    val surface = remember { CompletableDeferred<Surface>() }
+    // Only a new title or file restarts the player; positions and members change constantly.
+    val context = room?.takeIf { it.roomId == roomId }?.let { Triple(it.selectionRevision, it.selectedContentId, it.selectedFileId) }
+    if (error == null) VideoSurface(onReady = { canvas, wid -> surface.complete(Surface(canvas, wid)) })
+    // The room left playback (back to its lobby, or over): this screen's job is done.
+    LaunchedEffect(room?.phase, room == null) {
+        val r = room
+        if (r == null || r.roomId != roomId || r.phase != org.siloserver.silo.model.watchtogether.RoomPhase.Playing) { fullscreen?.leave(); onDone() }
+    }
+    LaunchedEffect(context) {
+        val snapshot = room ?: return@LaunchedEffect
+        val play = with(snapshot) { playbackContext() } ?: return@LaunchedEffect
+        val details = koin.get<WatchDetailV2Api>()
+        val playback = koin.get<PlaybackRepository>()
+        val launcher = PlaybackLauncher(
+            detail = { id ->
+                val owner = details.capture() ?: return@PlaybackLauncher ApiResult.Error(401, "no_scope", "Not signed in")
+                details.detail(id, owner)
+            },
+            start = { req -> playback.startPlaybackV3(req).also { if (it is ApiResult.Success) PlaybackLog.record(it.data) } },
+            profileId = { koin.get<ProfileRepository>().getActiveProfileId() },
+            serverUrl = { koin.get<TokenManager>().getServerUrl() },
+            mediaAuth = { mediaAuthHeaders(koin) },
+            languages = { koin.get<dev.silage.app.ui.UiPrefs>().languages },
+            quality = { koin.get<dev.silage.app.ui.UiPrefs>().quality },
+        )
+        val shown = withTimeoutOrNull(3_000) { surface.await() }
+        val session = PlaybackSession(
+            launch = { id -> launcher.launch(id, fileId = play.fileId, positionSeconds = play.positionSeconds, fixedFile = true) },
+            openPlayer = { ready ->
+                // keep-open holds the last frame: the room decides what happens after the end.
+                openMpv(koin, shown, ready, play.paused, fullscreen, video, extraOptions = mapOf("keep-open" to "yes"), partyRevision = play.selectionRevision) { _, _, _ -> }
+            },
+            progress = { s, pos, paused -> playback.updateProgress(s, pos, paused) },
+            stopSession = { s -> playback.stopPlayback(s) },
+        )
+        when (val outcome = withContext(Dispatchers.IO) { session.play(play.contentId) }) {
+            is PlayOutcome.Failed -> { fullscreen?.leave(); error = outcome.message }
+            else -> { fullscreen?.leave(); onDone() }
+        }
+    }
+    error?.let { PlaybackFailure(it, onDone) }
+}

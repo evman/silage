@@ -50,6 +50,8 @@ dependencies {
     testImplementation(libs.koin.test)
     testImplementation(libs.ktor.client.mock)
     testImplementation(libs.compose.ui.test)
+    testImplementation(libs.ktor.client.content.negotiation)
+    testImplementation(libs.ktor.serialization.json)
 }
 
 tasks.test {

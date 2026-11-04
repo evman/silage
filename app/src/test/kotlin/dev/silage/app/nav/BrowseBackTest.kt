@@ -47,22 +47,52 @@ class BrowseBackTest {
         onNodeWithText("Back").performClick()
         assertEquals(Route.Library(1, "Movies"), nav.route.value)
     }
-    @Test fun onlyPagesOnTopOfAnotherOfferTheBackButton() {
+    @Test fun browsingPagesOfferTheBackButton() {
         assertTrue(showsBackButton(Route.Detail("m")))
         assertTrue(showsBackButton(Route.Person(1, "A")))
         assertTrue(showsBackButton(Route.Collection("c", "C")))
-        assertFalse(showsBackButton(Route.Watchlist))
-        assertFalse(showsBackButton(Route.Search))
-        assertFalse(showsBackButton(Route.Library(1, "Movies")))
+        assertTrue(showsBackButton(Route.Watchlist))
+        assertTrue(showsBackButton(Route.Search))
+        assertTrue(showsBackButton(Route.Settings))
+        assertTrue(showsBackButton(Route.Library(1, "Movies")))
+        assertTrue(showsBackButton(Route.WatchParty()))
+        assertTrue(showsBackButton(Route.PartyLobby("r")))
+        assertFalse(showsBackButton(Route.Home))
+        assertFalse(showsBackButton(Route.Profiles))
+        assertFalse(showsBackButton(Route.Playing("m")))
         // Pages inside the sidebar shell keep their title clear of the button.
         assertTrue(backButtonSharesShell(Route.Person(1, "A")))
+        assertTrue(backButtonSharesShell(Route.Watchlist))
         assertFalse(backButtonSharesShell(Route.Detail("m")))
+        assertFalse(backButtonSharesShell(Route.PartyLobby("r")))
     }
 
-    @Test fun sidebarPagesShowNoBackButton() = runComposeUiTest {
+    @Test fun sidebarPageBackReturnsToThePreviousPage() = runComposeUiTest {
         val nav = AppNavigator(Route.Home)
         nav.go(Route.Watchlist)
-        setContent { MaterialTheme { BrowseNavigation(nav) { Text("Content") } } }
+        setContent { MaterialTheme {
+            BrowseNavigation(nav) { dev.silage.app.shell.AppShellContent(nav, Route.Watchlist, null, emptyList()) { Text("Content") } }
+        } }
+        onAllNodesWithText("Back").assertCountEquals(1)
+        onNodeWithText("Back").performClick()
+        assertEquals(Route.Home, nav.route.value)
+    }
+
+    @Test fun homeShowsNoBackButton() = runComposeUiTest {
+        val nav = AppNavigator(Route.Home)
+        nav.go(Route.Watchlist)
+        nav.go(Route.Home)
+        setContent { MaterialTheme {
+            BrowseNavigation(nav) { dev.silage.app.shell.AppShellContent(nav, Route.Home, null, emptyList()) { Text("Content") } }
+        } }
+        onNodeWithText("Back").assertDoesNotExist()
+    }
+
+    @Test fun firstPageShowsNoBackButton() = runComposeUiTest {
+        val nav = AppNavigator(Route.Watchlist)
+        setContent { MaterialTheme {
+            BrowseNavigation(nav) { dev.silage.app.shell.AppShellContent(nav, Route.Watchlist, null, emptyList()) { Text("Content") } }
+        } }
         onNodeWithText("Back").assertDoesNotExist()
     }
 

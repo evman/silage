@@ -60,6 +60,7 @@ internal class WindowsAppCommands private constructor(private val hwnd: Pointer,
                     onBack()
                     return TRUE
                 }
+                if (msg == WM_COMMAND) commandListeners[this@WindowsAppCommands.hwnd]?.invoke(Pointer.nativeValue(wParam))
             } catch (t: Throwable) {
                 System.err.println("Silage: Browser Back handling failed: $t")
             }
@@ -86,8 +87,15 @@ internal class WindowsAppCommands private constructor(private val hwnd: Pointer,
 
     companion object {
         private const val GWLP_WNDPROC = -4
+        private const val WM_COMMAND = 0x0111
         private val TRUE = Pointer(1)
         private val retained = java.util.Collections.synchronizedList(mutableListOf<WndProc>())
+        private val commandListeners = java.util.concurrent.ConcurrentHashMap<Pointer, (Long) -> Unit>()
+
+        /** Passes [window]'s WM_COMMAND messages (the taskbar's thumbnail buttons) to [listener], by their wParam. */
+        fun onWindowCommand(window: java.awt.Window, listener: (Long) -> Unit) {
+            Native.getComponentPointer(window)?.let { commandListeners[it] = listener }
+        }
 
         /** Starts catching Browser Back for [window] (displayable, on the event thread). */
         fun install(window: java.awt.Window, osName: String = System.getProperty("os.name").orEmpty(), onBack: () -> Unit): AutoCloseable {

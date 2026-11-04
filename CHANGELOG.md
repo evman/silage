@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+- Send where you got to in a download to the server once it can be reached, so
+  other devices can carry on from there.
+- Rate titles with stars on their page.
+- Add, edit and delete profiles: PINs, kids profiles, rating limits and library
+  limits. From "Who's watching?" or Settings → Account.
+- Jump through a library with an A–Z bar when it's sorted by title.
+- Switch a 4K video that keeps stopping to buffer to its 1080p version, from the same
+  moment and with no converting, with Back to 4K.
+  Choose automatic, ask first or never in Settings → Video.
+- Show, hide, order and rename Home's rows, and show new episodes first, in
+  Settings → Home screen.
+- Upload a subtitle file from the player's Subtitles menu.
+- Show your taste on For You, and pick titles you like to start its suggestions.
+- Add Downloads: save a title, an episode or a season from its page and watch with
+  no connection, with its subtitles. Stopped downloads resume where they left off.
+- Add an on-screen keyboard for controllers: press A on any text box.
+- Open Watch Party invitations from `silo://` links, even with Silage already open.
+- Remember audio language, subtitles and auto-skip for each show, per profile.
+- Change how subtitles look while watching, from the player's Subtitles button.
+- On Windows, add play controls under the taskbar thumbnail, with the position on the
+  taskbar icon.
+- Add Watch Together: host or join a party with a code or link, choose or vote on
+  a title, and watch in sync with everyone. Hosts choose who can play and pause.
+- Tidy the player bar: one button for subtitles, speed and sync, one for quality
+  and the video settings. Back in their menus returns to the group.
+- Show the Back button on every page you can go back from, not only on titles,
+  people and collections.
+- Show what's playing in the Windows media overlay, with play, pause, previous,
+  next, stop and a position bar.
+- Add game controller support on the pages and in the player: Xbox-style pads
+  and DualSense / DualShock 4 on Windows and Linux.
+- Show picture previews above the seek bar when hovering or dragging, with the
+  chapter name, for videos playing from the original file.
+- Refine the seek bar: chapter gaps, marked intros and credits, a hover preview
+  of the played part, and elapsed and remaining time beside the bar.
+- Make the player bar lighter: while playing it redraws about once a second
+  instead of four times, asks mpv for less and handles fast mice in one go.
 ## 0.5.3 — 2026-11-04
 
 - Open fullscreen by default on Windows too, as on Linux. Settings → Interface → Window →

@@ -30,12 +30,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.silage.app.ui.isActive
 
-/** The pages that sit on top of another (a title, a person, a collection of a library): they offer a visible Back. */
-internal fun showsBackButton(route: Route): Boolean =
-    route is Route.Detail || route is Route.RequestDetail || route is Route.Person || route is Route.Collection
+/** Every browsing page offers a visible Back; Home is where going back ends, and sign-in and the player have their own ways out. */
+internal fun showsBackButton(route: Route): Boolean = when (route) {
+    Route.Home, Route.Connect, Route.SignIn, Route.Profiles, is Route.Playing -> false
+    else -> true
+}
 
 /** Of those, the ones drawn inside the sidebar shell, which need room above the page and to clear the rail. */
-internal fun backButtonSharesShell(route: Route): Boolean = route is Route.Person || route is Route.Collection
+internal fun backButtonSharesShell(route: Route): Boolean =
+    showsBackButton(route) && route !is Route.Detail && route !is Route.RequestDetail && route !is Route.PartyLobby
 
 /** A pill with an arrow and "Back": clearly a button, white while hovered or focused. */
 @Composable

@@ -32,8 +32,8 @@ class CatalogV2Api(
         imageSize: String? = null,
     ): ApiResult<CatalogPageV2<BrowseItem>> {
         if (query.limit !in 1..100) return invalid("Page size must be between 1 and 100.")
-        val usePost = query.groups.isNotEmpty()
-        val key = "${if (usePost) "POST" else "GET"}/catalog:$imageSize:${SiloJson.encodeToString(query)}"
+        val usePost = query.groups.isNotEmpty() || query.seek != null
+        val key ="${if (usePost) "POST" else "GET"}/catalog:$imageSize:${SiloJson.encodeToString(query)}"
         val scope = continuation?.scope ?: tokenManager?.snapshotCurrentScope()
         if (continuation != null && continuation.requestKey != key) return invalid("The query changed. Reload from the first page.")
         val result = ownedV2Call<CatalogPageWireV2, CatalogPageWireV2>(gate, tokenManager, scope, OwnerPolicy.IDENTITY, null, { _ ->
@@ -42,7 +42,8 @@ class CatalogV2Api(
                 imageSize?.let { parameter("image_size", it) }
                 contentType(ContentType.Application.Json)
                 val body = SiloJson.encodeToJsonElement(CatalogQueryV2.serializer(), query).jsonObject.toMutableMap()
-                continuation?.let { body["cursor"] = JsonPrimitive(it.cursor) }
+                // The cursor carries on from where the seek landed.
+                continuation?.let { body.remove("seek"); body["cursor"] = JsonPrimitive(it.cursor) }
                 setBody(JsonObject(body))
             } else client.get("/api/v2/catalog") {
                 scope?.let { authScope(it) }
@@ -79,6 +80,25 @@ class CatalogV2Api(
             is ApiResult.Error -> result.restartMessage()
             is ApiResult.NetworkError -> result
         }
+    }
+
+    /** Where each letter starts in the same query sorted by title, for an A–Z bar. */
+    suspend fun letters(
+        libraryId: String?, groups: List<CatalogRuleGroupV2>, match: String?, order: String?,
+    ): ApiResult<List<CatalogLetterV2>> {
+        val scope = tokenManager?.snapshotCurrentScope()
+        return ownedV2Call<CatalogLettersWireV2, List<CatalogLetterV2>>(gate, tokenManager, scope, OwnerPolicy.IDENTITY, null, { _ ->
+            client.post("/api/v2/catalog/letters") {
+                scope?.let { authScope(it) }
+                contentType(ContentType.Application.Json)
+                setBody(buildMap<String, kotlinx.serialization.json.JsonElement> {
+                    libraryId?.let { put("library_id", JsonPrimitive(it)) }
+                    if (groups.isNotEmpty()) put("groups", SiloJson.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(CatalogRuleGroupV2.serializer()), groups))
+                    match?.let { put("match", JsonPrimitive(it)) }
+                    order?.let { put("order", JsonPrimitive(it)) }
+                }.let(::JsonObject))
+            }
+        }) { it.letters }
     }
 
     suspend fun audiobookGroups(

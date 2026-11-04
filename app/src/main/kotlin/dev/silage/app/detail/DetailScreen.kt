@@ -8,6 +8,8 @@ import androidx.compose.foundation.background
 import androidx.compose.animation.animateContentSize
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -72,10 +74,32 @@ import org.siloserver.silo.model.catalog.initialSeasonDisplayPlan
 import org.siloserver.silo.model.catalog.trailerRailEntries
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.repository.CatalogRepository
+import org.siloserver.silo.model.download.effectiveDefault
+import androidx.compose.material.icons.outlined.FileDownload
+
+/** What a movie's download is called with no server. */
+private fun movieSpec(contentId: String, file: Int, title: String, year: Int?) =
+    dev.silage.app.downloads.DownloadSpec(contentId, file, title, year?.toString(), year = year)
+
+/** What an episode's download is called with no server. */
+private fun episodeSpec(seriesId: String, seriesTitle: String, e: EpisodeListItem, file: Int) = dev.silage.app.downloads.DownloadSpec(
+    e.contentId, file, e.title ?: "Episode ${e.episodeNumber}", "$seriesTitle · S${e.seasonNumber} E${e.episodeNumber}",
+    seriesTitle = seriesTitle, seriesContentId = seriesId, seasonNumber = e.seasonNumber, episodeNumber = e.episodeNumber,
+)
+
+/** The Download button's words: what it would download, or how that's going. */
+private fun downloadLabel(saved: dev.silage.app.downloads.LocalDownload?, next: EpisodeListItem?): String = when {
+    saved?.finished == true -> "Downloaded"
+    saved != null -> if (saved.total > 0) "Downloading ${(saved.bytes * 100 / saved.total)}%" else "Downloading…"
+    next != null -> "Download S${next.seasonNumber} E${next.episodeNumber}"
+    else -> "Download"
+}
 
 /** Movie, episode or series detail. [onPlay] gets a content id, whether to start over, and the chosen copy. */
 @Composable
 fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) -> Unit, onPerson: (Long, String) -> Unit = { _, _ -> },
+    /** Hosts a Watch Party with this title. */
+    onWatchTogether: (org.siloserver.silo.viewmodel.WatchPartyItem) -> Unit = {},
     onShuffle: (contentId: String, shuffleId: String) -> Unit = { _, _ -> },
     onTrailer: (dev.silage.app.nav.Trailer) -> Unit = {},
     /** Opens another title's page (from More like this). */
@@ -84,6 +108,7 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
     initialSeason: Int? = null,
     focusEpisode: String? = null) {
     val catalog = remember { koin.get<CatalogRepository>() }
+    val watchPartyOffered = dev.silage.app.watchparty.rememberWatchPartyOffered(koin)
     var item by remember(contentId) { mutableStateOf<ItemDetail?>(null) }
     var error by remember(contentId) { mutableStateOf<String?>(null) }
     var seasons by remember(contentId) { mutableStateOf(emptyList<Season>()) }
@@ -121,7 +146,8 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
         error != null && d == null -> ErrorState(error!!) { attempt++ }
         d == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
         else -> DetailContent(koin, d.toDetailModel(profileUi.spoilers, profileUi.showAdvisoryAge), d, seasons, season, episodes, onSeason = { season = it; episodes = emptyList() }, onPlay = onPlay, contentId = contentId,
-            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle, onTrailer = onTrailer, onOpen = onOpen, focusEpisode = focusEpisode)
+            onPerson = onPerson, onEpisodesChanged = { episodesVersion++ }, onShuffle = onShuffle, onTrailer = onTrailer, onOpen = onOpen, focusEpisode = focusEpisode,
+            watchPartyOffered = watchPartyOffered, onWatchTogether = onWatchTogether)
     }
 }
 
@@ -142,7 +168,16 @@ private fun DetailContent(
     onTrailer: (dev.silage.app.nav.Trailer) -> Unit,
     onOpen: (contentId: String) -> Unit,
     focusEpisode: String?,
+    watchPartyOffered: Boolean = false,
+    onWatchTogether: (org.siloserver.silo.viewmodel.WatchPartyItem) -> Unit = {},
 ) {
+    val downloadsOffered = dev.silage.app.downloads.rememberDownloadsOffered(koin)
+    val downloads = remember { koin.get<dev.silage.app.downloads.DesktopDownloads>() }
+    // Read so the Download button follows the transfer.
+    val downloadRows by downloads.rows.collectAsState()
+    var downloadProblem by remember(contentId) { mutableStateOf<String?>(null) }
+    fun downloadQuality() = koin.get<org.siloserver.silo.repository.DownloadsRepository>().capability.value
+        .effectiveDefault(org.siloserver.silo.model.download.DownloadQuality.fromWire(koin.get<dev.silage.app.ui.UiPrefs>().downloadQuality))
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     // "Go to show": once the season's episodes are in, scroll so the episode before it sits at the top.
     var scrolledToEpisode by rememberSaveable(contentId) { mutableStateOf(false) }
@@ -173,6 +208,8 @@ private fun DetailContent(
     val favorite = remember(contentId) { OptimisticToggle(null) { actions.setFavorite(contentId, it) } }
     // Series are marked watched episode by episode; movies and episodes as a whole.
     val watched = remember(contentId) { OptimisticToggle(if (m.isSeries) null else item.userData?.played == true) { actions.setWatched(contentId, it) } }
+    var rating by remember(contentId) { mutableStateOf(item.userRating) }
+    var ratingFailed by remember(contentId) { mutableStateOf(false) }
     LaunchedEffect(contentId) {
         watchlist.load(actions.inWatchlist(contentId))
         favorite.load(actions.isFavorite(contentId))
@@ -228,6 +265,18 @@ private fun DetailContent(
                             ActionButton(Icons.Filled.PlayArrow, m.playLabel, Modifier.focusRequester(playFocus)) { onPlay(contentId, false, selected?.fileId) }
                             if (m.canPlayFromStart) ActionButton(Icons.Filled.Replay, "Play from beginning") { onPlay(contentId, true, selected?.fileId) }
                         }
+                        if (watchPartyOffered) (if (m.isSeries) next?.contentId?.let { it to "episode" } else contentId to "movie")?.let { (id, type) ->
+                            ActionButton(dev.silage.app.watchparty.WatchPartyIcon, "Watch together") {
+                                onWatchTogether(org.siloserver.silo.viewmodel.WatchPartyItem(id, type, m.title, fileId = selected?.fileId.takeIf { !m.isSeries }))
+                            }
+                        }
+                        if (downloadsOffered) {
+                            val saved = downloadRows.firstOrNull { it.sidecar.record.mediaFileId == selected?.fileId }
+                            val spec = selected?.fileId?.let { file -> if (m.isSeries) next?.let { episodeSpec(contentId, m.title, it, file) } else movieSpec(contentId, file, m.title, item.year) }
+                            if (spec != null) ActionButton(androidx.compose.material.icons.Icons.Outlined.FileDownload, downloadLabel(saved, next)) {
+                                if (saved == null) scope.launch { downloadProblem = downloads.request(spec, downloadQuality()) }
+                            }
+                        }
                         if (options.size > 1 && selected != null) ActionButton(Icons.Outlined.Layers, "Versions (${options.size})") { picking = true }
                         shuffle?.let { start -> ActionButton(Icons.Filled.Shuffle, "Shuffle", onClick = start) }
                         ActionButton(Icons.Outlined.Info, "Info") { showingInfo = true }
@@ -244,7 +293,15 @@ private fun DetailContent(
                     if (options.size == 1 && selected != null) {
                         Text("Available version: ${selected.detail}", color = Silage.Text3, fontSize = 16.sp)
                     }
-                    if (watchlist.failed || favorite.failed || watched.failed) {
+                    StarRating(rating) { stars ->
+                        val before = rating
+                        val next = nextRating(before, stars)
+                        rating = next
+                        ratingFailed = false
+                        scope.launch { if (!actions.setRating(contentId, next)) { rating = before; ratingFailed = true } }
+                    }
+                    downloadProblem?.let { Text("Couldn't start the download: $it", color = Silage.Error, fontSize = 17.sp) }
+                    if (watchlist.failed || favorite.failed || watched.failed || ratingFailed) {
                         Text("Couldn't save that change on the server. Try again.", color = Silage.Error, fontSize = 17.sp)
                     }
                 }
@@ -254,6 +311,15 @@ private fun DetailContent(
                     ArrowRow(contentPadding = PaddingValues(horizontal = 64.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 56.dp, bottom = 20.dp)) {
                         items(seasons, key = { it.contentId }) { s ->
                             Pill(s.title ?: if (s.seasonNumber == 0) "Specials" else "Season ${s.seasonNumber}", selected = s.seasonNumber == season) { onSeason(s.seasonNumber) }
+                        }
+                        if (downloadsOffered && episodes.isNotEmpty()) item(key = "download-season") {
+                            Pill("Download season") {
+                                scope.launch {
+                                    episodes.forEach { e -> episodeFile(e)?.let { file ->
+                                        if (downloads.forFile(file) == null) downloads.request(episodeSpec(contentId, m.title, e, file), downloadQuality())?.let { downloadProblem = it }
+                                    } }
+                                }
+                            }
                         }
                         // The whole season at once (the server marks every episode of it).
                         val current = seasons.firstOrNull { it.seasonNumber == season }
@@ -488,6 +554,31 @@ internal fun VersionPicker(options: List<VersionOption>, selectedId: Int, onPick
 internal fun showsMoreLikeThis(type: String?): Boolean = type?.lowercase() in setOf("movie", "series", "show")
 
 /** The server's similar titles as poster cards, without the title whose page this is. */
+/** Choosing the stars already given takes the rating away. */
+internal fun nextRating(current: Int?, chosen: Int): Int? = if (current == chosen) null else chosen
+
+/** Your rating: five stars, each a stop for the keyboard and a controller. */
+@Composable
+private fun StarRating(rating: Int?, onChoose: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Your rating", color = Silage.Text2, fontSize = 17.sp, modifier = Modifier.padding(end = 10.dp))
+        (1..5).forEach { stars ->
+            val interaction = remember { MutableInteractionSource() }
+            val active = interaction.isActive()
+            val filled = stars <= (rating ?: 0)
+            Icon(
+                if (filled) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                contentDescription = "$stars of 5 stars",
+                tint = if (active) Color.White else if (filled) Silage.Amber else Silage.Text3,
+                modifier = Modifier.size(34.dp).clip(CircleShape)
+                    .background(if (active) Color.White.copy(alpha = 0.18f) else Color.Transparent)
+                    .hoverable(interaction)
+                    .clickable(interaction, indication = null) { onChoose(stars) }.padding(3.dp),
+            )
+        }
+    }
+}
+
 internal fun moreLikeThis(items: List<org.siloserver.silo.model.catalog.BrowseItem>, contentId: String): List<dev.silage.app.browse.CardModel> =
     items.filter { it.contentId != contentId }.distinctBy { it.contentId }.map { it.toCard() }
 

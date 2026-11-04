@@ -40,6 +40,13 @@ class ItemActions(
         return personal.writePersonal(handle) is ApiResult.Success
     }
 
+    /** A star rating of 1 to 5, or null to take it away. */
+    suspend fun setRating(itemId: String, rating: Int?): Boolean {
+        val scope = tokens.snapshotCurrentScope() ?: return false
+        val handle = PersonalWriteHandle(ops.incrementAndGet(), scope, PersonalWrite.Rating(itemId, rating))
+        return personal.writePersonal(handle) is ApiResult.Success
+    }
+
     private fun ApiResult<*>.present(): Boolean? = (this as? ApiResult.Success)?.let { it.data != null }
 }
 

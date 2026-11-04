@@ -79,6 +79,10 @@ class CatalogRepository(
             else -> null
         }
 
+    /** Where each letter starts in this library sorted by title. */
+    suspend fun letters(libraryId: Int?, queryGroups: List<CatalogQueryGroup>, match: String?, order: String?) =
+        catalogApi.getLetters(libraryId, queryGroups, match, order)
+
     /** Browse the catalog with optional filters, sorting, and pagination. */
     suspend fun browse(
         source: String? = null,
@@ -96,6 +100,7 @@ class CatalogRepository(
         yearMax: Int? = null,
         queryGroups: List<CatalogQueryGroup> = emptyList(),
         match: String? = null,
+        seek: Int? = null,
     ): ApiResult<CatalogResponse> {
         val requestIdentityGeneration = identityTransitions.generation.value
         val result = catalogApi.getCatalog(
@@ -114,12 +119,13 @@ class CatalogRepository(
             yearMax = yearMax,
             queryGroups = queryGroups,
             match = match,
+            seek = seek,
         )
 
         // Only the unfiltered, first-page default browse of a single library is
         // cached for offline (every request-shaping param must be at its default).
         val cacheableLibraryId = libraryId?.takeIf {
-            continuation == null &&
+            continuation == null && seek == null &&
                 query == null && genre == null && contentRating == null &&
                 namePrefix == null && yearMin == null && yearMax == null &&
                 source == null && mediaType == null &&
