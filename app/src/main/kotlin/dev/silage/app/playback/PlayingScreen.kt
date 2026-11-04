@@ -72,7 +72,10 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
     // In a normal window (issue #7), HDR video opens in a normal window too.
-    val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode, fullscreen = fullscreen?.active ?: true)
+    val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode, fullscreen = fullscreen?.active ?: true).let { o ->
+        if (o is VideoOutput.OwnWindow && !o.fullscreen && fullscreen != null)
+            o.copy(maximized = fullscreen.windowMaximized, size = fullscreen.windowSize) else o
+    }
     // The volume and mute the last video was left at (keyboard shortcuts set them).
     val (savedVolume, savedMute) = koin.get<dev.silage.app.ui.UiPrefs>().playerVolume
     val remembered = buildMap {
@@ -82,6 +85,9 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val exclusiveAudio = System.getProperty("os.name").startsWith("Windows") && koin.get<dev.silage.app.ui.UiPrefs>().exclusiveAudio
     val mpv = MpvPlayer(remembered + playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1", exclusiveAudio = exclusiveAudio) +
         koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle.mpvOptions() + extraOptions)
+    // HDR video in its own window while Silage is in a normal one: one window, not two.
+    val steppedAside = if (output is VideoOutput.OwnWindow && !output.fullscreen && !System.getProperty("os.name").startsWith("Windows"))
+        fullscreen?.stepAside() else null
     // The chosen audio output, if it is still connected; otherwise the Windows default.
     koin.get<dev.silage.app.ui.UiPrefs>().audioDevice?.let { device ->
         if (AudioDevices.parse(mpv.getProperty("audio-device-list")).any { it.name == device }) mpv.setProperty("audio-device", device)
@@ -132,7 +138,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
                 mpv.command("stop")
             }
         }) else null,
-    ) } catch (t: Throwable) { watchdog.stop(); watching.interrupt(); mpv.close(); throw t }
+    ) } catch (t: Throwable) { watchdog.stop(); watching.interrupt(); mpv.close(); steppedAside?.close(); throw t }
     // Subscribed before the controller loads the file, so FileLoaded can't be missed.
     // A stream from the server fetches (segments, or byte ranges after a seek)
     // for as long as it plays: renew the sign-in headers before the access
@@ -212,6 +218,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
             mediaKeys.close()
             hud.close()
             port.close()
+            steppedAside?.close()
         }
     }
 }

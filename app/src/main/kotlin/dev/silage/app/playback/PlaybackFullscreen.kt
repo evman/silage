@@ -33,6 +33,20 @@ class PlaybackFullscreen(private val frame: Frame, private val linux: LinuxPlace
     private fun onEdt(action: () -> Unit) {
         if (SwingUtilities.isEventDispatchThread()) action() else SwingUtilities.invokeAndWait(action)
     }
+    /** The Silage window is maximized (it opens so in a normal window on Linux). */
+    val windowMaximized: Boolean get() = (frame.extendedState and Frame.MAXIMIZED_BOTH) == Frame.MAXIMIZED_BOTH
+    val windowSize: Pair<Int, Int> get() = frame.width to frame.height
+
+    /**
+     * Linux, HDR video in its own (native Wayland) window while Silage is in a normal one: Silage's
+     * window steps aside so only one window shows, and comes back when the returned handle closes.
+     */
+    fun stepAside(): AutoCloseable {
+        var hidden = false
+        onEdt { if (frame.isShowing) { frame.isVisible = false; hidden = true } }
+        return AutoCloseable { onEdt { if (hidden) { frame.isVisible = true; frame.toFront(); hidden = false } } }
+    }
+
     fun toggle() = onEdt {
         val linux = linux
         if (linux != null) linux.fullscreen = !linux.fullscreen else if (active) leaveNow() else enterNow()

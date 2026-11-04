@@ -21,8 +21,11 @@ data class Output(val name: String, val x: Int, val y: Int, val width: Int, val 
  */
 sealed interface VideoOutput {
     data class Embedded(val wid: Long) : VideoOutput
-    /** [fullscreen] false: a normal window, as Silage is in one (issue #7); F switches. */
-    data class OwnWindow(val screen: String?, val fullscreen: Boolean = true) : VideoOutput
+    /**
+     * [fullscreen] false: a normal window, as Silage is in one (issue #7); F switches. It takes the
+     * Silage window's place ([maximized] like it, or its [size]) while Silage's own steps aside.
+     */
+    data class OwnWindow(val screen: String?, val fullscreen: Boolean = true, val maximized: Boolean = false, val size: Pair<Int, Int>? = null) : VideoOutput
 
     fun mpvOptions(osName: String = System.getProperty("os.name")): Map<String, String> {
         if (osName.startsWith("Windows", ignoreCase = true)) {
@@ -41,9 +44,15 @@ sealed interface VideoOutput {
         is OwnWindow -> listOfNotNull(
             "fullscreen" to if (fullscreen) "yes" else "no",
             screen?.takeIf { !fullscreen }?.let { "screen-name" to it },
-            ("autofit-larger" to "90%x90%").takeIf { !fullscreen },
+            when {
+                fullscreen -> null
+                maximized -> "window-maximized" to "yes"
+                size != null -> "geometry" to "${size.first}x${size.second}"
+                else -> "autofit-larger" to "90%x90%"
+            },
             "gpu-context" to "waylandvk,x11vk",
-            "wayland-app-id" to "silage",
+            // The launcher's id (dev.silage.Silage.desktop): KDE shows Silage's icon and groups it with Silage.
+            "wayland-app-id" to "dev.silage.Silage",
             "title" to "Silage",
             screen?.let { "fs-screen-name" to it },
         ).toMap()

@@ -76,6 +76,11 @@ class VideoOutputTest {
         assertEquals("DP-3", o["screen-name"])
         assertEquals("DP-3", o["fs-screen-name"])
         assertEquals("90%x90%", o["autofit-larger"])
+        // It takes the Silage window's place: maximized like it, or its size.
+        assertEquals("yes", VideoOutput.OwnWindow("DP-3", fullscreen = false, maximized = true).mpvOptions("Linux")["window-maximized"])
+        VideoOutput.OwnWindow("DP-3", fullscreen = false, size = 1600 to 900).mpvOptions("Linux").let {
+            assertEquals("1600x900", it["geometry"]); assertFalse("autofit-larger" in it); assertFalse("window-maximized" in it)
+        }
         assertEquals(VideoOutput.OwnWindow("DP-3", fullscreen = false),
             VideoOutput.choose(7L, Output("DP-3", 0, 0, 1, 1, true), null, fullscreen = false))
     }
@@ -87,7 +92,8 @@ class VideoOutputTest {
         // Native Wayland for HDR; X11 keeps playback working where Wayland is unavailable.
         assertEquals("waylandvk,x11vk", o["gpu-context"])
         assertEquals("yes", o["target-colorspace-hint"])
-        assertEquals("silage", o["wayland-app-id"])
+        // The launcher's id, so KDE shows Silage's icon (not a generic "W") and groups it with Silage.
+        assertEquals("dev.silage.Silage", o["wayland-app-id"])
         assertFalse("wid" in o)
     }
 
