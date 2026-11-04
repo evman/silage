@@ -26,7 +26,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 
 /**
  * Window-level keys: arrows move focus spatially, Esc and the other Back keys ([BackInput]) go back.
- * At the root, Escape offers a confirmation before quitting.
+ * At the root, Escape offers a confirmation before quitting; Ctrl+Q quits directly.
  * The root takes focus on every route change (pages then claim their own),
  * so a page with nothing focusable — an empty grid, an error — never
  * swallows every key; from the root, an arrow enters the page.
@@ -44,7 +44,10 @@ fun KeyRoot(route: Route, onBack: () -> Boolean, onSearch: () -> Unit = {}, onQu
             .onFocusChanged { rootFocused = it.isFocused }
             .focusable()
             .onPreviewKeyEvent { e ->
-                if (route is Route.Playing || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                // Ctrl+Q: quit straight away, from any page or the player.
+                if (e.isCtrlPressed && e.key == Key.Q) { onQuit(); return@onPreviewKeyEvent true }
+                if (route is Route.Playing) return@onPreviewKeyEvent false
                 when {
                     e.isAltPressed && e.key == Key.DirectionLeft -> onBack()
                     // Ctrl+F: search, as in Windows apps.

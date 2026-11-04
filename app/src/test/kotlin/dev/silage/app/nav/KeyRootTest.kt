@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.withKeyDown
 import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,6 +30,15 @@ class KeyRootTest {
         waitForIdle()
         onRoot().performKeyInput { pressKey(Key.Escape) }
         assertEquals(1, backs)
+    }
+
+    /** Issue #5: a direct shortcut to quit, from any page (Esc at the root still asks first). */
+    @Test fun ctrlQQuitsFromAnyPage() = runComposeUiTest {
+        var quits = 0
+        setContent { KeyRoot(route = Route.Watchlist, onBack = { true }, onQuit = { quits++ }) { Text("Watchlist") } }
+        waitForIdle()
+        onRoot().performKeyInput { withKeyDown(Key.CtrlLeft) { pressKey(Key.Q) } }
+        assertEquals(1, quits)
     }
 
     @Test fun arrowsMoveIntoThePageFromTheRoot() = runComposeUiTest {

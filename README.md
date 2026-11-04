@@ -60,9 +60,10 @@ When a new version is ready, **Update ready** appears in the sidebar, never duri
 | Arrows | Move around | Skip 10 s, or move between controls |
 | Enter | Open | Show controls / press the focused control |
 | Space | — | Play / pause |
-| Esc / Backspace | Back | Close a menu, then leave the player |
+| Esc / Backspace | Back; on the home page, Esc asks to quit | Close a menu, then leave the player |
 | I | — | Playback info |
 | Ctrl + / − / 0 | Interface size | — |
+| Ctrl Q | Quit Silage | Quit Silage |
 
 Media keys work too.
 
