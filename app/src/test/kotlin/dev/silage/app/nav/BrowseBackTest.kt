@@ -3,6 +3,7 @@ package dev.silage.app.nav
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.v2.runComposeUiTest
 import kotlin.test.*
 
 @OptIn(ExperimentalTestApi::class)

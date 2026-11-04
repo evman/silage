@@ -7,7 +7,11 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-kotlin { jvmToolchain(21) }
+kotlin {
+    jvmToolchain(21)
+    // Tests use kotlinx-coroutines-test helpers that 1.11 marks experimental.
+    sourceSets.test { languageSettings.optIn("kotlinx.coroutines.ExperimentalCoroutinesApi") }
+}
 
 // The release version comes from the tag: ./gradlew ... -PappVersion=0.5.3
 val appVersion = (findProperty("appVersion") as String?) ?: "0.5.3-dev"

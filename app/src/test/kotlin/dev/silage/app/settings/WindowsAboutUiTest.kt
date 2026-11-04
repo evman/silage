@@ -2,6 +2,7 @@ package dev.silage.app.settings
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.v2.runComposeUiTest
 import kotlin.test.Test
 import org.koin.core.Koin
 

@@ -2,6 +2,7 @@ package dev.silage.app.playback.hud
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.v2.runComposeUiTest
 import dev.silage.app.playback.*
 import kotlin.test.*
 

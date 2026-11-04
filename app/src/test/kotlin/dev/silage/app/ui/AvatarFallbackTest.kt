@@ -2,6 +2,7 @@ package dev.silage.app.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.v2.runComposeUiTest
 import dev.silage.app.profiles.*
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.repository.ProfileCommitResult

@@ -5,6 +5,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.v2.runComposeUiTest
 import dev.silage.app.nav.AppNavigator
 import dev.silage.app.nav.Route
 import dev.silage.app.update.UpdateState

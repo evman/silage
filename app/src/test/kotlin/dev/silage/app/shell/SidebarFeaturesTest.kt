@@ -5,6 +5,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.v2.runComposeUiTest
 import dev.silage.app.nav.AppNavigator
 import dev.silage.app.nav.Route
 import kotlin.test.Test

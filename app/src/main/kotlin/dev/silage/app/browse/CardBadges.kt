@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -82,7 +83,7 @@ private fun iconVector(id: OverlayIconId): ImageVector? = when (id) {
     OverlayIconId.Building -> Icons.Outlined.Business
     OverlayIconId.Shield -> Icons.Outlined.Info
     OverlayIconId.Layout -> Icons.Outlined.Layers
-    OverlayIconId.Volume -> Icons.Outlined.VolumeUp
+    OverlayIconId.Volume -> Icons.AutoMirrored.Outlined.VolumeUp
     OverlayIconId.Calendar -> Icons.Outlined.CalendarMonth
     OverlayIconId.Globe -> Icons.Outlined.Public
     // Brand marks (HDR10, Dolby Vision, Atmos…) have no stock glyph; their text says it.

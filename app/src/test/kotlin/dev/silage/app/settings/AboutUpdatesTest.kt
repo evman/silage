@@ -2,6 +2,7 @@ package dev.silage.app.settings
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.v2.runComposeUiTest
 import dev.silage.app.ui.UiPrefs
 import dev.silage.app.update.InstallType
 import dev.silage.app.update.Release

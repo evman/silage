@@ -3,7 +3,7 @@ package dev.silage.app.playback
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.v2.runComposeUiTest
 import org.siloserver.silo.playback.ShuffleNextPick
 import kotlin.test.Test
 import kotlin.test.assertEquals

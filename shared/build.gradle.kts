@@ -32,6 +32,8 @@ kotlin {
         }
         getByName("desktopTest") {
             resources.srcDir("src/commonTest/resources")
+            // Tests use kotlinx-coroutines-test helpers that 1.11 marks experimental.
+            languageSettings.optIn("kotlinx.coroutines.ExperimentalCoroutinesApi")
         }
     }
 }
