@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
@@ -34,6 +36,9 @@ sealed interface ArtworkFallback {
 }
 
 /** What a card shows: the image when there is one, else its blur, else a titled tile. */
+/** The title is written on the tile when there's no poster or it failed to load (a 404 on the server). */
+fun artworkShowsTitle(url: String?, failed: Boolean): Boolean = url.isNullOrBlank() || failed
+
 fun artworkFallback(url: String?, thumbhash: String?, title: String): ArtworkFallback = when {
     !url.isNullOrBlank() -> ArtworkFallback.Image(url)
     !thumbhash.isNullOrBlank() -> ArtworkFallback.Blur(thumbhash)
@@ -83,15 +88,15 @@ fun Artwork(
     // Without a placeholder (logos, backdrops) there's no fill: logos are transparent.
     Box(if (showTitleTile) modifier.background(Silage.Elevated) else modifier) {
         val blur = remember(thumbhash) { thumbhash?.takeIf { it.isNotBlank() }?.let(Images::blur) }
-        when {
-            blur != null -> Image(blur, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            showTitleTile && url.isNullOrBlank() -> Text(
-                title, color = Silage.Text2, fontSize = 18.sp, textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.Center).padding(16.dp),
-            )
-        }
-        if (!url.isNullOrBlank()) {
-            AsyncImage(model = url, contentDescription = title, imageLoader = Images.loader, contentScale = contentScale, alignment = alignment, modifier = Modifier.fillMaxSize())
+        var failed by remember(url) { androidx.compose.runtime.mutableStateOf(false) }
+        if (blur != null) Image(blur, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (showTitleTile && artworkShowsTitle(url, failed)) Text(
+            title, color = if (blur != null) Silage.Text else Silage.Text2, fontSize = 18.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.align(Alignment.Center).padding(16.dp),
+        )
+        if (!url.isNullOrBlank() && !failed) {
+            AsyncImage(model = url, contentDescription = title, imageLoader = Images.loader, contentScale = contentScale, alignment = alignment,
+                onError = { failed = true }, modifier = Modifier.fillMaxSize())
         }
     }
 }
