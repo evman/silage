@@ -119,8 +119,9 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         }) else null,
     ) } catch (t: Throwable) { mpv.close(); throw t }
     // Subscribed before the controller loads the file, so FileLoaded can't be missed.
-    // A converted stream fetches segments for as long as it plays: renew the
-    // sign-in headers before the access token in them expires.
+    // A stream from the server fetches (segments, or byte ranges after a seek)
+    // for as long as it plays: renew the sign-in headers before the access
+    // token in them expires.
     val authRefresh = if (ready.needsMediaAuth) CoroutineScope(Dispatchers.IO).launch {
         while (true) {
             kotlinx.coroutines.delay(MediaAuthRefreshMs)

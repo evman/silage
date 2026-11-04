@@ -213,10 +213,25 @@ class PlaybackLauncherTest {
         assertTrue(r.needsMediaAuth)
     }
 
-    @Test fun signInHeadersStayOffOriginalFilesAndOtherHosts() = runTest {
+    /**
+     * Current Silo servers require account sign-in on every media request; the
+     * signed link alone gets 403 (issue #4). The Android app sends the headers
+     * to its own server for original files too, and a long film outlives the
+     * token, so they are renewed like a converted stream's.
+     */
+    @Test fun originalFilesFromTheServerCarryTheSignInHeaders() = runTest {
         val direct = authLauncher(decision("/api/v2/stream/1?st=abc")).launch("m")
         assertIs<LaunchResult.Ready>(direct)
-        assertTrue("Authorization" !in direct.headers)
+        assertEquals("Bearer TOKEN", direct.headers["Authorization"])
+        assertEquals("prof-1", direct.headers["X-Profile-Id"])
+        assertTrue(direct.needsMediaAuth)
+    }
+
+    @Test fun signInHeadersStayOffOtherHosts() = runTest {
+        val directElsewhere = authLauncher(decision("https://cdn.example/file.mkv")).launch("m")
+        assertIs<LaunchResult.Ready>(directElsewhere)
+        assertTrue("Authorization" !in directElsewhere.headers)
+        assertTrue(!directElsewhere.needsMediaAuth)
         val elsewhere = authLauncher(hls("https://cdn.example/master.m3u8")).launch("m")
         assertIs<LaunchResult.Ready>(elsewhere)
         assertTrue("Authorization" !in elsewhere.headers)

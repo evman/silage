@@ -91,9 +91,9 @@ sealed interface LaunchResult {
         /** Which copy is playing and how, for Playback Info ("4K · HDR · original file"). */
         val versionLabel: String? = null,
         /**
-         * A converted (HLS) stream from the Silo server itself: its playlist and
-         * segments need the signed-in headers, which expire, so the player keeps
-         * them fresh while it plays.
+         * A stream from the Silo server itself (original file or converted):
+         * every request needs the signed-in headers, which expire, so the player
+         * keeps them fresh while it plays.
          */
         val needsMediaAuth: Boolean = false,
         /**
@@ -182,10 +182,11 @@ class PlaybackLauncher(
         val url = plan.stream.url.let { if (it.startsWith("/")) serverUrl().trimEnd('/') + it else it }
         val base = serverUrl().trimEnd('/')
         val direct = plan.delivery == PlaybackDelivery.ORIGINAL_HTTP
-        // The original file's link is signed; a converted stream's playlist and
-        // segments are fetched like any other Silo request, with the sign-in
-        // headers (as the Android app's media interceptor adds them).
-        val needsMediaAuth = !direct && sameOrigin(url, base)
+        // Every media request to the Silo server itself carries the sign-in
+        // headers, as the Android app's media interceptor adds them: current
+        // servers refuse an original file's signed link without them (issue #4).
+        // Other hosts never receive them.
+        val needsMediaAuth = sameOrigin(url, base)
         val headers = if (needsMediaAuth) mediaAuth() + plan.stream.effectiveRequestHeaders else plan.stream.effectiveRequestHeaders
         val stored = storedSubtitleId?.let { id ->
             val key = org.siloserver.silo.model.subtitles.SubtitleSyncState.storedKey(id)
