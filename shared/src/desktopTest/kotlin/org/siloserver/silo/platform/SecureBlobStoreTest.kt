@@ -31,6 +31,16 @@ class SecureBlobStoreTest {
         assertEquals("new-session", SecureBlobStore.create(path, keyring) {}.read())
     }
 
+    /** Settings → About says where the sign-in is kept, so a missing keyring is visible. */
+    @Test fun reportsWhetherTheSignInIsInTheKeyring() {
+        val dir = Files.createTempDirectory("silage-where")
+        assertFalse(SecureBlobStore.create(dir.resolve("a.json"), keyring = null) {}.inKeyring)
+        assertTrue(SecureBlobStore.create(dir.resolve("b.json"), FakeKeyring()) {}.inKeyring)
+        val refusing = SecureBlobStore.create(dir.resolve("c.json"), ThrowingKeyring(failWrite = true)) {}
+        assertTrue(refusing.write("session"))
+        assertFalse(refusing.inKeyring, "after the keyring refuses a save, the file holds the sign-in")
+    }
+
     @Test fun successfulKeyringRecoveryRetiresTheFallback() {
         val path = Files.createTempDirectory("silage-keyring-recovery").resolve("session.json")
         val keyring = FakeKeyring("stale")

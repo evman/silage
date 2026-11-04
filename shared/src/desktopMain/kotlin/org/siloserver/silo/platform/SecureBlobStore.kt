@@ -1,7 +1,5 @@
 package org.siloserver.silo.platform
 
-import com.github.javakeyring.Keyring
-import com.github.javakeyring.PasswordAccessException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -33,7 +31,12 @@ class FileBlobStore(private val path: Path) : BlobStore {
     }.isSuccess
 }
 
-/** One secret in the desktop keyring (Secret Service: KWallet or GNOME Keyring). */
+/**
+ * One secret in the desktop keyring (Secret Service: KWallet or GNOME Keyring).
+ * [get] yields null for "no entry" and throws when the keyring refuses access
+ * (locked, prompt dismissed), so callers can tell locked from empty; [set] throws
+ * when it can't save. The Linux app provides it (SecretServiceKeyring).
+ */
 interface KeyringAccess {
     fun get(): String?
     fun set(value: String)
@@ -41,25 +44,6 @@ interface KeyringAccess {
     companion object {
         const val SERVICE = "silage"
         const val ACCOUNT = "session"
-
-        /**
-         * Null when no Secret Service is reachable on this session bus. The
-         * returned [get] yields null for "no entry" and throws when the
-         * backend refuses access, so callers can tell locked from empty.
-         */
-        fun system(): KeyringAccess? = runCatching {
-            val keyring = Keyring.create()
-            fun read(): String? = try {
-                keyring.getPassword(SERVICE, ACCOUNT)
-            } catch (_: PasswordAccessException) {
-                null // java-keyring reports a missing entry this way
-            }
-            read() // probe: an unreachable or refusing backend throws here
-            object : KeyringAccess {
-                override fun get(): String? = read()
-                override fun set(value: String) = keyring.setPassword(SERVICE, ACCOUNT, value)
-            }
-        }.getOrNull()
     }
 }
 
@@ -73,8 +57,9 @@ private class KeyringBlobStore(
     private val file: FileBlobStore,
     private val fallbackFile: Path,
     private val log: (String) -> Unit,
-) : BlobStore {
+) : SecureStore {
     @Volatile private var degraded = false
+    override val inKeyring: Boolean get() = !degraded
 
     override fun read(): String? =
         if (degraded) file.read() else file.read() ?: runCatching { keyring.get() }.getOrNull()
@@ -94,6 +79,11 @@ private class KeyringBlobStore(
     }
 }
 
+/** The session store, saying where the sign-in is kept right now (Settings → About). */
+interface SecureStore : BlobStore {
+    val inKeyring: Boolean
+}
+
 object SecureBlobStore {
     /**
      * Keyring when available, otherwise [fallbackFile]. If the keyring is
@@ -102,13 +92,13 @@ object SecureBlobStore {
      */
     fun create(
         fallbackFile: Path,
-        keyring: KeyringAccess? = KeyringAccess.system(),
+        keyring: KeyringAccess?,
         log: (String) -> Unit = System.err::println,
-    ): BlobStore {
+    ): SecureStore {
         val file = FileBlobStore(fallbackFile)
         if (keyring == null) {
             log("Silage: no Secret Service keyring found; storing session in $fallbackFile (mode 0600)")
-            return file
+            return object : SecureStore, BlobStore by file { override val inKeyring = false }
         }
         val store = KeyringBlobStore(keyring, file, fallbackFile, log)
         // A fallback was written after keyring failure and must not be shadowed

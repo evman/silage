@@ -26,7 +26,7 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
       - name: Install mpv, ffmpeg, D-Bus and a virtual display
-        run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg dbus xvfb libdrm-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libmpv2 ffmpeg dbus xvfb libdrm-dev pkg-config gnome-keyring
       - name: Test bundled helper and Windows packaging
         run: |
           python3 -m unittest discover -s scripts/dv-helper -v
@@ -34,6 +34,9 @@ jobs:
           python3 -m unittest discover -s scripts/tests -v
           bash scripts/dv-helper/install.sh --stage
       - name: Test
+        # The keyring test must run against the real GNOME Keyring here, never skip.
+        env:
+          SILAGE_REQUIRE_KEYRING_TEST: '1'
         run: xvfb-run -a ./gradlew --no-daemon test :shared:desktopTest
       - uses: actions/upload-artifact@v7
         if: failure()

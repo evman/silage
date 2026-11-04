@@ -421,6 +421,14 @@ internal fun AboutSection(koin: Koin) {
         Row { Text("Version", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp)); Text("${BuildInfo.NAME} ${BuildInfo.VERSION}", color = Silage.Text, fontSize = 20.sp) }
         Row { Text("Server", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp)); Text(server, color = Silage.Text, fontSize = 20.sp) }
         Row { Text("Logs", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp)); Text(XdgPaths.state.toString(), color = Silage.Text, fontSize = 20.sp) }
+        if (System.getProperty("os.name").startsWith("Linux")) {
+            val inKeyring = remember { runCatching { koin.get<org.siloserver.silo.platform.SecureStore>().inKeyring }.getOrDefault(false) }
+            Row {
+                Text("Sign-in saved in", color = Silage.Text2, fontSize = 20.sp, modifier = Modifier.width(200.dp))
+                Text(if (inKeyring) "Your desktop keyring (KDE Wallet or GNOME Keyring)" else "A private file (no desktop keyring answered)",
+                    color = Silage.Text, fontSize = 20.sp)
+            }
+        }
         updates?.let { (type, updater) ->
             Spacer(Modifier.height(26.dp))
             if (type is InstallType.Development) {

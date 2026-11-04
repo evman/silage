@@ -10,6 +10,11 @@
 - Add 3× playback speed (issue #6).
 - Add Ctrl+Q to quit, and list quitting in the README's controls (issue #5).
 - Add exclusive-mode audio on Windows (Settings → Playback → Exclusive audio).
+- Save the Linux sign-in in the desktop keyring (KDE Wallet, GNOME Keyring) again.
+  Since 0.2.0 a library conflict had disabled the keyring, so sign-ins were kept
+  in an owner-only file instead; they move into the keyring automatically.
+  Settings → About shows where the sign-in is saved, and every build now tests
+  against a real keyring.
 - Show the experimental Dolby Vision setting only on hardware it supports.
 - Keep the profile picture steady between pages, and remember searches that
   found something.

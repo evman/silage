@@ -27,7 +27,6 @@ kotlin {
         val desktopMain by getting {
             dependencies {
                 implementation(libs.ktor.client.okhttp)
-                implementation(libs.java.keyring)
                 implementation("net.java.dev.jna:jna-platform:${libs.versions.jna.get()}")
             }
         }

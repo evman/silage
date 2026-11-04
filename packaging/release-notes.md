@@ -11,6 +11,7 @@ sidebar above Settings.
 - **3× speed** in the player's Speed menu.
 - **Ctrl+Q** quits Silage from anywhere. Esc on the home page still asks first.
 - **Exclusive audio on Windows.** Settings → Playback → Exclusive audio gives Silage the sound device to itself during playback, so Windows doesn't mix or resample it.
+- **Linux sign-in back in your keyring.** Since 0.2.0 a library conflict had quietly disabled the desktop keyring, so Remember me kept sign-ins in an owner-only file instead. Silage now saves them in KDE Wallet or GNOME Keyring again and moves an existing sign-in there automatically. Settings → About shows where it's saved.
 - The experimental Dolby Vision setting now appears only on hardware it supports.
 
 **Upgrading from 0.4.x.** Windows: install `Silage-Setup.exe` once and sign in again; the old portable folder can then be deleted. Linux: run the one-command installer below once; updates then arrive with normal system updates.
