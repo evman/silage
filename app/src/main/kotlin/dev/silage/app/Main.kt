@@ -168,7 +168,9 @@ fun main(args: Array<String>) {
             BorderlessStartup(window, isWindows, borderless)
             val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
             val dvAuthorization = remember {
-                if (dev.silage.app.playback.dvHelperRequested(uiPrefs.experimentalDolbyVision)) dev.silage.app.playback.DvHelperAuthorization() else null
+                // Only the Intel register helper needs administrator authorization; the patched KWin doesn't.
+                val path = dev.silage.app.playback.dvPath(uiPrefs.experimentalDolbyVision, compositor = dev.silage.app.playback.kwinDvLease)
+                if (path == dev.silage.app.playback.DvPath.Helper) dev.silage.app.playback.DvHelperAuthorization() else null
             }
             DisposableEffect(dvAuthorization) { onDispose { dvAuthorization?.close() } }
             val liveFeatures = remember { koin.get<dev.silage.app.shell.LiveFeatures>() }

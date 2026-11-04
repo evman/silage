@@ -30,5 +30,39 @@ object DvHardware {
         }
     }.getOrDefault(false)
 
+    /**
+     * Dolby Vision vendor blocks (EDID, CTA extended tag 1, Dolby OUI) of monitors whose
+     * trigger values are known; must match the patched KWin's table. ASUS PG32UCDM first.
+     * More are added from hardware reports (`silage --dv-report`).
+     */
+    val VERIFIED_DV_BLOCKS = listOf("0146d0004c025d89606f87")
+
+    /** A connected display (any GPU, DisplayPort or HDMI) is a verified Dolby Vision monitor. */
+    fun verifiedMonitorConnected(drm: Path = Paths.get("/sys/class/drm")): Boolean = runCatching {
+        Files.list(drm).use { s -> s.toList() }.any { node ->
+            node.fileName.toString().matches(Regex("card\\d+-.+")) &&
+                runCatching { read(node.resolve("status")) == "connected" }.getOrDefault(false) &&
+                runCatching { dolbyBlocks(Files.readAllBytes(node.resolve("edid"))).any { it in VERIFIED_DV_BLOCKS } }.getOrDefault(false)
+        }
+    }.getOrDefault(false)
+
+    /** Every CTA extended-tag block's payload, as hex, that carries Dolby's OUI. */
+    private fun dolbyBlocks(edid: ByteArray): List<String> = buildList {
+        fun u(i: Int) = edid[i].toInt() and 0xFF
+        for (start in 128 until edid.size - 127 step 128) {
+            if (u(start) != 0x02) continue
+            val end = start + u(start + 2).coerceIn(4, 127)
+            var i = start + 4
+            while (i < end) {
+                val len = u(i) and 31
+                if ((u(i) shr 5) == 7 && len >= 4 && i + len < edid.size && u(i + 1) == 1 &&
+                    u(i + 2) == 0x46 && u(i + 3) == 0xd0 && u(i + 4) == 0) {
+                    add(edid.copyOfRange(i + 1, i + 1 + len).joinToString("") { "%02x".format(it) })
+                }
+                i += 1 + len
+            }
+        }
+    }
+
     private fun read(file: Path) = Files.readString(file).trim()
 }

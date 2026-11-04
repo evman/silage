@@ -32,7 +32,38 @@ internal interface ExperimentalHdrService : DBusInterface {
 }
 
 /** Compositor prototype stays Profile 5 only; helper sources also require actual render passes. */
-internal fun experimentalDvEligible(screen: String, property: (String) -> String?, profiles: Set<Int> = setOf(5)): Boolean =
+/** How Silage gets the monitor into Dolby Vision, if at all. */
+internal enum class DvPath { None, Compositor, Helper }
+
+/**
+ * The patched KWin's lease (no root, any GPU) whenever it's there; otherwise the Intel
+ * register helper. SILAGE_EXPERIMENTAL_DV ("compositor" / "helper" / "1") forces one.
+ */
+internal fun dvPath(enabled: Boolean, backend: String? = System.getenv("SILAGE_EXPERIMENTAL_DV"),
+    compositor: Boolean, osName: String = System.getProperty("os.name")): DvPath = when {
+    !osName.startsWith("Linux") -> DvPath.None
+    backend == "compositor" -> DvPath.Compositor
+    backend == "helper" || backend == "1" -> DvPath.Helper
+    backend != null || !enabled -> DvPath.None
+    compositor -> DvPath.Compositor
+    else -> DvPath.Helper
+}
+
+/** Whether this desktop session's KWin offers the lease; KWin doesn't change within a session. */
+internal val kwinDvLease: Boolean by lazy { compositorDvAvailable() }
+
+/** Whether KWin on this session bus offers Silage's Dolby Vision lease (the patched build). */
+internal fun compositorDvAvailable(
+    connect: () -> DBusConnection = { DBusConnectionBuilder.forSessionBus().withShared(false).build() },
+): Boolean = runCatching {
+    connect().use { bus ->
+        val owner = bus.getRemoteObject("org.freedesktop.DBus", "/org/freedesktop/DBus", DBus::class.java).GetNameOwner("org.kde.KWin")
+        bus.getRemoteObject(owner, ExperimentalHdrPath, org.freedesktop.dbus.interfaces.Introspectable::class.java)
+            .Introspect().contains("dev.silage.KWin.HdrMetadata1")
+    }
+}.getOrDefault(false)
+
+internal fun experimentalDvEligible(screen: String, property: (String) -> String?, profiles: Set<Int> = setOf(5, 7, 8)): Boolean =
     experimentalDvIneligibleReason(screen, property, profiles) == null
 
 internal fun experimentalDvIneligibleReason(screen: String, property: (String) -> String?, profiles: Set<Int>): String? {

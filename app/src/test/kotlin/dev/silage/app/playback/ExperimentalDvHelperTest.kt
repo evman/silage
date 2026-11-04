@@ -127,7 +127,7 @@ class ExperimentalDvHelperTest {
     @Test fun profile8RequiresActualRpuProcessingAndOneFullscreenHdrOutput() {
         val props = properties() + ("current-tracks/video/dolby-vision-profile" to "8")
         assertTrue(experimentalDvEligible("DP-3", props::get, DvHelperProfiles))
-        assertFalse(experimentalDvEligible("DP-3", props::get), "The separate compositor prototype remains Profile 5 only")
+        assertTrue(experimentalDvEligible("DP-3", props::get), "The patched-KWin path takes the same profiles")
         for ((key, invalid) in listOf(
             "vo-passes" to """{"fresh":[{"desc":"color decoding"}]}""",
             "display-names" to "DP-1,DP-2,DP-3",

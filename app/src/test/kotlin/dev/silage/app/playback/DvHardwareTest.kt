@@ -49,6 +49,29 @@ class DvHardwareTest {
         assertFalse(DvHardware.supported(root))
     }
 
+    /** EDID with a CTA block carrying [dolby] as its Dolby Vision vendor block. */
+    private fun withDolbyBlock(dolby: String): ByteArray {
+        val cta = ByteArray(128).also { it[0] = 2; it[1] = 3 }
+        val block = byteArrayOf((0xE0 or dolby.length / 2).toByte()) + dolby.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        block.copyInto(cta, 4)
+        cta[2] = (4 + block.size).toByte()
+        return pg32ucdm.copyOf(128).also { it[126] = 1 } + cta
+    }
+
+    /** The patched-KWin path works on any GPU and cable; what matters is a verified monitor. */
+    @Test fun aVerifiedMonitorOnAnyGpuOrCableCounts() {
+        gpu("card1", "0x10de", "0x2b85", "nvidia")
+        connector("card1", "HDMI-A-1", withDolbyBlock("0146d0004c025d89606f87"))
+        assertTrue(DvHardware.verifiedMonitorConnected(root))
+    }
+
+    @Test fun anUnverifiedDolbyVisionMonitorDoesNot() {
+        gpu("card1", "0x10de", "0x2b85", "nvidia")
+        connector("card1", "HDMI-A-1", withDolbyBlock("0146d0004c025d89606f00"))
+        connector("card1", "DP-1", withDolbyBlock("0146d0004c025d89606f87"), status = "disconnected")
+        assertFalse(DvHardware.verifiedMonitorConnected(root))
+    }
+
     @Test fun noDisplayInformationMeansNotSupported() {
         assertFalse(DvHardware.supported(root.resolve("missing")))
     }

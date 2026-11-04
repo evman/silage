@@ -23,8 +23,10 @@ class ExperimentalDvSessionTest {
 
     @Test fun onlyValidatedRendererCanRequestTheSignal() {
         assertTrue(experimentalDvEligible("DP-3", properties()::get))
+        // Profiles 5, 7 and 8 as with the helper; the renderer does the Dolby processing on any GPU.
+        assertTrue(experimentalDvEligible("DP-3", (properties() + ("current-tracks/video/dolby-vision-profile" to "8"))::get))
         for ((key, invalid) in listOf(
-            "current-tracks/video/dolby-vision-profile" to "8",
+            "current-tracks/video/dolby-vision-profile" to "4",
             "video-target-params/gamma" to "gamma2.2",
             "video-target-params/primaries" to "bt.709",
             "fullscreen" to "no", "display-names" to "DP-30",
@@ -61,6 +63,27 @@ class ExperimentalDvSessionTest {
         }
         override fun renew(token: String): Boolean { renewals.incrementAndGet(); return true }
         override fun release(token: String): Boolean { released.add(token); return true }
+    }
+
+    /** Silage looks for the patched KWin's lease object to decide how Dolby Vision is signalled. */
+    @Test fun detectsWhetherKWinOffersTheDolbyVisionLease() = withBus { connect ->
+        assertFalse(compositorDvAvailable(connect), "no KWin on the bus")
+        connect().use { server ->
+            server.requestBusName("org.kde.KWin")
+            assertFalse(compositorDvAvailable(connect), "stock KWin")
+            server.exportObject(Service())
+            assertTrue(compositorDvAvailable(connect), "patched KWin")
+        }
+    }
+
+    /** With the patched KWin there's no helper and no password prompt; developers can still force a path. */
+    @Test fun choosesTheDolbyVisionPath() {
+        assertEquals(DvPath.Compositor, dvPath(enabled = true, backend = null, compositor = true, osName = "Linux"))
+        assertEquals(DvPath.Helper, dvPath(enabled = true, backend = null, compositor = false, osName = "Linux"))
+        assertEquals(DvPath.None, dvPath(enabled = false, backend = null, compositor = true, osName = "Linux"))
+        assertEquals(DvPath.Helper, dvPath(enabled = false, backend = "helper", compositor = true, osName = "Linux"))
+        assertEquals(DvPath.Compositor, dvPath(enabled = false, backend = "compositor", compositor = false, osName = "Linux"))
+        assertEquals(DvPath.None, dvPath(enabled = true, backend = null, compositor = true, osName = "Windows 11"))
     }
 
     @Test fun playbackRenewsAndReleasesWhenRenderingChangesOrFileEnds() = withBus { connect ->

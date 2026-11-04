@@ -180,6 +180,8 @@ private fun VideoSection(koin: Koin) {
     val mode = remember(version) { prefs.hdrMode }
     val experimentalDv = remember(version) { prefs.experimentalDolbyVision }
     val dvHardware = remember { System.getProperty("os.name").startsWith("Linux") && dev.silage.app.playback.DvHardware.supported() }
+    // The patched KWin signals Dolby Vision on any GPU for a verified monitor.
+    val kwinDv = remember { System.getProperty("os.name").startsWith("Linux") && dev.silage.app.playback.kwinDvLease && dev.silage.app.playback.DvHardware.verifiedMonitorConnected() }
     val quality = remember(version) { prefs.quality }
     val scope = rememberCoroutineScope()
     Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -216,8 +218,10 @@ private fun VideoSection(koin: Koin) {
             Spacer(Modifier.height(40.dp))
         }
         // Only where the helper can work (or to turn an earlier choice off).
-        if (dvHardware || experimentalDv) {
-            Heading("Experimental Dolby Vision", "Your Intel Arc A380 and ASUS PG32UCDM support experimental Dolby Vision over DisplayPort. Authorizes only the bundled helper at startup. Restart Silage after changing this setting. Full Dolby color accuracy is not verified.")
+        if (dvHardware || kwinDv || experimentalDv) {
+            Heading("Experimental Dolby Vision", if (kwinDv)
+                "Your monitor supports Dolby Vision through Silage's KDE compositor update, on this GPU over DisplayPort or HDMI. No password needed. Restart Silage after changing this setting. Full Dolby color accuracy is not verified."
+                else "Your Intel Arc A380 and ASUS PG32UCDM support experimental Dolby Vision over DisplayPort. Authorizes only the bundled helper at startup. Restart Silage after changing this setting. Full Dolby color accuracy is not verified.")
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Pill("Disabled", selected = !experimentalDv) { prefs.experimentalDolbyVision = false }
                 Pill("Enabled", selected = experimentalDv) { prefs.experimentalDolbyVision = true }

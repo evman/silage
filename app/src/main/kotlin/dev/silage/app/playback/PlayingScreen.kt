@@ -85,7 +85,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     koin.get<dev.silage.app.ui.UiPrefs>().audioDevice?.let { device ->
         if (AudioDevices.parse(mpv.getProperty("audio-device-list")).any { it.name == device }) mpv.setProperty("audio-device", device)
     }
-    val dvBackend = System.getenv("SILAGE_EXPERIMENTAL_DV")
+    val compositorDv = dvPath(koin.get<dev.silage.app.ui.UiPrefs>().experimentalDolbyVision, compositor = kwinDvLease) == DvPath.Compositor
     val helperRequested = dvAuthorization != null
     val helper = AtomicReference<ExperimentalDvHelper?>()
     val sourceSwitch = !ready.direct && ready.sourceAudio.isNotEmpty()
@@ -173,10 +173,9 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     else dev.silage.app.desktop.LinuxMediaSession(mpv.state, hud::mediaKey,
         command = { mpv.command(*it); Unit }, property = mpv::getProperty, title = ready.meta.title)
     val port = mpv.asOpened()
-    val experimentalDv: AutoCloseable? = if (helperRequested ||
-        (System.getProperty("os.name").startsWith("Linux") && dvBackend == "compositor")) {
+    val experimentalDv: AutoCloseable? = if (helperRequested || compositorDv) {
         (output as? VideoOutput.OwnWindow)?.screen?.let { screen ->
-            if (dvBackend == "compositor") ExperimentalDvSession(screen, mpv.state, mpv::getProperty)
+            if (compositorDv) ExperimentalDvSession(screen, mpv.state, mpv::getProperty)
             else dvAuthorization?.let { owner ->
                 ExperimentalDvHelper(screen, mpv.state, mpv::getProperty, authorization = owner).also { helper.set(it) }
             }
