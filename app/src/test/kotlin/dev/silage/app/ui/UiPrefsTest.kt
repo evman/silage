@@ -10,6 +10,9 @@ class UiPrefsTest {
         UiPrefs(f).sidebar = listOf(SidebarLibraryPref(2, false))
         UiPrefs(f).hdrMode = "on"
         UiPrefs(f).experimentalDolbyVision = true
+        assertEquals(false, UiPrefs(f).exclusiveAudio)
+        UiPrefs(f).exclusiveAudio = true
+        assertEquals(true, UiPrefs(f).exclusiveAudio)
         assertEquals(listOf(SidebarLibraryPref(2, false)), UiPrefs(f).sidebar)
         assertEquals("on", UiPrefs(f).hdrMode)
         assertEquals(true, UiPrefs(f).experimentalDolbyVision)

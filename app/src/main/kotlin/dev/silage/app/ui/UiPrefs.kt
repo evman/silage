@@ -56,6 +56,8 @@ private data class UiPrefsFile(
     val autoSkipCredits: Boolean = false,
     /** mpv's audio device name ("wasapi/{…}"); null plays through the Windows default. */
     val audioDevice: String? = null,
+    /** Windows: play in exclusive mode (other apps go silent during playback). */
+    val exclusiveAudio: Boolean = false,
     /** Two-letter language for the audio track; null keeps the server's / file's choice. */
     val audioLanguage: String? = null,
     /** Subtitles at the start: null (the server's choice for the profile), off, on, forced. */
@@ -140,6 +142,10 @@ class UiPrefs(private val path: Path) {
     var audioDevice: String?
         get() = read().audioDevice
         set(value) = write { it.copy(audioDevice = value) }
+
+    var exclusiveAudio: Boolean
+        get() = read().exclusiveAudio
+        set(value) = write { it.copy(exclusiveAudio = value) }
 
     /** Default audio and subtitle choices for new videos (Settings → Playback / Subtitles). */
     var languages: dev.silage.app.playback.LanguagePrefs

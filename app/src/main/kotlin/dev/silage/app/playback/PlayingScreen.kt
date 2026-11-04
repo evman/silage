@@ -78,7 +78,8 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         savedVolume?.let { put("volume", it.toString()) }
         if (savedMute) put("mute", "yes")
     }
-    val mpv = MpvPlayer(remembered + playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1") +
+    val exclusiveAudio = System.getProperty("os.name").startsWith("Windows") && koin.get<dev.silage.app.ui.UiPrefs>().exclusiveAudio
+    val mpv = MpvPlayer(remembered + playbackMpvOptions(output, paused, muted = System.getenv("SILAGE_DEV_MUTE") == "1", exclusiveAudio = exclusiveAudio) +
         koin.get<dev.silage.app.ui.UiPrefs>().subtitleStyle.mpvOptions() + extraOptions)
     // The chosen audio output, if it is still connected; otherwise the Windows default.
     koin.get<dev.silage.app.ui.UiPrefs>().audioDevice?.let { device ->

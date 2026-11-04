@@ -225,6 +225,7 @@ private fun PlaybackSection(koin: Koin) {
     val skipCredits = remember(version) { prefs.autoSkipCredits }
     val languages = remember(version) { prefs.languages }
     val device = remember(version) { prefs.audioDevice }
+    val exclusiveAudio = remember(version) { prefs.exclusiveAudio }
     val preferredVersion = remember(version) { prefs.preferredVersion }
     var devices by remember { mutableStateOf<List<dev.silage.app.playback.AudioDevice>?>(null) }
     LaunchedEffect(Unit) { devices = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { dev.silage.app.playback.AudioDevices.list() } }
@@ -271,6 +272,14 @@ private fun PlaybackSection(koin: Koin) {
             }
         }
         if (devices == null) Text("Looking for sound devices…", color = Silage.Text3, fontSize = 17.sp, modifier = Modifier.padding(top = 10.dp))
+        if (System.getProperty("os.name").startsWith("Windows")) {
+            Spacer(Modifier.height(40.dp))
+            Heading("Exclusive audio", "Silage takes the sound device for itself during playback, so audio isn't mixed or resampled by Windows. Other apps are silent while a video plays. Applies from the next video.")
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Pill("Off", selected = !exclusiveAudio) { prefs.exclusiveAudio = false }
+                Pill("On", selected = exclusiveAudio) { prefs.exclusiveAudio = true }
+            }
+        }
         Spacer(Modifier.height(40.dp))
         Heading("Preferred version", "When a title has several copies (4K and 1080p, say) and you haven't picked one with the version button.")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {

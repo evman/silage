@@ -16,6 +16,13 @@ class PlaybackLogTest {
         kotlin.test.assertEquals("0", options["volume"])
     }
 
+    /** Windows exclusive mode (WASAPI): Silage alone drives the device, unmixed. Off unless chosen. */
+    @Test fun exclusiveAudioIsOnlyRequestedWhenChosen() {
+        assertFalse(playbackMpvOptions(VideoOutput.Embedded(1), paused = false, muted = false).containsKey("audio-exclusive"))
+        kotlin.test.assertEquals("yes",
+            playbackMpvOptions(VideoOutput.Embedded(1), paused = false, muted = false, exclusiveAudio = true)["audio-exclusive"])
+    }
+
     @Test fun failureLogDropsSignedQueries() {
         val lines = PlaybackLog.redactLog(listOf(
             "[ffmpeg] error: https://nas:8096/api/v2/playback/transcode/abc/master.m3u8?st=SECRET789&e=1: Server returned 404 Not Found",
