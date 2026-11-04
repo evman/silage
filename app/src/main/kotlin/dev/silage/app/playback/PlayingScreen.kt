@@ -148,8 +148,19 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         mpv.events.filterIsInstance<PlayerEvent.FileLoaded>().first()
         video.apply(mpv::setProperty, mpv::getProperty)
         // Dolby Vision output for Profile 7 needs the frames' Dolby Vision metadata, which copy-back decoders drop.
-        if (compositorDv || helperRequested) dvDecoders(mpv.getProperty("current-tracks/video/dolby-vision-profile")?.toIntOrNull())
-            ?.let { mpv.setProperty("hwdec", it) }
+        val dvProfile = mpv.getProperty("current-tracks/video/dolby-vision-profile")?.toIntOrNull()
+        if (compositorDv || helperRequested) dvDecoders(dvProfile)?.let { mpv.setProperty("hwdec", it) }
+        // Wait on the first frame while the monitor switches to Dolby Vision (a few seconds of
+        // black), so the opening isn't missed; play anyway if the switch doesn't happen.
+        if (compositorDv && (output as? VideoOutput.OwnWindow)?.screen != null && dvShouldHold(dvProfile, paused)) launch {
+            val heldSince = System.currentTimeMillis()
+            mpv.setProperty("pause", "yes")
+            hud.notice("Switching to Dolby Vision…", DV_HOLD_MAX_MS)
+            while (!dvHoldEnds(System.currentTimeMillis(), heldSince, compositorSession.get()?.activeSinceMs,
+                    compositorSession.get()?.unavailable == true)) kotlinx.coroutines.delay(100)
+            hud.notice(if (compositorSession.get()?.activeSinceMs != null) "Dolby Vision" else "Playing in HDR")
+            mpv.setProperty("pause", "no")
+        }
         if (ready.direct) ready.selectedAudioOrdinal?.let { ordinal ->
             val mounted = dev.silage.app.playback.hud.Tracks.parse(mpv.getProperty("track-list") ?: "[]").audio
             nativeAudioId(mounted, ordinal)?.let { mpv.command("set", "aid", it.toString()) }

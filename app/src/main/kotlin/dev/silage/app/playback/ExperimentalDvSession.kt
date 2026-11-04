@@ -41,6 +41,22 @@ internal interface ExperimentalHdrService : DBusInterface {
  */
 internal fun dvDecoders(profile: Int?): String? = if (profile == 7) "vaapi,nvdec" else null
 
+/** After KWin switches to Dolby Vision, the monitor shows black while it resyncs (about 3 s on a PG32UCDM). */
+internal const val DV_SETTLE_MS = 3_500L
+
+/** The longest a Dolby Vision title waits on its first frame for the switch. */
+internal const val DV_HOLD_MAX_MS = 8_000L
+
+/** Whether a Dolby Vision title should start paused until the monitor has switched. */
+internal fun dvShouldHold(profile: Int?, startPaused: Boolean): Boolean = !startPaused && profile in setOf(5, 7, 8)
+
+/**
+ * Whether a title held on its first frame may play: once the signal has been on for
+ * [DV_SETTLE_MS], at once when KWin can't do it, and after [DV_HOLD_MAX_MS] whatever happens.
+ */
+internal fun dvHoldEnds(now: Long, heldSince: Long, activeSince: Long?, unavailable: Boolean): Boolean =
+    unavailable || now - heldSince >= DV_HOLD_MAX_MS || (activeSince != null && now - activeSince >= DV_SETTLE_MS)
+
 /** How Silage gets the monitor into Dolby Vision, if at all. */
 internal enum class DvPath { None, Compositor, Helper }
 
@@ -112,7 +128,12 @@ internal class ExperimentalDvSession(
     private var closed = false
     @Volatile private var connection: DBusConnection? = null
     @Volatile private var active = false
-    @Volatile private var unavailable = false
+    /** KWin can't give this output Dolby Vision; normal HDR is in use. */
+    @Volatile var unavailable = false
+        private set
+    /** When the current Dolby Vision signal came on, or null while it's off. */
+    @Volatile var activeSinceMs: Long? = null
+        private set
 
     /** Playback Info's "Dolby Vision" row: on, or exactly why not. */
     fun description(): String = when {
@@ -146,9 +167,11 @@ internal class ExperimentalDvSession(
                                 ?: error("Compositor declined the experimental output profile")
                         }
                         check(service.renew(token)) { "Compositor output session expired" }
+                        if (!active) activeSinceMs = System.currentTimeMillis()
                         active = true
                     } else if (token != null) {
                         active = false
+                        activeSinceMs = null
                         check(service?.release(token) == true) { "Compositor restoration is pending" }
                         token = null
                     }
@@ -158,6 +181,7 @@ internal class ExperimentalDvSession(
                 throw e
             } catch (_: Exception) {
                 active = false
+                activeSinceMs = null
                 unavailable = true
                 // Experimental capability is optional; normal HDR playback continues.
                 System.err.println("Silage: experimental DV compositor session unavailable; using normal HDR")

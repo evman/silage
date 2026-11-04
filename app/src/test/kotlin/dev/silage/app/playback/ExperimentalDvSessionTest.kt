@@ -91,6 +91,26 @@ class ExperimentalDvSessionTest {
         assertEquals(null, dvDecoders(profile = null))
     }
 
+    /**
+     * A Dolby Vision title waits on its first frame until KWin has switched the signal and the
+     * monitor has had time to resync (a few seconds of black), so the opening isn't missed.
+     * It never waits long when the switch doesn't happen.
+     */
+    @Test fun aDolbyVisionTitleStartsOnceTheMonitorHasSwitched() {
+        val start = 10_000L
+        assertFalse(dvHoldEnds(now = start + 1_000, heldSince = start, activeSince = null, unavailable = false), "signal not on yet")
+        assertFalse(dvHoldEnds(now = start + 2_000 + DV_SETTLE_MS - 1, heldSince = start, activeSince = start + 2_000, unavailable = false), "monitor resyncing")
+        assertTrue(dvHoldEnds(now = start + 2_000 + DV_SETTLE_MS, heldSince = start, activeSince = start + 2_000, unavailable = false))
+        assertTrue(dvHoldEnds(now = start + 500, heldSince = start, activeSince = null, unavailable = true), "KWin can't do it: play at once")
+        assertTrue(dvHoldEnds(now = start + DV_HOLD_MAX_MS, heldSince = start, activeSince = null, unavailable = false), "never waits longer")
+        assertTrue(dvHoldEnds(now = start + DV_HOLD_MAX_MS, heldSince = start, activeSince = start + DV_HOLD_MAX_MS - 100, unavailable = false))
+        assertTrue(dvShouldHold(profile = 7, startPaused = false))
+        assertTrue(dvShouldHold(profile = 8, startPaused = false))
+        assertFalse(dvShouldHold(profile = 8, startPaused = true), "a paused restart stays paused")
+        assertFalse(dvShouldHold(profile = null, startPaused = false), "not Dolby Vision")
+        assertFalse(dvShouldHold(profile = 4, startPaused = false))
+    }
+
     @Test fun choosesTheDolbyVisionPath() {
         assertEquals(DvPath.Compositor, dvPath(enabled = true, backend = null, compositor = true, osName = "Linux"))
         assertEquals(DvPath.Helper, dvPath(enabled = true, backend = null, compositor = false, osName = "Linux"))
@@ -116,9 +136,11 @@ class ExperimentalDvSessionTest {
                 assertEquals("DP-3", service.acquisitions.single())
                 // Playback Info's "Dolby Vision" row says whether it's on, or why not.
                 assertEquals("Signal active (via KWin)", session.description())
+                assertNotNull(session.activeSinceMs, "when the signal came on, so playback can wait for the monitor")
                 props.set(properties() + ("video-target-params/gamma" to "gamma2.2"))
                 await { service.released == listOf("token-1") }
                 assertEquals("Requires PQ HDR output", session.description())
+                assertNull(session.activeSinceMs)
                 props.set(properties())
                 await { service.acquisitions.size == 2 }
                 state.value = PlayerState(loaded = false)
@@ -163,6 +185,7 @@ class ExperimentalDvSessionTest {
             try {
                 await { owner.get() != null && !registry.NameHasOwner(owner.get()) }
                 assertEquals(expected, state.value)
+                assertTrue(session.unavailable)
             } finally { session.close() }
         }
     }

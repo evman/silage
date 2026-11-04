@@ -463,8 +463,11 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         }
     }
 
-    private fun toast(message: String) {
-        toastUntil = System.currentTimeMillis() + 1_600
+    /** Shows a short message over the video, as the keyboard shortcuts do. */
+    fun notice(message: String, forMs: Long = 1_600) { inbox += { toast(message, forMs) } }
+
+    private fun toast(message: String, forMs: Long = 1_600) {
+        toastUntil = System.currentTimeMillis() + forMs
         ui.value = ui.value.copy(toast = message)
     }
 
