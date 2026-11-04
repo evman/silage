@@ -84,12 +84,14 @@ class DiagnosticsApiTest {
         assertTrue(fixture.request?.body?.contentType?.match(ContentType.MultiPart.FormData) == true)
 
         val body = fixture.requestBody
-        val manifestIndex = body.indexOf("name=manifest")
-        val bundleIndex = body.indexOf("name=bundle")
+        // Ktor 3.6+ quotes the field name (name="manifest", RFC 7578); earlier versions didn't.
+        fun part(name: String) = Regex("""Content-Disposition: form-data; name="?$name"?;""")
+        val manifestIndex = part("manifest").find(body)?.range?.first ?: -1
+        val bundleIndex = part("bundle").find(body)?.range?.first ?: -1
         assertTrue(manifestIndex >= 0, body)
         assertTrue(bundleIndex > manifestIndex, body)
-        assertEquals(1, Regex("Content-Disposition: form-data; name=manifest").findAll(body).count())
-        assertEquals(1, Regex("Content-Disposition: form-data; name=bundle").findAll(body).count())
+        assertEquals(1, part("manifest").findAll(body).count(), body)
+        assertEquals(1, part("bundle").findAll(body).count(), body)
         assertTrue(body.contains("filename=manifest.json"), body)
         assertTrue(body.contains("Content-Type: application/json"), body)
         assertTrue(body.contains("filename=bundle.tar.gz"), body)
