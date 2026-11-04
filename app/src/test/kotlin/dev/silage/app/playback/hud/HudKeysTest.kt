@@ -31,6 +31,16 @@ class HudKeysTest {
         assertEquals(hidden.copy(focus = PlayPause) to HudEffect.None, shown.on(HudKey.ofAwt(dev.silage.app.nav.BackInput.AWT_BACK)!!))
     }
 
+    /** Ctrl+Q in mpv's own window (HDR / Dolby Vision) quits Silage, whatever the HUD shows. */
+    @Test fun ctrlQInMpvsWindowQuits() {
+        assertEquals(HudKey.Quit, HudKey.ofMpv("Ctrl+q"))
+        assertEquals(HudKey.Quit, HudKey.ofMpv("Ctrl+Q"))
+        assertTrue("Ctrl+q" in HudKey.MPV_KEYS)
+        assertTrue("Ctrl+Q" in HudKey.MPV_KEYS)
+        assertEquals(hidden to HudEffect.Quit, hidden.on(HudKey.Quit))
+        assertEquals(HudEffect.Quit, shown.copy(menu = HudMenu.Audio).on(HudKey.Quit).second)
+    }
+
     @Test fun shortcutKeysActWhereverTheFocusIsWithoutRevealingTheHud() {
         assertEquals(HudKey.CycleAudio, HudKey.ofAwt(KeyEvent.VK_A))
         assertEquals(HudKey.CycleSubtitles, HudKey.ofMpv("s"))

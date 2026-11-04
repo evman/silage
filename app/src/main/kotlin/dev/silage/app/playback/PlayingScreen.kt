@@ -114,6 +114,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         // On the player's clock, which starts at the plan's timeline offset.
         knownDuration = ready.sourceDurationSeconds?.let { it - ready.timelineOffsetSeconds }?.takeIf { it > 0 },
         hasNextEpisode = hasNextEpisode,
+        onQuit = { koin.get<dev.silage.app.AppExit>().quit() },
         onNextEpisode = if (onNextEpisode != null) ({ onNextEpisode(); mpv.command("stop"); Unit }) else null,
         audioRows = { mounted -> audioMenuTracks(ready.sourceAudio, mounted, ready.direct, ready.selectedAudioOrdinal) },
         qualities = if (onQuality == null) emptyList() else qualityRows(ready.qualities, ready.activeQuality),

@@ -16,10 +16,11 @@ import javax.swing.SwingUtilities
  */
 fun attachEmbeddedInput(canvas: Canvas, hud: PlayerHud): () -> Unit {
     val keys = KeyEventDispatcher { e ->
-        if (!acceptsPlayerKey(canvas, e)) return@KeyEventDispatcher false
-        val k = if (e.id == KeyEvent.KEY_PRESSED) HudKey.ofAwt(e.keyCode) else null
-        k?.let(hud::key)
-        k != null || (e.id != KeyEvent.KEY_PRESSED && HudKey.ofAwt(e.keyCode) != null)
+        if (e.id == KeyEvent.KEY_PRESSED) {
+            val k = playerKey(canvas, e) ?: return@KeyEventDispatcher false
+            hud.key(k)
+            true
+        } else acceptsPlayerKey(canvas, e) && HudKey.ofAwt(e.keyCode) != null
     }
     val cursor = VideoCursor(canvas)
     val autoHide = CursorAutoHide()
@@ -59,6 +60,19 @@ fun attachEmbeddedInput(canvas: Canvas, hud: PlayerHud): () -> Unit {
             cursor.restore()
         }
     }
+}
+
+/** The HUD key a key press in the player window means, if any. */
+internal fun playerKey(canvas: Canvas, event: KeyEvent): HudKey? = when {
+    isQuitShortcut(canvas, event) -> HudKey.Quit
+    acceptsPlayerKey(canvas, event) -> HudKey.ofAwt(event.keyCode)
+    else -> null
+}
+
+private fun isQuitShortcut(canvas: Canvas, event: KeyEvent): Boolean {
+    if (event.keyCode != KeyEvent.VK_Q || !event.isControlDown || event.isAltDown || event.isMetaDown) return false
+    val owner = SwingUtilities.getWindowAncestor(canvas) ?: return false
+    return SwingUtilities.getWindowAncestor(event.component) == owner || event.component == owner
 }
 
 internal fun acceptsPlayerKey(canvas: Canvas, event: KeyEvent): Boolean {

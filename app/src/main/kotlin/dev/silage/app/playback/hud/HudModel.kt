@@ -171,7 +171,9 @@ enum class HudKey {
     // Shortcuts: they act at once, with a short message, wherever the focus is.
     Mute, VolumeUp, VolumeDown, CycleSubtitles, CycleAudio, SlowerSpeed, FasterSpeed, NextEpisode,
     // Copies Playback Info while it's open.
-    CopyInfo;
+    CopyInfo,
+    // Ctrl+Q: quits Silage, as it does outside the player.
+    Quit;
 
     companion object {
         fun ofAwt(code: Int): HudKey? = when (code) {
@@ -213,6 +215,7 @@ enum class HudKey {
             "ENTER" -> Enter
             "i" -> Info
             "c" -> CopyInfo
+            "Ctrl+q", "Ctrl+Q" -> Quit
             "f", "F" -> Fullscreen
             "m", "M" -> Mute
             "+", "=", "KP_ADD", "0" -> VolumeUp
@@ -226,7 +229,7 @@ enum class HudKey {
         }
 
         val MPV_KEYS = listOf("ESC", "BS", "q", "MBTN_BACK", "GO_BACK", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F",
-            "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N", "c")
+            "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N", "c", "Ctrl+q", "Ctrl+Q")
 
         /** The shortcut keys and what each does, whatever the HUD shows. */
         internal fun shortcut(key: HudKey): HudEffect? = when (key) {
@@ -238,6 +241,7 @@ enum class HudKey {
             SlowerSpeed -> HudEffect.Speed(-1)
             FasterSpeed -> HudEffect.Speed(+1)
             NextEpisode -> HudEffect.NextEpisode
+            Quit -> HudEffect.Quit
             else -> null
         }
     }
@@ -263,6 +267,7 @@ sealed interface HudEffect {
     data class Speed(val step: Int) : HudEffect
     data object NextEpisode : HudEffect
     data object CopyInfo : HudEffect
+    data object Quit : HudEffect
 }
 
 /**
