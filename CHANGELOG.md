@@ -7,6 +7,9 @@
   apps do, and keeps it fresh during long films (issue #4).
 - Let Enter press Skip Intro, Skip Recap or Skip Credits while the button is on
   screen.
+- Put the best matches first in search: shows and movies whose titles match
+  lead, and episodes with the same name come last (searching "fallout" used to
+  show dozens of episodes before the Fallout series).
 - Add 3× playback speed (issue #6).
 - Add Ctrl+Q to quit, and list quitting in the README's controls (issue #5).
 - Add exclusive-mode audio on Windows (Settings → Playback → Exclusive audio).

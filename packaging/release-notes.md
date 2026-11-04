@@ -8,6 +8,7 @@ sidebar above Settings.
 
 - **Playback fix.** Current Silo server versions refused original-file streams (HTTP 403). Silage now sends its sign-in with them, as Silo's own apps do, and keeps it fresh during long films.
 - **Skip with one press.** While Skip Intro, Skip Recap or Skip Credits is on screen, Enter presses it.
+- **Better search.** Shows and movies whose titles match come first; episodes with the same name come last.
 - **3× speed** in the player's Speed menu.
 - **Ctrl+Q** quits Silage from anywhere. Esc on the home page still asks first.
 - **Exclusive audio on Windows.** Settings → Playback → Exclusive audio gives Silage the sound device to itself during playback, so Windows doesn't mix or resample it.
