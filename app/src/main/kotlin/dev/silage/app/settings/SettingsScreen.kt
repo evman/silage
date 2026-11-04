@@ -179,6 +179,7 @@ private fun VideoSection(koin: Koin) {
     val version by prefs.changes.collectAsState()
     val mode = remember(version) { prefs.hdrMode }
     val experimentalDv = remember(version) { prefs.experimentalDolbyVision }
+    val dvHardware = remember { System.getProperty("os.name").startsWith("Linux") && dev.silage.app.playback.DvHardware.supported() }
     val quality = remember(version) { prefs.quality }
     Column(Modifier.verticalScroll(rememberScrollState())) {
         Heading("Streaming quality", "Auto plays the original file whenever this PC can, and only asks the server to convert when it must. " +
@@ -203,8 +204,9 @@ private fun VideoSection(koin: Koin) {
             Pill("Never", selected = mode == "off") { prefs.hdrMode = "off" }
         }
         Spacer(Modifier.height(40.dp))
-        if (System.getProperty("os.name").startsWith("Linux")) {
-            Heading("Experimental Dolby Vision", "Display signaling for Intel Arc A380 and ASUS PG32UCDM over DisplayPort. Authorizes only the bundled helper at startup. Restart Silage after changing this setting. Full Dolby color accuracy is not verified.")
+        // Only where the helper can work (or to turn an earlier choice off).
+        if (dvHardware || experimentalDv) {
+            Heading("Experimental Dolby Vision", "Your Intel Arc A380 and ASUS PG32UCDM support experimental Dolby Vision over DisplayPort. Authorizes only the bundled helper at startup. Restart Silage after changing this setting. Full Dolby color accuracy is not verified.")
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Pill("Disabled", selected = !experimentalDv) { prefs.experimentalDolbyVision = false }
                 Pill("Enabled", selected = experimentalDv) { prefs.experimentalDolbyVision = true }
