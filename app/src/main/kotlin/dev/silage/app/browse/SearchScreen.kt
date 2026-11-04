@@ -59,7 +59,10 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit, onOpenRequest: (mediaT
     val requestRepo = remember { koin.get<RequestsRepository>() }
     // Results and text live with this visit's back-stack entry: Back from a result returns to them.
     val entryScope = LocalNavEntry.current.scope
-    val query = rememberEntry("search") { SearchQuery(entryScope) { catalog.browse(query = it, limit = 60) } }
+    // Shows, movies and everything else at once; shows and exact titles lead (see rankedSearch).
+    val query = rememberEntry("search") {
+        SearchQuery(entryScope) { q -> rankedSearch(q) { text, type -> catalog.browse(query = text, mediaType = type, limit = if (type == null) 60 else 30) } }
+    }
     val results by query.results.collectAsState()
     val requestSearch = rememberEntry("search:requests") {
         RequestSearch(entryScope, { q ->

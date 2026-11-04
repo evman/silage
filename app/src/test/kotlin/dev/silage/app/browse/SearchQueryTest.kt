@@ -44,6 +44,35 @@ class SearchQueryTest {
         assertEquals(listOf("new"), (q.results.value as SearchResults.Done).cards.map { it.id })
     }
 
+    private fun item(title: String, type: String, id: String = "$type:$title") = BrowseItem(contentId = id, type = type, title = title)
+
+    /** Typing "fallout" must lead with the show, not hundreds of episodes titled "Fallout". */
+    @Test fun showsThenMoviesThenEpisodesWithExactTitlesFirst() = runTest {
+        val asked = mutableListOf<String?>()
+        val answer = rankedSearch("fallout") { q, type ->
+            asked += type
+            assertEquals("fallout", q)
+            ApiResult.Success(CatalogResponse(items = when (type) {
+                "series" -> listOf(item("Thirst Trap: The Fame. The Fantasy. The Fallout.", "series"), item("Fallout", "series"))
+                "movie" -> listOf(item("Mission: Impossible - Fallout", "movie"), item("Fallout: The Ghoul Log", "movie"), item("The Fallout", "movie"))
+                else -> listOf(item("Fallout", "episode", "ep1"), item("Fallout", "series"), item("Fallout", "episode", "ep2"), item("Fallout", "collection"))
+            }))
+        }
+        assertEquals(setOf("series", "movie", null), asked.toSet())
+        assertEquals(
+            listOf("series:Fallout", "series:Thirst Trap: The Fame. The Fantasy. The Fallout.",
+                "movie:The Fallout", "movie:Fallout: The Ghoul Log", "movie:Mission: Impossible - Fallout",
+                "collection:Fallout", "ep1", "ep2"),
+            assertIs<ApiResult.Success<CatalogResponse>>(answer).data.items.map { it.contentId },
+        )
+    }
+
+    @Test fun oneFailingSearchStillShowsTheOthersButAllFailingIsAnError() = runTest {
+        val partial = rankedSearch("x") { _, type -> if (type == "movie") ApiResult.NetworkError(Exception("down")) else hits("a") }
+        assertEquals(listOf("a"), assertIs<ApiResult.Success<CatalogResponse>>(partial).data.items.map { it.contentId })
+        assertIs<ApiResult.NetworkError>(rankedSearch("x") { _, _ -> ApiResult.NetworkError(Exception("down")) })
+    }
+
     @Test fun failuresAreReported() = runTest {
         val q = SearchQuery(backgroundScope, debounceMs = 300) { ApiResult.NetworkError(Exception("x")) }
         q.onInput("x"); advanceTimeBy(1_000); runCurrent()
