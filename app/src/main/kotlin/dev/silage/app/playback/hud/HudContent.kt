@@ -140,7 +140,7 @@ interface HudActions {
     fun sleep(choice: SleepChoice) {}
 }
 
-val SPEEDS = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
+val SPEEDS = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0)
 
 private val Text = Color(0xFFEDEDED)
 private val Dim = Color.White.copy(alpha = 0.78f)

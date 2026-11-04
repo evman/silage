@@ -57,7 +57,7 @@ class HudKeysTest {
     @Test fun syncSpeedsAndCyclesStepAsExpected() {
         assertEquals(0.3, SyncControls.adjust(0.2, 1)); assertEquals(-0.1, SyncControls.adjust(0.0, -1)); assertEquals(10.0, SyncControls.adjust(10.0, 1))
         assertEquals("In sync", SyncControls.label(0.0)); assertEquals("+0.3 s later", SyncControls.label(0.3)); assertEquals("1.2 s earlier", SyncControls.label(-1.2))
-        assertEquals(1.25, nextSpeed(SPEEDS, 1.0, 1)); assertEquals(0.5, nextSpeed(SPEEDS, 0.5, -1)); assertEquals(2.0, nextSpeed(SPEEDS, 2.0, 1))
+        assertEquals(1.25, nextSpeed(SPEEDS, 1.0, 1)); assertEquals(0.5, nextSpeed(SPEEDS, 0.5, -1)); assertEquals(3.0, nextSpeed(SPEEDS, 2.0, 1)); assertEquals(3.0, nextSpeed(SPEEDS, 3.0, 1))
         assertEquals(5, nextInCycle(listOf<Int?>(null, 4, 5), 4)); assertEquals(null, nextInCycle(listOf<Int?>(null, 4, 5), 5)); assertEquals(4, nextInCycle(listOf<Int?>(null, 4, 5), null))
         assertEquals(1200.0, sleepEndPoint(1300.0, 1200.0)); assertEquals(1297.0, sleepEndPoint(1300.0, null)); assertEquals(null, sleepEndPoint(0.0, null))
     }
