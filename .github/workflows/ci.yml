@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install private renderer build dependencies
-        run: pacman -Syu --noconfirm --needed base-devel git meson ninja python pkgconf mpv shaderc vulkan-headers vulkan-icd-loader vulkan-swrast wayland-protocols libpipewire luajit patchelf
+        run: pacman -Syu --noconfirm --needed base-devel git meson ninja python pkgconf mpv shaderc vulkan-headers vulkan-icd-loader vulkan-swrast wayland-protocols libpipewire luajit patchelf ffnvcodec-headers
       - name: Build and test the pinned renderer
         run: bash scripts/dv-helper/build_runtime.sh
       - name: Verify runtime export

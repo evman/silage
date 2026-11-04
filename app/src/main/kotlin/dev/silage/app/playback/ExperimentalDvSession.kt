@@ -33,12 +33,13 @@ internal interface ExperimentalHdrService : DBusInterface {
 
 /** Compositor prototype stays Profile 5 only; helper sources also require actual render passes. */
 /**
- * Whether Dolby Vision output needs this video decoded in software: NVDEC (copy) drops Dolby
- * Vision metadata from decoded frames, so a Profile 7 enhancement layer can't be confirmed and
- * the signal never starts. VAAPI keeps it; Profiles 5 and 8 don't need it.
+ * The decoders Dolby Vision output may use for this video, or null to keep the usual choice.
+ * Copy-back decoders (nvdec-copy, vaapi-copy) drop Dolby Vision metadata from decoded frames,
+ * so a Profile 7 enhancement layer can't be confirmed and the signal never starts. Direct
+ * VAAPI and NVDEC keep it; when neither works, mpv decodes in software. Profiles 5 and 8
+ * don't need it.
  */
-internal fun dvNeedsSoftwareDecoding(profile: Int?, hwdec: String?): Boolean =
-    profile == 7 && hwdec != "no" && hwdec?.startsWith("vaapi") != true
+internal fun dvDecoders(profile: Int?): String? = if (profile == 7) "vaapi,nvdec" else null
 
 /** How Silage gets the monitor into Dolby Vision, if at all. */
 internal enum class DvPath { None, Compositor, Helper }

@@ -51,9 +51,11 @@ env -u LD_PRELOAD ninja -C "$runtime_build/placebo-build" -j3
 env -u LD_PRELOAD meson test -C "$runtime_build/placebo-build" --print-errorlogs --num-processes=2
 env -u LD_PRELOAD meson install -C "$runtime_build/placebo-build"
 export PKG_CONFIG_PATH="$runtime_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+# CUDA interop (ffnvcodec headers; libcuda is loaded at run time): direct NVDEC keeps the
+# Dolby Vision metadata that nvdec-copy drops, so Profile 7 can decode on NVIDIA hardware.
 setup_meson "$runtime_build/mpv-build" "$runtime_build/src/mpv" \
   -Dlibmpv=true -Dcplayer=true -Dtests=true -Dvulkan=enabled -Dwayland=enabled \
-  -Dvaapi=enabled -Dpipewire=enabled -Dlua=enabled
+  -Dvaapi=enabled -Dpipewire=enabled -Dlua=enabled -Dcuda-hwaccel=enabled -Dcuda-interop=enabled
 env -u LD_PRELOAD ninja -C "$runtime_build/mpv-build" -j3
 env -u LD_PRELOAD LD_LIBRARY_PATH="$runtime_prefix/lib" \
   meson test -C "$runtime_build/mpv-build" --print-errorlogs --num-processes=2
