@@ -72,6 +72,13 @@ import org.siloserver.silo.repository.AuthRepository
 import org.siloserver.silo.repository.ProfileRepository
 
 fun main(args: Array<String>) {
+    if ("--dv-report" in args) {
+        // Read-only; nothing is sent. The link opens a pre-filled GitHub issue to submit.
+        val report = dev.silage.app.playback.DvReport.build(silageVersion = BuildInfo.VERSION)
+        println(report)
+        println("To send it (you can edit it first), open:\n${dev.silage.app.playback.DvReport.issueUrl(report)}")
+        return
+    }
     if ("--version" in args) {
         println("${BuildInfo.NAME} ${BuildInfo.VERSION}")
         return

@@ -181,6 +181,7 @@ private fun VideoSection(koin: Koin) {
     val experimentalDv = remember(version) { prefs.experimentalDolbyVision }
     val dvHardware = remember { System.getProperty("os.name").startsWith("Linux") && dev.silage.app.playback.DvHardware.supported() }
     val quality = remember(version) { prefs.quality }
+    val scope = rememberCoroutineScope()
     Column(Modifier.verticalScroll(rememberScrollState())) {
         Heading("Streaming quality", "Auto plays the original file whenever this PC can, and only asks the server to convert when it must. " +
             "Pick a resolution to always watch at that size or lower (the server converts anything bigger). The player's Quality button changes it for one video.")
@@ -204,6 +205,16 @@ private fun VideoSection(koin: Koin) {
             Pill("Never", selected = mode == "off") { prefs.hdrMode = "off" }
         }
         Spacer(Modifier.height(40.dp))
+        if (System.getProperty("os.name").startsWith("Linux")) {
+            Heading("Dolby Vision hardware report", "Help bring Dolby Vision to your GPU and monitor: opens a GitHub issue with their model and capability details (never serial numbers) for you to review and send.")
+            Pill("Send hardware report", selected = false) {
+                scope.launch(Dispatchers.IO) {
+                    val report = dev.silage.app.playback.DvReport.build(silageVersion = dev.silage.app.BuildInfo.VERSION)
+                    runCatching { dev.silage.app.update.openInBrowser(dev.silage.app.playback.DvReport.issueUrl(report)) }
+                }
+            }
+            Spacer(Modifier.height(40.dp))
+        }
         // Only where the helper can work (or to turn an earlier choice off).
         if (dvHardware || experimentalDv) {
             Heading("Experimental Dolby Vision", "Your Intel Arc A380 and ASUS PG32UCDM support experimental Dolby Vision over DisplayPort. Authorizes only the bundled helper at startup. Restart Silage after changing this setting. Full Dolby color accuracy is not verified.")
