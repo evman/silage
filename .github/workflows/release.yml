@@ -266,7 +266,9 @@ jobs:
         env:
           REPO_GPG_KEY_ID: ${{ secrets.REPO_GPG_KEY_ID }}
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          git config --global --add safe.directory "$PWD"
           v="${GITHUB_REF_NAME#v}"
           # Version-free copies, so releases/latest/download/<name> always gets the newest.
           cp "dist/silage_${v}_amd64.deb" dist/silage_amd64.deb
@@ -274,6 +276,11 @@ jobs:
           cp "dist/silage-${v}-linux-x86_64.tar.gz" dist/silage-linux-x86_64.tar.gz
           cp "dist/silage-bin-${v//-/_}-1-x86_64.pkg.tar.zst" dist/silage-bin-x86_64.pkg.tar.zst
           scripts/build-repos.sh dist "$v" pages
+          # Pages is rebuilt whole: keep the opt-in KWin dnf repository (kwin.yml publishes it) on it.
+          if gh release view kwin-fedora >/dev/null 2>&1; then
+            mkdir -p kwin && gh release download kwin-fedora -D kwin -p '*.rpm'
+            scripts/build-kwin-repos.sh fedora kwin pages
+          fi
           # Last, so SHA256SUMS lists every asset.
           scripts/sign-release.sh dist
       - name: Check the signature against the key built into the app

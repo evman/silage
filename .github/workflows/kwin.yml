@@ -159,6 +159,8 @@ jobs:
           REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
           REPO_GPG_KEY_ID: ${{ secrets.REPO_GPG_KEY_ID }}
         run: |
+          # The checkout belongs to another user inside the container; gh reads the repository from it.
+          git config --global --add safe.directory "$PWD"
           printf '%s\n' "$REPO_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
           tag=$(gh release view --json tagName -q .tagName); v="${tag#v}"
           mkdir dist kwin
