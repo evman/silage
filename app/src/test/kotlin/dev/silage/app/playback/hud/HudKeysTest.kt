@@ -79,6 +79,23 @@ class HudKeysTest {
         assertEquals(HudNav(visible = true, focus = Skip, hasSkip = true) to HudEffect.None, hidden.copy(hasSkip = true).on(HudKey.Down))
     }
 
+    /** While Skip Intro/Recap/Credits is on screen, one Enter skips (a Discord request). */
+    @Test fun hiddenEnterPressesSkipWhileItIsOnScreen() {
+        val offered = hidden.copy(hasSkip = true)
+        assertEquals(offered to HudEffect.Activate(Skip), offered.on(HudKey.Enter))
+    }
+
+    @Test fun skipTakesTheDefaultFocusWhileItIsOnScreen() {
+        // Appearing: focus moves from the default Play/Pause, but not from a control the user went to.
+        assertEquals(HudNav(visible = true, focus = Skip, hasSkip = true), shown.withSkip(true))
+        assertEquals(HudNav(visible = true, focus = Back10, hasSkip = true), shown.copy(focus = Back10).withSkip(true))
+        // Staying: no change, so the user can move off it.
+        val onSeek = shown.copy(focus = Seek, hasSkip = true)
+        assertEquals(onSeek, onSeek.withSkip(true))
+        // Gone: focus leaves the vanished button.
+        assertEquals(HudNav(visible = true, focus = Seek), shown.copy(focus = Skip, hasSkip = true).withSkip(false))
+    }
+
     @Test fun spaceAlwaysTogglesPause() {
         assertEquals(HudEffect.TogglePause, hidden.on(HudKey.PlayPause).second)
         assertEquals(HudEffect.TogglePause, shown.on(HudKey.PlayPause).second)

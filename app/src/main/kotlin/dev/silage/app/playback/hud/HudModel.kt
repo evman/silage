@@ -280,6 +280,17 @@ data class HudNav(
 ) {
     private val row get() = ROW.filter { (it != HudFocus.Chapters || hasChapters) && (it != HudFocus.Quality || hasQuality) }
 
+    /**
+     * A Skip button appearing takes the default focus (Play/Pause) for as long as
+     * it shows, without pulling focus from a control the user moved to; when it
+     * goes, focus leaves it.
+     */
+    fun withSkip(present: Boolean): HudNav = when {
+        present && !hasSkip -> copy(hasSkip = true, focus = if (focus == HudFocus.PlayPause) HudFocus.Skip else focus)
+        present -> this
+        else -> copy(hasSkip = false, focus = if (focus == HudFocus.Skip) HudFocus.Seek else focus)
+    }
+
     fun on(key: HudKey): Pair<HudNav, HudEffect> {
         if (key == HudKey.Fullscreen) return copy(visible = true) to HudEffect.ToggleFullscreen
         HudKey.shortcut(key)?.let { return this to it }
@@ -295,6 +306,8 @@ data class HudNav(
             HudKey.Back -> this to HudEffect.Exit
             HudKey.Left -> copy(visible = true, focus = HudFocus.Seek) to HudEffect.SeekBy(-10.0)
             HudKey.Right -> copy(visible = true, focus = HudFocus.Seek) to HudEffect.SeekBy(10.0)
+            // While Skip Intro/Recap/Credits is on screen, Enter presses it.
+            HudKey.Enter -> if (hasSkip) this to HudEffect.Activate(HudFocus.Skip) else copy(visible = true, focus = HudFocus.PlayPause) to HudEffect.None
             else -> copy(visible = true, focus = if (hasSkip) HudFocus.Skip else HudFocus.PlayPause) to HudEffect.None
         }
         if (menu != HudMenu.None && menu != HudMenu.Info) return when (key) {

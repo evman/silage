@@ -551,8 +551,10 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
         }
         checkSleep(s.positionSeconds, knownDuration ?: s.durationSeconds, s.paused, now)
         if (ui.value.toast != null && now > toastUntil) ui.value = ui.value.copy(toast = null)
-        if (nav.visible && !visibility.visible(now, s.paused, nav.menu != HudMenu.None)) nav = nav.copy(visible = false, focus = HudFocus.PlayPause)
-        nav = nav.copy(hasSkip = skip != null, focus = if (skip == null && nav.focus == HudFocus.Skip) HudFocus.Seek else nav.focus)
+        // Hiding keeps the ring on a showing Skip button: Enter presses it.
+        if (nav.visible && !visibility.visible(now, s.paused, nav.menu != HudMenu.None))
+            nav = nav.copy(visible = false, focus = if (nav.hasSkip) HudFocus.Skip else HudFocus.PlayPause)
+        nav = nav.withSkip(skip != null)
         val visible = nav.visible
         hudVisible = visible
         val info = if (nav.menu == HudMenu.Info && now - lastInfoAt > 1_000) {
@@ -571,7 +573,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
             visible = visible,
             menu = nav.menu,
             menuIndex = nav.menuIndex,
-            focus = if (keyboardFocus && visible) nav.focus else null,
+            focus = if (keyboardFocus && (visible || nav.focus == HudFocus.Skip)) nav.focus else null,
             info = info,
             skip = skip,
             video = videoSession.settings,
