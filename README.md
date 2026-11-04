@@ -47,6 +47,16 @@ Works on Ubuntu 24.04+, Debian 13, Fedora 40+ and Arch Linux. Updates then arriv
 
 Keep **mpv 0.37 or newer** installed from your distro. On first launch, enter your Silo server's address and sign in.
 
+### Fullscreen or a window
+
+Silage is made for fullscreen, and that's the best experience: it's what HDR and Dolby Vision
+need, and what the remote-style controls are designed around. On Linux it opens fullscreen; on
+Windows, in a normal window.
+
+To use it in a window instead, press **F11** at any time (or **F** while a video plays) to switch
+between fullscreen and a window. To choose how Silage opens, go to **Settings → Interface → Window**
+and pick **Normal window** or **Fullscreen**.
+
 > **Upgrading from 0.4 or earlier?** On Windows, install Silage-Setup.exe and sign in again; the old portable folder can then be deleted. On Linux, run the command above once to switch to the repository.
 
 ## Updates
@@ -62,6 +72,7 @@ When a new version is ready, **Update ready** appears in the sidebar, never duri
 | Space | — | Play / pause |
 | Esc / Backspace | Back; on the home page, Esc asks to quit | Close a menu, then leave the player |
 | I | — | Playback info (C copies it to the clipboard) |
+| F11 | Fullscreen / window | Fullscreen / window (F too) |
 | Ctrl + / − / 0 | Interface size | — |
 | Ctrl Q | Quit Silage | Quit Silage |
 

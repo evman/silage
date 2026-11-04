@@ -48,7 +48,7 @@
   <releases>
     <release version="0.5.2" date="2026-11-04">
       <description>
-        <p>Dolby Vision on any GPU on Arch-based systems and Fedora through an opt-in version of KDE's KWin, over DisplayPort or HDMI, with hardware decoding for every profile. Dolby Vision titles wait for the monitor to switch before playing. Playback Info can be copied, and updates restart properly on Linux.</p>
+        <p>Dolby Vision on any GPU on Arch-based systems and Fedora through an opt-in version of KDE's KWin, over DisplayPort or HDMI, with hardware decoding for every profile. Dolby Vision titles wait for the monitor to switch before playing. Silage can run in a window on Linux (F11 switches). Playback Info can be copied, and updates restart properly on Linux.</p>
       </description>
     </release>
     <release version="0.5.1" date="2026-11-03">

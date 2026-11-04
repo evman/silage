@@ -7,6 +7,7 @@ restarting after an update. If you have 0.5.0 or 0.5.1, Silage offers it as
 ### What's new
 
 - **Dolby Vision on any GPU** (Arch-based systems and Fedora with KDE Plasma). Settings → Video → **Dolby Vision through KDE** installs an opt-in version of KDE's KWin with a small Silage patch, from a separate signed repository; it stays current with normal system updates and Settings can restore the standard KWin. Works over DisplayPort and HDMI. Tested on an NVIDIA RTX 5090 and Intel Arc A380 with the ASUS PG32UCDM. See [Dolby Vision](https://github.com/evman/silage/blob/v@VERSION@/DOLBY_VISION.md).
+- **Windowed mode on Linux.** Press **F11** (or **F** while playing) to switch between fullscreen and a window, and pick how Silage opens in Settings → Interface → Window. Fullscreen remains the default and the best experience.
 - **Hardware decoding for every Dolby Vision profile**, including Profile 7 on NVIDIA.
 - **No missed openings.** A Dolby Vision title waits on its first frame while the monitor switches, then plays.
 - **Copy Playback Info** with C (or Copy details), and a Dolby Vision status row.

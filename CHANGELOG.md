@@ -7,6 +7,10 @@
   KDE's KWin with a small Silage patch (and can restore the standard one). It stays
   current with normal system updates. Tested on an RTX 5090 over HDMI. See
   DOLBY_VISION.md.
+- Use Silage in a window on Linux (issue #7): F11 switches between fullscreen and a
+  window anywhere (F too while playing), and Settings → Interface → Window chooses how it
+  opens. Fullscreen stays the default and the recommended way to use Silage. HDR video in a
+  window takes the Silage window's place, with Silage's icon.
 - Play Dolby Vision Profile 7 with hardware decoding on NVIDIA (direct NVDEC) as well
   as Intel (VAAPI).
 - Wait on the first frame of a Dolby Vision title while the monitor switches, so the
