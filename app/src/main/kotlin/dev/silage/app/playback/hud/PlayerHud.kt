@@ -65,6 +65,8 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
     private val onNextEpisode: (() -> Unit)? = null,
     /** Quits Silage (Ctrl+Q). */
     private val onQuit: () -> Unit = {},
+    /** D: Dolby Vision off / on for comparison; returns what to say. Null where Dolby Vision isn't in use. */
+    private val onToggleDolbyVision: (() -> String)? = null,
     /** Rows shown first in Playback Info (which copy is playing). */
     private val infoRows: List<Pair<String, String>> = emptyList(),
     /** Live optional output status, refreshed with Playback Info. */
@@ -328,6 +330,7 @@ class PlayerHud(private val mpv: MpvPlayer, meta: PlaybackMeta,
                 HudEffect.NextEpisode -> if (onNextEpisode != null && hasNextEpisode()) actions.nextEpisode() else toast("No next episode")
                 HudEffect.CopyInfo -> copyInfo()
                 HudEffect.Quit -> onQuit()
+                HudEffect.ToggleDolbyVision -> toast(onToggleDolbyVision?.invoke() ?: "Dolby Vision isn't in use", 3_000)
                 is HudEffect.Activate -> when (effect.control) {
                     HudFocus.Skip -> ui.value.skip?.let { if (it.kind == SkipPrompt.Kind.NextEpisode) actions.nextEpisode() else actions.seekTo(it.target) }
                     HudFocus.Seek, HudFocus.PlayPause -> actions.togglePause()

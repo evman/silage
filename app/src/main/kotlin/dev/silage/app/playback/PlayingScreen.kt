@@ -96,6 +96,8 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val helperRequested = dvAuthorization != null
     val helper = AtomicReference<ExperimentalDvHelper?>()
     val compositorSession = AtomicReference<ExperimentalDvSession?>()
+    // D in the player: Dolby Vision off (HDR10 base layer) to compare.
+    val dvComparedOff = java.util.concurrent.atomic.AtomicBoolean(false)
     val sourceSwitch = !ready.direct && ready.sourceAudio.isNotEmpty()
     // A deadlocked mpv can't be closed and keeps the keyboard: after 20 s of a
     // silent player loop, save a note and restart Silage instead of staying frozen.
@@ -113,7 +115,8 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         autoSkip = koin.get<dev.silage.app.ui.UiPrefs>().let { dev.silage.app.playback.hud.AutoSkip(it.autoSkipIntro, it.autoSkipRecap, it.autoSkipCredits) },
         infoRows = listOfNotNull(ready.versionLabel?.let { "Version" to it }),
         liveInfoRows = {
-            if (helperRequested) listOf("DV helper" to (helper.get()?.description() ?: "Requires native HDR on a known monitor"))
+            if (dvComparedOff.get()) listOf("Dolby Vision" to "Off for comparison (D turns it back on) · HDR10")
+            else if (helperRequested) listOf("DV helper" to (helper.get()?.description() ?: "Requires native HDR on a known monitor"))
             else if (compositorDv) listOf("Dolby Vision" to (compositorSession.get()?.description() ?: "Requires fullscreen native HDR"))
             else emptyList()
         },
@@ -122,6 +125,12 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         knownDuration = ready.sourceDurationSeconds?.let { it - ready.timelineOffsetSeconds }?.takeIf { it > 0 },
         hasNextEpisode = hasNextEpisode,
         onQuit = { koin.get<dev.silage.app.AppExit>().quit() },
+        onToggleDolbyVision = if (compositorDv || helperRequested) ({
+            val on = dvComparedOff.get()
+            mpv.command(*dvComparison(on).toTypedArray())
+            dvComparedOff.set(!on)
+            dvComparisonMessage(on)
+        }) else null,
         onNextEpisode = if (onNextEpisode != null) ({ onNextEpisode(); mpv.command("stop"); Unit }) else null,
         audioRows = { mounted -> audioMenuTracks(ready.sourceAudio, mounted, ready.direct, ready.selectedAudioOrdinal) },
         qualities = if (onQuality == null) emptyList() else qualityRows(ready.qualities, ready.activeQuality),

@@ -173,7 +173,9 @@ enum class HudKey {
     // Copies Playback Info while it's open.
     CopyInfo,
     // Ctrl+Q: quits Silage, as it does outside the player.
-    Quit;
+    Quit,
+    // D: Dolby Vision off and on, to compare it with the HDR10 base layer.
+    ToggleDolbyVision;
 
     companion object {
         fun ofAwt(code: Int): HudKey? = when (code) {
@@ -198,6 +200,7 @@ enum class HudKey {
             java.awt.event.KeyEvent.VK_CLOSE_BRACKET -> FasterSpeed
             java.awt.event.KeyEvent.VK_N -> NextEpisode
             java.awt.event.KeyEvent.VK_C -> CopyInfo
+            java.awt.event.KeyEvent.VK_D -> ToggleDolbyVision
             else -> null
         }
 
@@ -215,6 +218,7 @@ enum class HudKey {
             "ENTER" -> Enter
             "i" -> Info
             "c" -> CopyInfo
+            "d", "D" -> ToggleDolbyVision
             "Ctrl+q", "Ctrl+Q" -> Quit
             "f", "F", "F11" -> Fullscreen
             "m", "M" -> Mute
@@ -229,7 +233,7 @@ enum class HudKey {
         }
 
         val MPV_KEYS = listOf("ESC", "BS", "q", "MBTN_BACK", "GO_BACK", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F",
-            "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N", "c", "Ctrl+q", "Ctrl+Q", "F11")
+            "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N", "c", "Ctrl+q", "Ctrl+Q", "F11", "d", "D")
 
         /** The shortcut keys and what each does, whatever the HUD shows. */
         internal fun shortcut(key: HudKey): HudEffect? = when (key) {
@@ -242,6 +246,7 @@ enum class HudKey {
             FasterSpeed -> HudEffect.Speed(+1)
             NextEpisode -> HudEffect.NextEpisode
             Quit -> HudEffect.Quit
+            ToggleDolbyVision -> HudEffect.ToggleDolbyVision
             else -> null
         }
     }
@@ -268,6 +273,7 @@ sealed interface HudEffect {
     data object NextEpisode : HudEffect
     data object CopyInfo : HudEffect
     data object Quit : HudEffect
+    data object ToggleDolbyVision : HudEffect
 }
 
 /**

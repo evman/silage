@@ -31,6 +31,15 @@ class HudKeysTest {
         assertEquals(hidden.copy(focus = PlayPause) to HudEffect.None, shown.on(HudKey.ofAwt(dev.silage.app.nav.BackInput.AWT_BACK)!!))
     }
 
+    /** D compares Dolby Vision with the HDR10 base layer during playback, wherever the focus is. */
+    @Test fun dTogglesDolbyVision() {
+        assertEquals(HudKey.ToggleDolbyVision, HudKey.ofAwt(KeyEvent.VK_D))
+        assertEquals(HudKey.ToggleDolbyVision, HudKey.ofMpv("d"))
+        assertEquals(HudKey.ToggleDolbyVision, HudKey.ofMpv("D"))
+        assertTrue("d" in HudKey.MPV_KEYS && "D" in HudKey.MPV_KEYS)
+        assertEquals(hidden to HudEffect.ToggleDolbyVision, hidden.on(HudKey.ToggleDolbyVision))
+    }
+
     /** Issue #7: F11 switches fullscreen in the player too, as it does while browsing. */
     @Test fun f11IsFullscreen() {
         assertEquals(HudKey.Fullscreen, HudKey.ofAwt(KeyEvent.VK_F11))

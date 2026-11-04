@@ -72,6 +72,7 @@ When a new version is ready, **Update ready** appears in the sidebar, never duri
 | Space | — | Play / pause |
 | Esc / Backspace | Back; on the home page, Esc asks to quit | Close a menu, then leave the player |
 | I | — | Playback info (C copies it to the clipboard) |
+| D | — | Dolby Vision off / on, to compare it with HDR10 |
 | F11 | Fullscreen / window | Fullscreen / window (F too) |
 | Ctrl + / − / 0 | Interface size | — |
 | Ctrl Q | Quit Silage | Quit Silage |

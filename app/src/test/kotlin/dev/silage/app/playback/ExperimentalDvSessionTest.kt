@@ -111,6 +111,18 @@ class ExperimentalDvSessionTest {
         assertFalse(dvShouldHold(profile = 4, startPaused = false))
     }
 
+    /**
+     * Dolby Vision off strips the frames' Dolby Vision metadata (mpv's format filter), so the
+     * renderer shows the HDR10 base layer and the KWin session, which needs that metadata,
+     * hands the monitor back to normal HDR; on puts it back.
+     */
+    @Test fun dolbyVisionCanBeComparedWithItsHdr10BaseLayer() {
+        assertEquals(listOf("vf", "add", "@silage-dv-off:format:dolbyvision=no"), dvComparison(on = false))
+        assertEquals(listOf("vf", "remove", "@silage-dv-off"), dvComparison(on = true))
+        assertEquals("Dolby Vision off: HDR10", dvComparisonMessage(on = false))
+        assertEquals("Dolby Vision on", dvComparisonMessage(on = true))
+    }
+
     @Test fun choosesTheDolbyVisionPath() {
         assertEquals(DvPath.Compositor, dvPath(enabled = true, backend = null, compositor = true, osName = "Linux"))
         assertEquals(DvPath.Helper, dvPath(enabled = true, backend = null, compositor = false, osName = "Linux"))

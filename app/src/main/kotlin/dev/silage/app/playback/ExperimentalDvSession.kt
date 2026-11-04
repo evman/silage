@@ -57,6 +57,16 @@ internal fun dvShouldHold(profile: Int?, startPaused: Boolean): Boolean = !start
 internal fun dvHoldEnds(now: Long, heldSince: Long, activeSince: Long?, unavailable: Boolean): Boolean =
     unavailable || now - heldSince >= DV_HOLD_MAX_MS || (activeSince != null && now - activeSince >= DV_SETTLE_MS)
 
+/**
+ * The mpv command that turns Dolby Vision [on] or off for comparison. Off strips the frames'
+ * Dolby Vision metadata (mpv's format filter): the renderer shows the HDR10 base layer, and the
+ * signal session, which needs that metadata, gives the monitor back to normal HDR.
+ */
+internal fun dvComparison(on: Boolean): List<String> =
+    if (on) listOf("vf", "remove", "@silage-dv-off") else listOf("vf", "add", "@silage-dv-off:format:dolbyvision=no")
+
+internal fun dvComparisonMessage(on: Boolean): String = if (on) "Dolby Vision on" else "Dolby Vision off: HDR10"
+
 /** How Silage gets the monitor into Dolby Vision, if at all. */
 internal enum class DvPath { None, Compositor, Helper }
 
