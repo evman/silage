@@ -88,6 +88,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val compositorDv = dvPath(koin.get<dev.silage.app.ui.UiPrefs>().experimentalDolbyVision, compositor = kwinDvLease) == DvPath.Compositor
     val helperRequested = dvAuthorization != null
     val helper = AtomicReference<ExperimentalDvHelper?>()
+    val compositorSession = AtomicReference<ExperimentalDvSession?>()
     val sourceSwitch = !ready.direct && ready.sourceAudio.isNotEmpty()
     // A deadlocked mpv can't be closed and keeps the keyboard: after 20 s of a
     // silent player loop, save a note and restart Silage instead of staying frozen.
@@ -106,6 +107,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         infoRows = listOfNotNull(ready.versionLabel?.let { "Version" to it }),
         liveInfoRows = {
             if (helperRequested) listOf("DV helper" to (helper.get()?.description() ?: "Requires native HDR on a known monitor"))
+            else if (compositorDv) listOf("Dolby Vision" to (compositorSession.get()?.description() ?: "Requires fullscreen native HDR"))
             else emptyList()
         },
         subtitleTools = subtitleTools?.invoke(mpv),
@@ -175,7 +177,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val port = mpv.asOpened()
     val experimentalDv: AutoCloseable? = if (helperRequested || compositorDv) {
         (output as? VideoOutput.OwnWindow)?.screen?.let { screen ->
-            if (compositorDv) ExperimentalDvSession(screen, mpv.state, mpv::getProperty)
+            if (compositorDv) ExperimentalDvSession(screen, mpv.state, mpv::getProperty).also { compositorSession.set(it) }
             else dvAuthorization?.let { owner ->
                 ExperimentalDvHelper(screen, mpv.state, mpv::getProperty, authorization = owner).also { helper.set(it) }
             }

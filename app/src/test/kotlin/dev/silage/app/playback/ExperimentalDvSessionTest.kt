@@ -100,8 +100,11 @@ class ExperimentalDvSessionTest {
             try {
                 await { service.acquisitions.size == 1 && service.renewals.get() >= 2 }
                 assertEquals("DP-3", service.acquisitions.single())
+                // Playback Info's "Dolby Vision" row says whether it's on, or why not.
+                assertEquals("Signal active (via KWin)", session.description())
                 props.set(properties() + ("video-target-params/gamma" to "gamma2.2"))
                 await { service.released == listOf("token-1") }
+                assertEquals("Requires PQ HDR output", session.description())
                 props.set(properties())
                 await { service.acquisitions.size == 2 }
                 state.value = PlayerState(loaded = false)

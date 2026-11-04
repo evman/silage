@@ -102,6 +102,15 @@ internal class ExperimentalDvSession(
     private val lock = Any()
     private var closed = false
     @Volatile private var connection: DBusConnection? = null
+    @Volatile private var active = false
+    @Volatile private var unavailable = false
+
+    /** Playback Info's "Dolby Vision" row: on, or exactly why not. */
+    fun description(): String = when {
+        unavailable -> "Unavailable · using normal HDR"
+        active -> "Signal active (via KWin)"
+        else -> experimentalDvIneligibleReason(screen, property, setOf(5, 7, 8)) ?: "Starting…"
+    }
 
     init {
         scope.launch {
@@ -128,7 +137,9 @@ internal class ExperimentalDvSession(
                                 ?: error("Compositor declined the experimental output profile")
                         }
                         check(service.renew(token)) { "Compositor output session expired" }
+                        active = true
                     } else if (token != null) {
+                        active = false
                         check(service?.release(token) == true) { "Compositor restoration is pending" }
                         token = null
                     }
@@ -137,6 +148,8 @@ internal class ExperimentalDvSession(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
+                active = false
+                unavailable = true
                 // Experimental capability is optional; normal HDR playback continues.
                 System.err.println("Silage: experimental DV compositor session unavailable; using normal HDR")
             } finally {
