@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# silage-kwin-dv status|check|enable|disable
+#
+# The opt-in KWin with Silage's Dolby Vision patch (docs/superpowers/specs/2026-11-04-kwin-dolby-vision-design.md),
+# on Arch-based systems (pacman repository [silage-kwin]) and Fedora (dnf repository silage-kwin).
+#
+#   status   key=value lines: distro, repo (added), patched (installed), monitor (verified one connected)
+#   check    exit 0 when Dolby Vision through KWin can be offered here (supported distro, KWin, monitor)
+#   enable   (root) add the repository and install the patched KWin; log out and in to use it
+#   disable  (root) remove the repository and reinstall the distribution's own KWin
+#
+# Exit codes: 0 done, 2 usage, 3 not offered here, 4 no build for this KWin yet (the repository
+# stays, and the build arrives with a normal update), 5 update the system first, 6 needs root.
+# The last line printed is a message for people.
+set -euo pipefail
+
+# Tests stage a fake system under SILAGE_KWIN_ROOT (never honoured as root: pkexec clears it anyway).
+root=${SILAGE_KWIN_ROOT:-}
+[ "$(id -u)" != 0 ] || root=
+pacman_server=https://github.com/evman/silage/releases/download/kwin-arch
+rpm_repo=https://evman.github.io/silage/kwin-rpm
+fingerprint=DAA9CD6BF66D0D2AE50636BF4DBB1D66A1937A5F
+here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+key=$here/silage.asc
+[ -z "$root" ] || key=$root/key.asc
+pacman_conf=$root/etc/pacman.conf
+repo_file=$root/etc/yum.repos.d/silage-kwin.repo
+# Monitors whose Dolby Vision switch is verified (as DvHardware.VERIFIED_DV_BLOCKS in the app).
+verified_blocks=(0146d0004c025d89606f87)
+
+die() { local code=$1; shift; printf '%s\n' "$*"; exit "$code"; }
+
+distro() {
+  local id="" like=""
+  if [ -r "$root/etc/os-release" ]; then
+    id=$(. "$root/etc/os-release"; printf '%s' "${ID:-}")
+    like=$(. "$root/etc/os-release"; printf '%s' "${ID_LIKE:-}")
+  fi
+  case " $id $like " in
+    *" arch "*|*" cachyos "*|*" manjaro "*|*" endeavouros "*) echo arch ;;
+    *" fedora "*) echo fedora ;;
+    *) echo unsupported ;;
+  esac
+}
+
+monitor() {
+  local edid hex block
+  for edid in "$root"/sys/class/drm/*/edid; do
+    [ -s "$edid" ] || continue
+    hex=$(od -An -v -tx1 "$edid" | tr -d ' \n')
+    for block in "${verified_blocks[@]}"; do
+      case "$hex" in *"$block"*) echo yes; return ;; esac
+    done
+  done
+  echo no
+}
+
+repo_added() {
+  case $1 in
+    arch) grep -q '^\[silage-kwin\]' "$pacman_conf" 2>/dev/null && echo yes || echo no ;;
+    fedora) [ -f "$repo_file" ] && echo yes || echo no ;;
+    *) echo no ;;
+  esac
+}
+
+# The installed KWin's version-release, empty when it isn't installed.
+installed_kwin() {
+  case $1 in
+    arch) pacman -Q kwin 2>/dev/null | awk '{print $2}' || true ;;
+    fedora) rpm -q --qf '%{VERSION}-%{RELEASE}\n' kwin 2>/dev/null | grep -v 'not installed' | head -1 || true ;;
+  esac
+}
+
+patched() {
+  case $(installed_kwin "$1") in
+    *.99|*.99silage) echo yes ;;
+    *) echo no ;;
+  esac
+}
+
+status() {
+  local d; d=$(distro)
+  echo "distro=$d"
+  echo "repo=$(repo_added "$d")"
+  echo "patched=$(patched "$d")"
+  echo "monitor=$(monitor)"
+}
+
+need_root() { [ "$(id -u)" = 0 ] || [ -n "$root" ] || die 6 "Run this as root (Silage asks for your password)."; }
+
+check() {
+  local d; d=$(distro)
+  [ "$d" != unsupported ] || die 3 "Dolby Vision through KWin is available on Arch-based systems and Fedora."
+  [ -n "$(installed_kwin "$d")" ] || die 3 "KWin (KDE Plasma) isn't installed."
+  [ "$(monitor)" = yes ] || die 3 "No monitor verified for Dolby Vision is connected. Settings → Send hardware report helps add yours."
+  echo "Dolby Vision through KWin can be enabled."
+}
+
+# --- Arch ----------------------------------------------------------------------------------------
+
+# pacman takes a package from the first repository that has it, so [silage-kwin] goes before
+# the others; the publishing workflow empties it whenever the distribution's kwin is newer.
+arch_add_repo() {
+  [ "$(repo_added arch)" = no ] || return 0
+  local block
+  block=$(printf '[silage-kwin]\nSigLevel = Required DatabaseRequired\nServer = %s\n' "$pacman_server")
+  awk -v block="$block" '
+    !done && /^\[/ && $0 != "[options]" { print block; print ""; done = 1 }
+    { print }
+    END { if (!done) { print ""; print block } }
+  ' "$pacman_conf" > "$pacman_conf.silage-new"
+  cat "$pacman_conf.silage-new" > "$pacman_conf"
+  rm -f "$pacman_conf.silage-new"
+}
+
+arch_remove_repo() {
+  awk '
+    /^\[silage-kwin\]$/ { skip = 1; next }
+    skip && /^\[/ { skip = 0 }
+    !skip { print }
+  ' "$pacman_conf" | cat -s > "$pacman_conf.silage-new"
+  cat "$pacman_conf.silage-new" > "$pacman_conf"
+  rm -f "$pacman_conf.silage-new"
+}
+
+arch_trust_key() {
+  pacman-key --list-keys "$fingerprint" >/dev/null 2>&1 && return 0
+  [ -r "$key" ] || die 1 "Silage's repository key is missing ($key)."
+  pacman-key --init >/dev/null 2>&1 || true
+  pacman-key --add "$key" >/dev/null
+  pacman-key --lsign-key "$fingerprint" >/dev/null
+}
+
+# 1:6.8.2-2.99 -> 6.8.2
+pkgver() { local v=${1%-*}; echo "${v#*:}"; }
+
+arch_enable() {
+  local installed published
+  installed=$(installed_kwin arch)
+  arch_trust_key
+  arch_add_repo
+  # The repository's kwin, e.g. 6.8.2-2.99 (empty while there's no build for the current KWin).
+  published=$(curl -fsSL "$pacman_server/silage-kwin.db" | tar -tzf - 2>/dev/null \
+    | sed -n 's#^kwin-\([^/]*\)/$#\1#p' | head -1 || true)
+  [ -n "$published" ] || die 4 "There's no Dolby Vision build for your KWin yet. It will install with a normal system update when it's ready."
+  if [ "$(pkgver "$installed")" != "$(pkgver "$published")" ]; then
+    die 5 "Your KWin is $installed, the Dolby Vision build is for ${published%-*}. Update your system (sudo pacman -Syu), then try again."
+  fi
+  # Exactly the published package, without refreshing (and partly upgrading) the rest of the system.
+  pacman -U --noconfirm "$pacman_server/kwin-$published-x86_64.pkg.tar.zst"
+  echo "Dolby Vision KWin installed. Log out and back in to start using it."
+}
+
+arch_disable() {
+  [ "$(repo_added arch)" = no ] || arch_remove_repo
+  if [ "$(patched arch)" = yes ]; then
+    local installed stock
+    installed=$(installed_kwin arch)
+    stock=$(pacman -Si kwin 2>/dev/null | awk -F': *' '/^Version/{print $2; exit}' || true)
+    [ -n "$stock" ] || die 1 "Couldn't find your distribution's KWin. Run sudo pacman -Syu, then try again."
+    if [ "$(pkgver "$installed")" != "$(pkgver "$stock")" ]; then
+      die 5 "Your distribution's KWin is $stock and yours is $installed. Update your system (sudo pacman -Syu), then try again."
+    fi
+    pacman -S --noconfirm kwin
+  fi
+  echo "Standard KWin restored. Log out and back in to finish."
+}
+
+# --- Fedora --------------------------------------------------------------------------------------
+
+fedora_installed_kwin_packages() { rpm -qa --qf '%{NAME}\n' 'kwin*' 2>/dev/null | sort -u; }
+
+fedora_enable() {
+  mkdir -p "$(dirname "$repo_file")"
+  cat > "$repo_file" <<EOF
+[silage-kwin]
+name=Silage KWin (Dolby Vision)
+baseurl=$rpm_repo/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=$rpm_repo/silage.asc
+EOF
+  # dnf installs whichever kwin is newest: ours carries the same version with a higher release.
+  # shellcheck disable=SC2046
+  dnf -y --refresh upgrade $(fedora_installed_kwin_packages)
+  [ "$(patched fedora)" = yes ] || die 4 "There's no Dolby Vision build for your KWin yet. It will install with a normal system update when it's ready."
+  echo "Dolby Vision KWin installed. Log out and back in to start using it."
+}
+
+fedora_disable() {
+  rm -f "$repo_file"
+  local names
+  names=$(rpm -qa --qf '%{NAME} %{RELEASE}\n' 'kwin*' 2>/dev/null | awk '$2 ~ /\.99silage$/ {print $1}' | sort -u)
+  # shellcheck disable=SC2086
+  [ -z "$names" ] || dnf -y --refresh distro-sync $names
+  echo "Standard KWin restored. Log out and back in to finish."
+}
+
+case "${1:-}" in
+  status) status ;;
+  check) check ;;
+  enable)
+    need_root
+    check
+    case $(distro) in arch) arch_enable ;; fedora) fedora_enable ;; esac
+    ;;
+  disable)
+    need_root
+    case $(distro) in
+      arch) arch_disable ;;
+      fedora) fedora_disable ;;
+      *) die 3 "Dolby Vision through KWin is available on Arch-based systems and Fedora." ;;
+    esac
+    ;;
+  *) die 2 "usage: silage-kwin-dv status|check|enable|disable" ;;
+esac

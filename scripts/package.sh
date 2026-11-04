@@ -23,6 +23,10 @@ app=$(realpath app/build/compose/binaries/main/app/silage)
 test -x "$app/bin/silage"
 if ! $rpm_only; then
   python3 scripts/dv-helper/bundle_helper.py --image "$app"
+  # The opt-in Dolby Vision KWin helper, for the PKGBUILD (which installs from the tarball).
+  install -Dm755 packaging/kwin/silage-kwin-dv "$app/lib/app/kwin-dv/silage-kwin-dv"
+  install -Dm644 packaging/keys/silage-archive-keyring.asc "$app/lib/app/kwin-dv/silage.asc"
+  install -Dm644 packaging/kwin/dev.silage.kwin-dv.policy "$app/lib/app/kwin-dv/dev.silage.kwin-dv.policy"
   if [[ -n "${SILAGE_LINUX_DV_RUNTIME:-}" ]]; then
     python3 scripts/dv-helper/package_runtime.py --runtime "$SILAGE_LINUX_DV_RUNTIME" --image "$app"
   elif [[ -n "${SILAGE_LINUX_DV_BUNDLE:-}" ]]; then

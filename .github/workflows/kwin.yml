@@ -1,7 +1,9 @@
 # Keeps the opt-in Silage KWin (Dolby Vision) repositories current with Arch's and Fedora's own
 # kwin: when either ships a version we haven't built, apply packaging/kwin/silage-dv-<minor>.patch
 # to that distro's recipe, build, sign and publish (pacman: release tag kwin-arch; dnf: release
-# tag kwin-fedora + Pages kwin-rpm/). Until then systems simply run the stock kwin.
+# tag kwin-fedora + Pages kwin-rpm/). Until then systems simply run the stock kwin: dnf picks the
+# newest kwin by itself, and for pacman (which takes the first repository's) the out-of-date build
+# is withdrawn first.
 # See docs/superpowers/specs/2026-11-04-kwin-dolby-vision-design.md.
 #
 # Pushes to other branches only build (testing a patch); nothing is published from them.
@@ -55,6 +57,21 @@ jobs:
           if [ "$PUBLISH" = false ] || [ "$FORCE" = true ] || [ "$current" != "$published" ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
+          # Arch moved past our build: pacman takes kwin from [silage-kwin] (listed first) whatever
+          # its version, so stop offering the old one before building the new.
+          if [ -n "$published" ] && [ "$current" != "$published" ] && [ "$(vercmp "$current" "$published")" -gt 0 ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Withdraw the out-of-date build
+        if: steps.version.outputs.stale && env.PUBLISH == 'true'
+        env:
+          REPO_GPG_PRIVATE_KEY: ${{ secrets.REPO_GPG_PRIVATE_KEY }}
+          REPO_GPG_KEY_ID: ${{ secrets.REPO_GPG_KEY_ID }}
+        run: |
+          printf '%s\n' "$REPO_GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          scripts/build-kwin-repos.sh arch-empty . empty
+          gh release view kwin-arch --json assets -q '.assets[].name' | while read -r a; do gh release delete-asset kwin-arch "$a" -y; done
+          gh release upload kwin-arch empty/* --clobber
       - name: Build Arch's kwin with the Silage patch
         if: steps.version.outputs.build
         run: |

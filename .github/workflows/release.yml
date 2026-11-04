@@ -53,6 +53,7 @@ jobs:
           python3 -m unittest discover -s scripts/dv-helper -v
           python3 -m unittest discover -s scripts/dv-lab -v
           python3 -m unittest discover -s scripts/tests -v
+          bash scripts/tests/test-kwin-dv.sh
       - name: Test release signing and the repositories (throwaway keys)
         run: |
           scripts/tests/test-sign-release.sh

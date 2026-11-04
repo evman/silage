@@ -217,6 +217,7 @@ private fun VideoSection(koin: Koin) {
             }
             Spacer(Modifier.height(40.dp))
         }
+        if (System.getProperty("os.name").startsWith("Linux")) KwinDolbyVision(scope)
         // Only where the helper can work (or to turn an earlier choice off).
         if (dvHardware || kwinDv || experimentalDv) {
             Heading("Experimental Dolby Vision", if (kwinDv)
@@ -229,6 +230,68 @@ private fun VideoSection(koin: Koin) {
             Spacer(Modifier.height(40.dp))
         }
     }
+}
+
+/**
+ * Installing (or removing) KDE's KWin with Silage's Dolby Vision patch, where a verified
+ * monitor is connected on Arch or Fedora; the helper does the work behind the password prompt.
+ */
+@Composable
+private fun KwinDolbyVision(scope: kotlinx.coroutines.CoroutineScope) {
+    var status by remember { mutableStateOf<dev.silage.app.playback.KwinDvStatus?>(null) }
+    var loaded by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val lease = remember { dev.silage.app.playback.kwinDvLease }
+    LaunchedEffect(Unit) {
+        status = kotlinx.coroutines.withContext(Dispatchers.IO) { dev.silage.app.playback.KwinDvInstall.status() }
+        loaded = true
+    }
+    if (!loaded) return
+    val state = dev.silage.app.playback.kwinDvState(status, lease)
+    if (state == dev.silage.app.playback.KwinDvState.Hidden) return
+    fun run(enable: Boolean) {
+        busy = true
+        message = if (enable) "Installing… your package manager is working, this can take a minute." else "Restoring the standard KWin…"
+        scope.launch(Dispatchers.IO) {
+            val result = dev.silage.app.playback.KwinDvInstall.apply(enable)
+            message = when (result) {
+                is dev.silage.app.playback.KwinDvResult.Done -> result.message
+                dev.silage.app.playback.KwinDvResult.Cancelled -> null
+                is dev.silage.app.playback.KwinDvResult.Failed -> result.message
+            }
+            status = dev.silage.app.playback.KwinDvInstall.status()
+            busy = false
+        }
+    }
+    val text = when (state) {
+        dev.silage.app.playback.KwinDvState.CanEnable -> "Your monitor can show Dolby Vision on this GPU, over DisplayPort or HDMI, with a version of KDE's KWin " +
+            "that has Silage's small patch. Silage installs it from its own repository (your password is needed) and it stays current with your normal system updates. " +
+            "Log out and back in afterwards, then turn on Experimental Dolby Vision below."
+        dev.silage.app.playback.KwinDvState.On -> "On: KWin with Silage's patch is running and stays current with your system updates."
+        dev.silage.app.playback.KwinDvState.OnWithoutUpdates -> "On, from a KWin installed by hand. Add Silage's repository so it stays current with your system updates."
+        dev.silage.app.playback.KwinDvState.NeedsRelogin -> "Installed. Log out and back in to start using it."
+        dev.silage.app.playback.KwinDvState.Waiting -> "KDE updated KWin before Silage's Dolby Vision build of it was ready. " +
+            "Playback uses normal HDR until it arrives with a normal system update, usually within a few hours."
+        dev.silage.app.playback.KwinDvState.Hidden -> ""
+    }
+    Heading("Dolby Vision through KDE", text)
+    // Without the packaged helper (the portable build) there's nothing to install or remove with.
+    if (status != null) Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        when (state) {
+            dev.silage.app.playback.KwinDvState.CanEnable -> Pill("Install Dolby Vision KWin", selected = false) { if (!busy) run(enable = true) }
+            dev.silage.app.playback.KwinDvState.OnWithoutUpdates -> {
+                Pill("Keep it updated", selected = false) { if (!busy) run(enable = true) }
+                Pill("Restore standard KWin", selected = false) { if (!busy) run(enable = false) }
+            }
+            else -> Pill("Restore standard KWin", selected = false) { if (!busy) run(enable = false) }
+        }
+    }
+    message?.let {
+        Spacer(Modifier.height(14.dp))
+        Text(it, color = Color.White.copy(alpha = 0.75f), fontSize = 16.sp)
+    }
+    Spacer(Modifier.height(40.dp))
 }
 
 @OptIn(ExperimentalLayoutApi::class)

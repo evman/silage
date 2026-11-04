@@ -90,6 +90,23 @@ pacman_repository() {
   arch_install sudo_ pacman -Syu --needed silage-bin
 }
 
+# Offered once, default No: KDE's KWin with Silage's Dolby Vision patch (Arch and Fedora, with a
+# monitor verified for it). The installed package's helper decides and does the work.
+kwin_dolby_vision() {
+  helper=/usr/libexec/silage-kwin-dv/silage-kwin-dv
+  [ -x "$helper" ] && "$helper" check >/dev/null 2>&1 || return 0
+  [ "$("$helper" status | sed -n 's/^patched=//p')" = no ] || return 0
+  (exec </dev/tty) 2>/dev/null || return 0
+  say "Your monitor can show Dolby Vision on any GPU with Silage's version of KDE's KWin."
+  printf 'It installs from a separate Silage repository and stays current with system updates;
+'
+  printf 'Settings → Video can remove it again. Install it? [y/N] '
+  read -r answer </dev/tty || answer=""
+  case "$answer" in
+    [yY]*) sudo_ "$helper" enable || say "The Dolby Vision KWin wasn't installed; Settings → Video can try again later." ;;
+  esac
+}
+
 # Everything runs from here, once sh has read the whole script, so nothing a command reads
 # from stdin (the rest of the script, when piped) can cut it short.
 main() {
@@ -105,9 +122,9 @@ main() {
   trap 'rm -rf "$tmp"' EXIT
 
   case "$family" in
-    *" arch "*|*" manjaro "*|*" endeavouros "*|*" cachyos "*) pacman_repository ;;
+    *" arch "*|*" manjaro "*|*" endeavouros "*|*" cachyos "*) pacman_repository; kwin_dolby_vision ;;
     *" debian "*|*" ubuntu "*) apt_repository ;;
-    *" fedora "*|*" rhel "*|*" centos "*) dnf_repository ;;
+    *" fedora "*|*" rhel "*|*" centos "*) dnf_repository; kwin_dolby_vision ;;
     *)
       say "Installing the portable Silage build into ~/.local (needs mpv 0.37+ with libmpv)"
       curl -fL --progress-bar -o "$tmp/silage.tar.gz" "$repo/silage-linux-x86_64.tar.gz"

@@ -35,6 +35,15 @@ contents:
     type: tree
   - src: scripts/dv-helper/dev.silage.dv-helper.policy
     dst: /usr/share/polkit-1/actions/dev.silage.dv-helper.policy
+  # Opt-in Dolby Vision KWin (Settings and install.sh run it).
+  - src: packaging/kwin/silage-kwin-dv
+    dst: /usr/libexec/silage-kwin-dv/silage-kwin-dv
+    file_info:
+      mode: 0755
+  - src: packaging/keys/silage-archive-keyring.asc
+    dst: /usr/libexec/silage-kwin-dv/silage.asc
+  - src: packaging/kwin/dev.silage.kwin-dv.policy
+    dst: /usr/share/polkit-1/actions/dev.silage.kwin-dv.policy
 rpm:
   signature:
     # Release builds sign the .rpm with the repository GPG key (an armored private key file
