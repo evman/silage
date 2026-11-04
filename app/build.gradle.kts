@@ -9,10 +9,10 @@ plugins {
 
 kotlin { jvmToolchain(21) }
 
-// The release version comes from the tag: ./gradlew ... -PappVersion=0.5.2
-val appVersion = (findProperty("appVersion") as String?) ?: "0.5.2-dev"
+// The release version comes from the tag: ./gradlew ... -PappVersion=0.5.3
+val appVersion = (findProperty("appVersion") as String?) ?: "0.5.3-dev"
 val buildInfoDir = layout.buildDirectory.dir("generated/buildinfo")
-val generateBuildInfo by tasks.registering {
+val generateBuildInfo = tasks.register("generateBuildInfo") {
     inputs.property("version", appVersion)
     outputs.dir(buildInfoDir)
     doLast {
@@ -31,8 +31,8 @@ dependencies {
     implementation(project(":shared"))
     implementation(project(":player"))
     implementation(compose.desktop.currentOs)
-    implementation(compose.material3)
-    implementation(compose.materialIconsExtended)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.ktor3)
     implementation("io.coil-kt.coil3:coil-svg:${libs.versions.coil.get()}")
@@ -45,8 +45,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.koin.test)
     testImplementation(libs.ktor.client.mock)
-    @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
-    testImplementation(compose.uiTest)
+    testImplementation(libs.compose.ui.test)
 }
 
 tasks.test {

@@ -9,6 +9,10 @@ lifecycle-kmp = "2.11.0"
 jna = "5.19.1"
 coil = "3.6.3"
 zxing = "3.5.4"
+# Versioned apart from Compose; 1.9.0 is the newest stable (and what compose.material3 meant).
+compose-material3 = "1.9.0"
+# Frozen by Google at 1.7.3; no newer release will come.
+compose-material-icons = "1.7.3"
 
 [libraries]
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
@@ -29,6 +33,10 @@ jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
+
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
+compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "compose-material-icons" }
+compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "compose-multiplatform" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

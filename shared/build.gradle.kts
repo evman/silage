@@ -24,13 +24,13 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.ktor.client.mock)
         }
-        val desktopMain by getting {
+        getByName("desktopMain") {
             dependencies {
                 implementation(libs.ktor.client.okhttp)
                 implementation("net.java.dev.jna:jna-platform:${libs.versions.jna.get()}")
             }
         }
-        val desktopTest by getting {
+        getByName("desktopTest") {
             resources.srcDir("src/commonTest/resources")
         }
     }
