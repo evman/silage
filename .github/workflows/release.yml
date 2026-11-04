@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '21.0.13' # pinned: change only on purpose (see test-restart-spawn.sh)
       - uses: gradle/actions/setup-gradle@v6
       - uses: actions/download-artifact@v8
         with:
@@ -67,6 +67,9 @@ jobs:
         env:
           SILAGE_LINUX_DV_BUNDLE: build/release-runtime
         run: scripts/package.sh "${GITHUB_REF_NAME#v}"
+      # The in-app update replaces the bundled Java under the running app before restarting it.
+      - name: Test restarting after an update replaces the bundled Java
+        run: scripts/tests/test-restart-spawn.sh app/build/compose/binaries/main/app/silage
       # Only nfpm runs while the repository key exists (no Gradle or other build code), and the
       # signed .rpm replaces the unsigned one, so the rpm test-rpm installs is the one published.
       - name: Sign the .rpm with the repository key
@@ -91,7 +94,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '21.0.13' # pinned: change only on purpose (see test-restart-spawn.sh)
       - uses: gradle/actions/setup-gradle@v6
       - name: Prepare bundled playback dependencies
         shell: pwsh

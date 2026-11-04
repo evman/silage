@@ -60,6 +60,10 @@ compose.desktop {
         (findProperty("packagingJavaHome") as String?)?.let { javaHome = it }
         // WmClass sets the X11 window class to "silage" (matches the desktop entry).
         if (!System.getProperty("os.name").startsWith("Windows")) jvmArgs += listOf("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
+        // Start programs (the restart after an update) without lib/jspawnhelper: an update
+        // replaces the bundled Java under the running app, and a newer helper refuses an
+        // older JVM ("Failed to exec spawn helper", 0.5.0 -> 0.5.1). FORK needs no helper.
+        if (!System.getProperty("os.name").startsWith("Windows")) jvmArgs += listOf("-Djdk.lang.Process.launchMechanism=FORK")
         // A bounded heap that is handed back to Windows when idle: without a limit the JVM
         // grows to a quarter of the PC's memory and keeps it.
         if (System.getProperty("os.name").startsWith("Windows")) jvmArgs += listOf(
