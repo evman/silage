@@ -27,12 +27,13 @@ gpg --batch --armor --export-secret-keys "$fpr" > "$tmp/repo-private.asc"
 # Dummy content laid out for the real packaging/nfpm.yaml, so its rpm signing is what's tested.
 src="$tmp/src"
 mkdir -p "$src/dist/app/bin" "$src/packaging/icons/hicolor/48x48/apps" \
-  "$src/build/dv-helper/stage/usr/libexec/silage-dv-helper" "$src/scripts/dv-helper"
+  "$src/build/dv-helper/stage/usr/libexec/silage-dv-helper" "$src/scripts/dv-helper" "$src/packaging/kwin" "$src/packaging/keys"
 printf '#!/bin/sh\necho "Silage %s"\n' "$version" > "$src/dist/app/bin/silage"
 cp "$src/dist/app/bin/silage" "$src/build/dv-helper/stage/usr/libexec/silage-dv-helper/silage-dv-helper"
 chmod 755 "$src/dist/app/bin/silage" "$src/build/dv-helper/stage/usr/libexec/silage-dv-helper/silage-dv-helper"
 for f in packaging/dev.silage.Silage.desktop packaging/dev.silage.Silage.metainfo.xml \
-  packaging/icons/hicolor/48x48/apps/dev.silage.Silage.png LICENSE scripts/dv-helper/dev.silage.dv-helper.policy; do
+  packaging/icons/hicolor/48x48/apps/dev.silage.Silage.png LICENSE scripts/dv-helper/dev.silage.dv-helper.policy \
+  packaging/kwin/silage-kwin-dv packaging/kwin/dev.silage.kwin-dv.policy packaging/keys/silage-archive-keyring.asc; do
   echo dummy > "$src/$f"
 done
 cp "$root/packaging/nfpm.yaml" "$src/nfpm.yaml"
