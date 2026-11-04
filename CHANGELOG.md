@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.1 — 2026-11-03
+
+- Fix playback failing (HTTP 403) on current Silo server versions: Silage now
+  sends its sign-in with original-file streams from your server, as Silo's own
+  apps do, and keeps it fresh during long films (issue #4).
+- Let Enter press Skip Intro, Skip Recap or Skip Credits while the button is on
+  screen.
+- Add 3× playback speed (issue #6).
+- Add Ctrl+Q to quit, and list quitting in the README's controls (issue #5).
+- Add exclusive-mode audio on Windows (Settings → Playback → Exclusive audio).
+- Show the experimental Dolby Vision setting only on hardware it supports.
+- Keep the profile picture steady between pages, and remember searches that
+  found something.
+
 ## 0.5.0 — 2026-10-27
 
 - Install Silage on Windows with one per-user Silage-Setup.exe: no administrator

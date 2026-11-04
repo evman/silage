@@ -1,13 +1,17 @@
 ## Silage @VERSION@ — Linux and Windows
 
-This release replaces the portable Windows build with a one-file installer, moves
-Linux onto signed apt, dnf and pacman repositories, and lets Silage update itself.
+This release fixes playback on current Silo server versions and adds a few
+small requests. If you have 0.5.0, Silage offers it as **Update ready** in the
+sidebar above Settings.
 
 ### What's new
 
-- **Windows installer.** `Silage-Setup.exe` installs for your user only, into `%LOCALAPPDATA%\Programs\Silage`, with no administrator access and no wizard. It adds Start menu (Windows search) and Desktop shortcuts and an entry in Settings → Apps, whose uninstall asks before deleting your settings. Settings and sign-in live in `%APPDATA%\Silage` and `%LOCALAPPDATA%\Silage`.
-- **Linux repositories.** Signed apt (Debian/Ubuntu), dnf (Fedora) and pacman (Arch) repositories keep Silage up to date with your normal system updates. The one-command installer adds the repository.
-- **Updates inside Silage.** Silage checks for updates in the background and shows **Update ready** in the sidebar above Settings, never during playback. Selecting it installs the update (silently on Windows; on Linux through the package manager, with the system password prompt) and restarts Silage. Settings → About has *Automatic updates*, *Check now* and *What's new*. Every update is signature-checked.
+- **Playback fix.** Current Silo server versions refused original-file streams (HTTP 403). Silage now sends its sign-in with them, as Silo's own apps do, and keeps it fresh during long films.
+- **Skip with one press.** While Skip Intro, Skip Recap or Skip Credits is on screen, Enter presses it.
+- **3× speed** in the player's Speed menu.
+- **Ctrl+Q** quits Silage from anywhere. Esc on the home page still asks first.
+- **Exclusive audio on Windows.** Settings → Playback → Exclusive audio gives Silage the sound device to itself during playback, so Windows doesn't mix or resample it.
+- The experimental Dolby Vision setting now appears only on hardware it supports.
 
 **Upgrading from 0.4.x.** Windows: install `Silage-Setup.exe` once and sign in again; the old portable folder can then be deleted. Linux: run the one-command installer below once; updates then arrive with normal system updates.
 

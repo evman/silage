@@ -46,6 +46,11 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.5.1" date="2026-11-03">
+      <description>
+        <p>Fixes playback on current Silo server versions. Enter now presses Skip Intro, Recap or Credits while it is on screen, playback goes up to 3x speed, Ctrl+Q quits, and Windows can play audio in exclusive mode.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-10-27">
       <description>
         <p>Windows installs with one per-user Silage-Setup.exe, with no administrator access, Start menu and Desktop shortcuts and an uninstall entry in Settings. The portable EXE and ZIP are gone. Linux gets signed apt, dnf and pacman repositories, so updates arrive with normal system updates.</p>
