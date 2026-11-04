@@ -77,6 +77,21 @@ class ExperimentalDvSessionTest {
     }
 
     /** With the patched KWin there's no helper and no password prompt; developers can still force a path. */
+    /**
+     * NVDEC (copy) drops Dolby Vision metadata from decoded frames, so a Profile 7 enhancement
+     * layer can't be confirmed and Dolby Vision never starts (The Wolf of Wall Street on an
+     * RTX 5090). Profile 7 decodes in software instead; VAAPI keeps the metadata.
+     */
+    @Test fun profile7DecodesInSoftwareUnlessTheDecoderKeepsDolbyVisionMetadata() {
+        assertTrue(dvNeedsSoftwareDecoding(profile = 7, hwdec = "nvdec-copy"))
+        assertTrue(dvNeedsSoftwareDecoding(profile = 7, hwdec = "nvdec"))
+        assertTrue(dvNeedsSoftwareDecoding(profile = 7, hwdec = null), "decoder not chosen yet")
+        assertFalse(dvNeedsSoftwareDecoding(profile = 7, hwdec = "vaapi"))
+        assertFalse(dvNeedsSoftwareDecoding(profile = 7, hwdec = "no"))
+        assertFalse(dvNeedsSoftwareDecoding(profile = 8, hwdec = "nvdec-copy"), "Profiles 5 and 8 keep hardware decoding")
+        assertFalse(dvNeedsSoftwareDecoding(profile = null, hwdec = "nvdec-copy"))
+    }
+
     @Test fun choosesTheDolbyVisionPath() {
         assertEquals(DvPath.Compositor, dvPath(enabled = true, backend = null, compositor = true, osName = "Linux"))
         assertEquals(DvPath.Helper, dvPath(enabled = true, backend = null, compositor = false, osName = "Linux"))

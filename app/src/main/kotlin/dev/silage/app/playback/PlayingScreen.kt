@@ -146,6 +146,11 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     val subtitles = CoroutineScope(Dispatchers.Default).launch(start = CoroutineStart.UNDISPATCHED) {
         mpv.events.filterIsInstance<PlayerEvent.FileLoaded>().first()
         video.apply(mpv::setProperty, mpv::getProperty)
+        // Dolby Vision output for Profile 7 needs the frames' Dolby Vision metadata, which NVDEC drops.
+        if ((compositorDv || helperRequested) && dvNeedsSoftwareDecoding(
+                mpv.getProperty("current-tracks/video/dolby-vision-profile")?.toIntOrNull(), mpv.getProperty("hwdec-current"))) {
+            mpv.setProperty("hwdec", "no")
+        }
         if (ready.direct) ready.selectedAudioOrdinal?.let { ordinal ->
             val mounted = dev.silage.app.playback.hud.Tracks.parse(mpv.getProperty("track-list") ?: "[]").audio
             nativeAudioId(mounted, ordinal)?.let { mpv.command("set", "aid", it.toString()) }
