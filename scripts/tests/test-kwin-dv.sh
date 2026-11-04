@@ -2,6 +2,12 @@
 # Exercises packaging/kwin/silage-kwin-dv against a staged fake system: stub pacman, pacman-key,
 # dnf, rpm and curl record what they're asked to do. Never touches the real system.
 set -euo pipefail
+# As root the helper ignores SILAGE_KWIN_ROOT (a test must never fake a system), so these tests
+# can't run as root: drop to nobody, which is all they need.
+if [ "$(id -u)" = 0 ]; then
+  command -v setpriv >/dev/null || { echo "Run these tests as a regular user (setpriv not found)"; exit 1; }
+  exec setpriv --reuid=65534 --regid=65534 --clear-groups --reset-env bash "$(realpath "$0")" "$@"
+fi
 helper=$(cd "$(dirname "$0")/../.." && pwd)/packaging/kwin/silage-kwin-dv
 fails=0
 base_path=$PATH
