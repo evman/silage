@@ -61,10 +61,11 @@ jobs:
           v="${{ steps.version.outputs.current }}"
           useradd -m builder
           packaging/kwin/arch/prepare.sh "${v%-*}" "${v##*-}" /home/builder/kwin
-          cd /home/builder/kwin
-          makepkg --printsrcinfo | awk '$1 ~ /^(make)?depends$/ {print $3}' | sed 's/[<>=].*//' \
-            | xargs pacman -S --noconfirm --needed >/dev/null
           chown -R builder: /home/builder/kwin
+          cd /home/builder/kwin
+          # makepkg refuses to run as root, even just to print the dependencies.
+          sudo -u builder makepkg --printsrcinfo | awk '$1 ~ /^(make)?depends$/ {print $3}' | sed 's/[<>=].*//' \
+            | xargs pacman -S --noconfirm --needed >/dev/null
           sudo -u builder MAKEFLAGS="-j$(nproc)" makepkg --skippgpcheck --noconfirm
           mkdir -p "$GITHUB_WORKSPACE/out" && cp ./*.pkg.tar.zst "$GITHUB_WORKSPACE/out/"
       - name: Sign and publish the pacman repository

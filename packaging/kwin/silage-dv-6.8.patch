@@ -246,7 +246,7 @@ index 896c260..3045817 100644
  
  DrmBackend::~DrmBackend() = default;
 diff --git a/src/backends/drm/drm_output.cpp b/src/backends/drm/drm_output.cpp
-index 81261cd..26692a3 100644
+index 81261cd..848a31c 100644
 --- a/src/backends/drm/drm_output.cpp
 +++ b/src/backends/drm/drm_output.cpp
 @@ -12,6 +12,7 @@
@@ -266,8 +266,8 @@ index 81261cd..26692a3 100644
 +    if (!m_pipeline || !m_gpu->atomicModeSetting() || !m_connector->hdrMetadata.isValid()) {
 +        return !enabled;
 +    }
++    // DisplayPort and HDMI alike: the verified monitor reads the same metadata on both.
 +    if (enabled && (!isEnabled() || !highDynamicRange() || !wideColorGamut() || lease()
-+                    || !m_connector->connectorName().startsWith(QLatin1String("DP-"))
 +                    || !matchesExperimentalHdrProfile(m_connector->edid()->raw()))) {
 +        return false;
 +    }

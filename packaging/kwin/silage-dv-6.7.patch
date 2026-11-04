@@ -246,7 +246,7 @@ index 770f7f0..8478075 100644
  
  DrmBackend::~DrmBackend() = default;
 diff --git a/src/backends/drm/drm_output.cpp b/src/backends/drm/drm_output.cpp
-index 6029772..2a61c3c 100644
+index 6029772..65ca373 100644
 --- a/src/backends/drm/drm_output.cpp
 +++ b/src/backends/drm/drm_output.cpp
 @@ -12,6 +12,7 @@
@@ -266,8 +266,8 @@ index 6029772..2a61c3c 100644
 +    if (!m_pipeline || !m_gpu->atomicModeSetting() || !m_connector->hdrMetadata.isValid()) {
 +        return !enabled;
 +    }
++    // DisplayPort and HDMI alike: the verified monitor reads the same metadata on both.
 +    if (enabled && (!isEnabled() || !highDynamicRange() || !wideColorGamut() || lease()
-+                    || !m_connector->connectorName().startsWith(QLatin1String("DP-"))
 +                    || !matchesExperimentalHdrProfile(m_connector->edid()->raw()))) {
 +        return false;
 +    }
@@ -275,7 +275,7 @@ index 6029772..2a61c3c 100644
 +        return true;
 +    }
 +    m_pipeline->setExperimentalDvMetadata(enabled);
-+    if (!DrmPipeline::commitPipelines({m_pipeline}, m_gpu, DrmPipeline::CommitMode::TestAllowModeset)) {
++    if (DrmPipeline::commitPipelines({m_pipeline}, m_gpu, DrmPipeline::CommitMode::TestAllowModeset) != DrmPipeline::Error::None) {
 +        m_pipeline->revertPendingChanges();
 +        return false;
 +    }
