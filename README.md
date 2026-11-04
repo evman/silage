@@ -50,8 +50,8 @@ Keep **mpv 0.37 or newer** installed from your distro. On first launch, enter yo
 ### Fullscreen or a window
 
 Silage is made for fullscreen, and that's the best experience: it's what HDR and Dolby Vision
-need, and what the remote-style controls are designed around. On Linux it opens fullscreen; on
-Windows, in a normal window.
+need, and what the remote-style controls are designed around.  Silage opens fullscreen on both
+Windows and Linux.
 
 To use it in a window instead, press **F11** at any time (or **F** while a video plays) to switch
 between fullscreen and a window. To choose how Silage opens, go to **Settings → Interface → Window**

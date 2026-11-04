@@ -1,19 +1,14 @@
 ## Silage @VERSION@ — Linux and Windows
 
-This release brings Dolby Vision to any GPU on Linux through KDE, and fixes
-restarting after an update. If you have 0.5.0 or 0.5.1, Silage offers it as
-**Update ready** in the sidebar above Settings.
+This release opens Silage fullscreen on Windows by default, adds a Dolby Vision
+comparison key, and updates the libraries Silage is built on. If you have 0.5.0
+or later, Silage offers it as **Update ready** in the sidebar above Settings.
 
 ### What's new
 
-- **Dolby Vision on any GPU** (Arch-based systems and Fedora with KDE Plasma). Settings → Video → **Dolby Vision through KDE** installs an opt-in version of KDE's KWin with a small Silage patch, from a separate signed repository; it stays current with normal system updates and Settings can restore the standard KWin. Works over DisplayPort and HDMI. Tested on an NVIDIA RTX 5090 and Intel Arc A380 with the ASUS PG32UCDM. See [Dolby Vision](https://github.com/evman/silage/blob/v@VERSION@/docs/DOLBY_VISION.md).
-- **Windowed mode on Linux.** Press **F11** (or **F** while playing) to switch between fullscreen and a window, and pick how Silage opens in Settings → Interface → Window. Fullscreen remains the default and the best experience.
-- **Hardware decoding for every Dolby Vision profile**, including Profile 7 on NVIDIA.
-- **No missed openings.** A Dolby Vision title waits on its first frame while the monitor switches, then plays.
-- **Copy Playback Info** with C (or Copy details), and a Dolby Vision status row.
-- **Send hardware report** (Settings → Video) helps add Dolby Vision for more monitors and GPUs.
-- **Updates restart properly on Linux** (0.5.1 could fail with "Failed to exec spawn helper").
-- Silage restarts instead of freezing if the playback engine stops responding; server-stored subtitles load when video comes through the server's proxy; Ctrl+Q works during playback; posters without artwork show their title.
+- **Fullscreen by default on Windows**, as on Linux. Pick **Normal window** in Settings → Interface → Window to open Silage in a window instead (choose it again once if you picked it before), or press **F11** to switch at any time.
+- **Compare Dolby Vision with HDR10.** Press **D** while a Dolby Vision title plays to turn Dolby Vision off and on.
+- **Up-to-date foundations:** Gradle 9.8.2, Kotlin 2.4.21, Compose Multiplatform 1.12.2 and current libraries.
 
 **Upgrading from 0.4.x.** Windows: install `Silage-Setup.exe` once and sign in again; the old portable folder can then be deleted. Linux: run the one-command installer below once; updates then arrive with normal system updates.
 

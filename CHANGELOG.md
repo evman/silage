@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.3 — 2026-11-04
+
+- Open fullscreen by default on Windows too, as on Linux. Settings → Interface → Window →
+  Normal window opens Silage in a window instead, and F11 switches at any time. If you
+  chose Normal window before, choose it again once.
+- Press D while a Dolby Vision title plays to turn Dolby Vision off and on, to compare it
+  with the HDR10 picture underneath.
+- Bring the toolkit up to date: Gradle 9.8.2, Kotlin 2.4.21, Compose Multiplatform 1.12.2
+  and the libraries Silage uses.
+- Every build now produces a Windows test installer.
+
 ## 0.5.2 — 2026-11-04
 
 - Show Dolby Vision on any GPU, over DisplayPort or HDMI, on Arch-based systems and

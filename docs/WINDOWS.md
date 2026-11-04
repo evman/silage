@@ -141,11 +141,11 @@ PC or Windows account requires signing in again; interface settings still travel
   the inbox (new episodes, fulfilled requests). While Silage is in the
   background, new ones also pop up as Windows notifications; clicking one
   brings Silage forward on the inbox.
-- Opens as a normal window, maximized or where you left it, with a dark title bar and
-  the taskbar visible. **F11** (or the player's fullscreen button) fills the monitor with a
-  borderless window and back; it is never exclusive fullscreen, so Alt+Tab and other
-  windows behave normally. *Settings → Interface → Window → Fullscreen* opens Silage
-  borderless every time instead. Fullscreen refits to the monitor it is on when moved
+- Opens fullscreen: a borderless window filling the monitor. It is never exclusive
+  fullscreen, so Alt+Tab and other windows behave normally. **F11** (or the player's
+  fullscreen button) switches to a normal window (maximized or where you left it, with a
+  dark title bar and the taskbar visible) and back. *Settings → Interface → Window →
+  Normal window* opens Silage as a normal window every time instead. Fullscreen refits to the monitor it is on when moved
   there (Win+Shift+Arrow). Moved to a monitor with a different Windows scale (say 150%
   and 100%), the window redraws at the new size. Escape goes back through pages, then offers **Quit Silage?**
   when there is no previous page. **Cancel** is focused first; use arrows or Tab to

@@ -46,6 +46,11 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.5.3" date="2026-11-04">
+      <description>
+        <p>Silage opens fullscreen by default on Windows too (Settings can choose a normal window). Press D during a Dolby Vision title to compare it with HDR10. Gradle, Kotlin, Compose and the libraries are up to date.</p>
+      </description>
+    </release>
     <release version="0.5.2" date="2026-11-04">
       <description>
         <p>Dolby Vision on any GPU on Arch-based systems and Fedora through an opt-in version of KDE's KWin, over DisplayPort or HDMI, with hardware decoding for every profile. Dolby Vision titles wait for the monitor to switch before playing. Silage can run in a window on Linux (F11 switches). Playback Info can be copied, and updates restart properly on Linux.</p>

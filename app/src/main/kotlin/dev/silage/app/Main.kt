@@ -109,10 +109,10 @@ fun main(args: Array<String>) {
     }
     val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
     val crashLog = CrashLog()
-    // Windows opens as a normal window where it was left; Settings → Interface can open it
-    // as a borderless fullscreen window instead (never AWT's exclusive mode).
+    // Windows opens as a borderless fullscreen window (never AWT's exclusive mode); Settings →
+    // Interface → Window → Normal window opens it as a normal window where it was left instead.
     val uiPrefs = koin.get<dev.silage.app.ui.UiPrefs>()
-    val borderless = isWindows && uiPrefs.fullscreenStart
+    val borderless = isWindows && !uiPrefs.windowsWindowed
     val savedWindow = if (isWindows) restorableWindow(runCatching { uiPrefs.window }.getOrNull(), screenBounds()) else null
     val windowMemory = WindowMemory(savedWindow) { uiPrefs.window = it }
     // Developer hook for reproducing exits: post a real Esc key press after N seconds.

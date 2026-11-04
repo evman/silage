@@ -28,6 +28,16 @@ class UiPrefsTest {
         assertEquals("auto", p.hdrMode)
     }
 
+    /** Fullscreen is the default on Windows too, including for 0.5.2 files that saved fullscreenStart: false unasked. */
+    @Test fun windowsOpensFullscreenUnlessNormalWindowIsChosen() {
+        val f = Files.createTempDirectory("silage-ui").resolve("ui.json")
+        assertEquals(false, UiPrefs(f).windowsWindowed)
+        Files.writeString(f, """{"fullscreenStart": false, "linuxWindowed": false}""")
+        assertEquals(false, UiPrefs(f).windowsWindowed)
+        UiPrefs(f).windowsWindowed = true
+        assertEquals(true, UiPrefs(f).windowsWindowed)
+    }
+
     @Test fun libraryViewsRoundTripPerLibrary() {
         val f = Files.createTempDirectory("silage-ui").resolve("ui.json")
         val view = SavedLibraryView(sort = "title", order = "asc", matchAll = false,

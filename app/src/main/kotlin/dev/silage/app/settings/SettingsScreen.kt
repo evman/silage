@@ -144,11 +144,11 @@ private fun InterfaceSection(koin: Koin) {
         }
         if (System.getProperty("os.name").startsWith("Windows")) {
             Spacer(Modifier.height(40.dp))
-            val fullscreenStart = remember(version) { prefs.fullscreenStart }
+            val windowed = remember(version) { prefs.windowsWindowed }
             Heading("Window", "How Silage opens. F11 (or the player's fullscreen button) switches to borderless fullscreen and back at any time. Takes effect the next time you open Silage.")
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Pill("Normal window", selected = !fullscreenStart) { prefs.fullscreenStart = false }
-                Pill("Fullscreen", selected = fullscreenStart) { prefs.fullscreenStart = true }
+                Pill("Normal window", selected = windowed) { prefs.windowsWindowed = true }
+                Pill("Fullscreen", selected = !windowed) { prefs.windowsWindowed = false }
             }
         }
         Spacer(Modifier.height(40.dp))
