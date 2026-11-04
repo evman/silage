@@ -35,6 +35,8 @@ private data class UiPrefsFile(
     val window: dev.silage.app.SavedWindow? = null,
     /** Open Silage as a borderless fullscreen window (Windows) instead of a normal one. */
     val fullscreenStart: Boolean = false,
+    /** Open Silage in a normal window on Linux instead of fullscreen (issue #7). */
+    val linuxWindowed: Boolean = false,
     /** Play the next episode after the "Up next" countdown. */
     val autoplayNext: Boolean = true,
     /** Jump past intro markers without pressing Skip Intro. */
@@ -122,6 +124,10 @@ class UiPrefs(private val path: Path) {
     var fullscreenStart: Boolean
         get() = read().fullscreenStart
         set(value) = write { it.copy(fullscreenStart = value) }
+
+    var linuxWindowed: Boolean
+        get() = read().linuxWindowed
+        set(value) = write { it.copy(linuxWindowed = value) }
 
     var autoplayNext: Boolean
         get() = read().autoplayNext

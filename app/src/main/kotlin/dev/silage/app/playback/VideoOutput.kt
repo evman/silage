@@ -21,7 +21,8 @@ data class Output(val name: String, val x: Int, val y: Int, val width: Int, val 
  */
 sealed interface VideoOutput {
     data class Embedded(val wid: Long) : VideoOutput
-    data class OwnWindow(val screen: String?) : VideoOutput
+    /** [fullscreen] false: a normal window, as Silage is in one (issue #7); F switches. */
+    data class OwnWindow(val screen: String?, val fullscreen: Boolean = true) : VideoOutput
 
     fun mpvOptions(osName: String = System.getProperty("os.name")): Map<String, String> {
         if (osName.startsWith("Windows", ignoreCase = true)) {
@@ -38,7 +39,9 @@ sealed interface VideoOutput {
         // wid is an X11 window: skip the Wayland contexts mpv would try first.
         is Embedded -> mapOf("wid" to wid.toString(), "gpu-context" to "x11vk", "input-vo-keyboard" to "no", "input-cursor-passthrough" to "yes")
         is OwnWindow -> listOfNotNull(
-            "fullscreen" to "yes",
+            "fullscreen" to if (fullscreen) "yes" else "no",
+            screen?.takeIf { !fullscreen }?.let { "screen-name" to it },
+            ("autofit-larger" to "90%x90%").takeIf { !fullscreen },
             "gpu-context" to "waylandvk,x11vk",
             "wayland-app-id" to "silage",
             "title" to "Silage",
@@ -77,12 +80,12 @@ sealed interface VideoOutput {
         )
 
         /** [override]: "on" always uses mpv's own window, "off" never does (SILAGE_HDR). */
-        fun choose(wid: Long?, under: Output?, override: String?): VideoOutput = when {
-            override == "on" -> OwnWindow(under?.name)
-            override == "off" -> wid?.let(::Embedded) ?: OwnWindow(under?.name)
-            under?.hdr == true -> OwnWindow(under.name)
+        fun choose(wid: Long?, under: Output?, override: String?, fullscreen: Boolean = true): VideoOutput = when {
+            override == "on" -> OwnWindow(under?.name, fullscreen)
+            override == "off" -> wid?.let(::Embedded) ?: OwnWindow(under?.name, fullscreen)
+            under?.hdr == true -> OwnWindow(under.name, fullscreen)
             wid != null -> Embedded(wid)
-            else -> OwnWindow(under?.name)
+            else -> OwnWindow(under?.name, fullscreen)
         }
     }
 }

@@ -69,6 +69,17 @@ class VideoOutputTest {
         assertEquals(VideoOutput.OwnWindow(null), VideoOutput.choose(null, null, "off"))
     }
 
+    /** Issue #7: with Silage in a normal window, HDR video opens in a normal window too (F makes it fullscreen). */
+    @Test fun ownWindowFollowsAWindowedSilage() {
+        val o = VideoOutput.OwnWindow("DP-3", fullscreen = false).mpvOptions("Linux")
+        assertEquals("no", o["fullscreen"])
+        assertEquals("DP-3", o["screen-name"])
+        assertEquals("DP-3", o["fs-screen-name"])
+        assertEquals("90%x90%", o["autofit-larger"])
+        assertEquals(VideoOutput.OwnWindow("DP-3", fullscreen = false),
+            VideoOutput.choose(7L, Output("DP-3", 0, 0, 1, 1, true), null, fullscreen = false))
+    }
+
     @Test fun ownWindowIsNativeWaylandFullscreenOnTheChosenScreenWithHdrHint() {
         val o = VideoOutput.OwnWindow("DP-3").mpvOptions("Linux")
         assertEquals("yes", o["fullscreen"])

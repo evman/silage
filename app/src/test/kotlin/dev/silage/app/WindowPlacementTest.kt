@@ -18,7 +18,9 @@ class WindowPlacementTest {
         assertEquals(WindowPlacement.Floating, windowPlacement(borderless = true, saved = left.copy(maximized = true), osName = "Windows 11"))
     }
 
-    @Test fun otherSystemsStayFullscreen() {
+    /** Issue #7: Linux opens fullscreen unless Settings → Interface → Window says Normal window. */
+    @Test fun linuxOpensFullscreenOrAsANormalWindow() {
         assertEquals(WindowPlacement.Fullscreen, windowPlacement(borderless = false, saved = null, osName = "Linux"))
+        assertEquals(WindowPlacement.Maximized, windowPlacement(borderless = false, saved = null, osName = "Linux", linuxWindowed = true))
     }
 }

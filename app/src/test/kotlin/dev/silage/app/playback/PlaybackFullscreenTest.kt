@@ -42,6 +42,30 @@ class PlaybackFullscreenTest {
         }
     }
 
+    /** Issue #7: on Linux F11 and the player's button switch the window's own fullscreen placement. */
+    @Test fun linuxSwitchesTheWindowsPlacement() {
+        if (System.getProperty("os.name").startsWith("Windows")) return
+        var fullscreen = false
+        val placement = object : LinuxPlacement { override var fullscreen: Boolean
+            get() = fullscreen
+            set(value) { fullscreen = value } }
+        SwingUtilities.invokeAndWait {
+            val frame = JFrame("Silage fullscreen test")
+            try {
+                val control = PlaybackFullscreen(frame, linux = placement)
+                assertFalse(control.active)
+                control.toggle()
+                assertTrue(fullscreen); assertTrue(control.active)
+                control.toggle()
+                assertFalse(fullscreen); assertFalse(control.active)
+                fullscreen = true
+                assertTrue(control.active, "follows the window, however it got there")
+                control.leave()
+                assertTrue(fullscreen, "leaving playback keeps the window as F / F11 left it")
+            } finally { frame.dispose() }
+        }
+    }
+
     @Test fun restoresExactWindowStateAndDoesNotOverwriteSnapshot() {
         val original = WindowSnapshot(Rectangle(120, 140, 800, 500), Frame.MAXIMIZED_BOTH, 123)
         val state = FullscreenState()

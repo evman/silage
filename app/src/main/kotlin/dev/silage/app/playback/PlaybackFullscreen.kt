@@ -18,18 +18,29 @@ class FullscreenState {
     fun exit(): WindowSnapshot? = saved.also { saved = null }
 }
 
-/** Windows borderless fullscreen: keep HWND and child video alive, never AWT exclusive mode. */
-class PlaybackFullscreen(private val frame: Frame) : AutoCloseable {
+/** The Silage window's fullscreen placement on Linux (Compose's own, which KWin honours). */
+interface LinuxPlacement { var fullscreen: Boolean }
+
+/**
+ * Windows borderless fullscreen: keep HWND and child video alive, never AWT exclusive mode.
+ * On Linux, with [linux], it switches the window's fullscreen placement instead.
+ */
+class PlaybackFullscreen(private val frame: Frame, private val linux: LinuxPlacement? = null) : AutoCloseable {
     private val state = FullscreenState()
     private var placement: Memory? = null
-    @Volatile var active = false; private set
+    @Volatile private var entered = false
+    val active: Boolean get() = linux?.fullscreen ?: entered
     private fun onEdt(action: () -> Unit) {
         if (SwingUtilities.isEventDispatchThread()) action() else SwingUtilities.invokeAndWait(action)
     }
-    fun toggle() = onEdt { if (active) leaveNow() else enterNow() }
+    fun toggle() = onEdt {
+        val linux = linux
+        if (linux != null) linux.fullscreen = !linux.fullscreen else if (active) leaveNow() else enterNow()
+    }
     fun enter() = onEdt { enterNow() }
     fun leave() = onEdt { leaveNow() }
     private fun enterNow() {
+        linux?.let { it.fullscreen = true; return }
         if (active || !frame.isShowing) return
         if (System.getProperty("os.name").startsWith("Windows")) {
             val u = WindowsWindowApi.instance
@@ -46,9 +57,11 @@ class PlaybackFullscreen(private val frame: Frame) : AutoCloseable {
             frame.extendedState = Frame.NORMAL
             frame.bounds = frame.graphicsConfiguration.bounds
         }
-        active = true
+        entered = true
     }
     private fun leaveNow() {
+        // Linux: the window stays as F / F11 left it when playback ends (fullscreen is its default).
+        if (linux != null) return
         val saved = state.exit() ?: return
         if (System.getProperty("os.name").startsWith("Windows")) {
             val u = WindowsWindowApi.instance
@@ -64,7 +77,7 @@ class PlaybackFullscreen(private val frame: Frame) : AutoCloseable {
             }
             placement = null
         } else { frame.bounds = saved.bounds; frame.extendedState = saved.extendedState }
-        active = false
+        entered = false
     }
     override fun close() = leave()
 }

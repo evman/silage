@@ -132,6 +132,16 @@ private fun InterfaceSection(koin: Koin) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             dev.silage.app.ui.InterfaceSize.entries.forEach { s -> Pill(s.label, selected = size == s) { prefs.interfaceSize = s } }
         }
+        if (!System.getProperty("os.name").startsWith("Windows")) {
+            Spacer(Modifier.height(40.dp))
+            val windowed = remember(version) { prefs.linuxWindowed }
+            Heading("Window", "How Silage opens. F11 (or F and the fullscreen button while playing) switches between a window and fullscreen at any time. " +
+                "In a window, HDR video opens in its own window; Dolby Vision needs fullscreen.")
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Pill("Normal window", selected = windowed) { prefs.linuxWindowed = true }
+                Pill("Fullscreen", selected = !windowed) { prefs.linuxWindowed = false }
+            }
+        }
         if (System.getProperty("os.name").startsWith("Windows")) {
             Spacer(Modifier.height(40.dp))
             val fullscreenStart = remember(version) { prefs.fullscreenStart }

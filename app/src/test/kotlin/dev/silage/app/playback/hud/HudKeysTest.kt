@@ -31,6 +31,13 @@ class HudKeysTest {
         assertEquals(hidden.copy(focus = PlayPause) to HudEffect.None, shown.on(HudKey.ofAwt(dev.silage.app.nav.BackInput.AWT_BACK)!!))
     }
 
+    /** Issue #7: F11 switches fullscreen in the player too, as it does while browsing. */
+    @Test fun f11IsFullscreen() {
+        assertEquals(HudKey.Fullscreen, HudKey.ofAwt(KeyEvent.VK_F11))
+        assertEquals(HudKey.Fullscreen, HudKey.ofMpv("F11"))
+        assertTrue("F11" in HudKey.MPV_KEYS)
+    }
+
     /** Ctrl+Q in mpv's own window (HDR / Dolby Vision) quits Silage, whatever the HUD shows. */
     @Test fun ctrlQInMpvsWindowQuits() {
         assertEquals(HudKey.Quit, HudKey.ofMpv("Ctrl+q"))

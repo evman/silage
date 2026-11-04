@@ -188,7 +188,7 @@ enum class HudKey {
             java.awt.event.KeyEvent.VK_DOWN -> Down
             java.awt.event.KeyEvent.VK_ENTER -> Enter
             java.awt.event.KeyEvent.VK_I -> Info
-            java.awt.event.KeyEvent.VK_F -> Fullscreen
+            java.awt.event.KeyEvent.VK_F, java.awt.event.KeyEvent.VK_F11 -> Fullscreen
             java.awt.event.KeyEvent.VK_M -> Mute
             java.awt.event.KeyEvent.VK_EQUALS, java.awt.event.KeyEvent.VK_PLUS, java.awt.event.KeyEvent.VK_ADD, java.awt.event.KeyEvent.VK_0 -> VolumeUp
             java.awt.event.KeyEvent.VK_MINUS, java.awt.event.KeyEvent.VK_SUBTRACT, java.awt.event.KeyEvent.VK_9 -> VolumeDown
@@ -216,7 +216,7 @@ enum class HudKey {
             "i" -> Info
             "c" -> CopyInfo
             "Ctrl+q", "Ctrl+Q" -> Quit
-            "f", "F" -> Fullscreen
+            "f", "F", "F11" -> Fullscreen
             "m", "M" -> Mute
             "+", "=", "KP_ADD", "0" -> VolumeUp
             "-", "KP_SUBTRACT", "9" -> VolumeDown
@@ -229,7 +229,7 @@ enum class HudKey {
         }
 
         val MPV_KEYS = listOf("ESC", "BS", "q", "MBTN_BACK", "GO_BACK", "SPACE", "k", "LEFT", "RIGHT", "UP", "DOWN", "ENTER", "i", "f", "F",
-            "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N", "c", "Ctrl+q", "Ctrl+Q")
+            "m", "M", "+", "=", "KP_ADD", "0", "-", "KP_SUBTRACT", "9", "s", "S", "a", "A", "[", "]", "n", "N", "c", "Ctrl+q", "Ctrl+Q", "F11")
 
         /** The shortcut keys and what each does, whatever the HUD shows. */
         internal fun shortcut(key: HudKey): HudEffect? = when (key) {

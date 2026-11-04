@@ -71,7 +71,8 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
     onQuality: ((quality: String, position: Double, paused: Boolean) -> Unit)? = null,
     onAudio: (Int, Double, Boolean) -> Unit): OpenedPlayer {
     val hdrMode = System.getenv("SILAGE_HDR") ?: koin.get<dev.silage.app.ui.UiPrefs>().hdrMode.takeIf { it != "auto" }
-    val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode)
+    // In a normal window (issue #7), HDR video opens in a normal window too.
+    val output = VideoOutput.choose(surface?.wid, surface?.canvas?.let(::outputUnder), hdrMode, fullscreen = fullscreen?.active ?: true)
     // The volume and mute the last video was left at (keyboard shortcuts set them).
     val (savedVolume, savedMute) = koin.get<dev.silage.app.ui.UiPrefs>().playerVolume
     val remembered = buildMap {
@@ -152,7 +153,7 @@ private fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, pa
         if (compositorDv || helperRequested) dvDecoders(dvProfile)?.let { mpv.setProperty("hwdec", it) }
         // Wait on the first frame while the monitor switches to Dolby Vision (a few seconds of
         // black), so the opening isn't missed; play anyway if the switch doesn't happen.
-        if (compositorDv && (output as? VideoOutput.OwnWindow)?.screen != null && dvShouldHold(dvProfile, paused)) launch {
+        if (compositorDv && (output as? VideoOutput.OwnWindow)?.let { it.screen != null && it.fullscreen } == true && dvShouldHold(dvProfile, paused)) launch {
             val heldSince = System.currentTimeMillis()
             mpv.setProperty("pause", "yes")
             hud.notice("Switching to Dolby Vision…", DV_HOLD_MAX_MS)

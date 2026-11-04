@@ -136,7 +136,7 @@ fun main(args: Array<String>) {
           },
       ) {
         val windowState = rememberWindowState(
-            placement = windowPlacement(borderless, savedWindow),
+            placement = windowPlacement(borderless, savedWindow, linuxWindowed = uiPrefs.linuxWindowed),
             position = savedWindow?.let { WindowPosition(it.x.dp, it.y.dp) } ?: WindowPosition.PlatformDefault,
             size = savedWindow?.let { DpSize(it.width.dp, it.height.dp) } ?: DpSize(1280.dp, 800.dp),
         )
@@ -166,7 +166,14 @@ fun main(args: Array<String>) {
             undecorated = borderless, resizable = !borderless,
             onPreviewKeyEvent = { e -> !splashDone || (interfaceZoomKey(e)?.let { step -> uiPrefs.interfaceSize = step(uiPrefs.interfaceSize); true } ?: false) }) {
             BorderlessStartup(window, isWindows, borderless)
-            val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window) }
+            val playbackFullscreen = remember(window) {
+                // Linux: F11 and the player's button switch the window's own fullscreen placement (issue #7).
+                dev.silage.app.playback.PlaybackFullscreen(window, linux = if (isWindows) null else object : dev.silage.app.playback.LinuxPlacement {
+                    override var fullscreen: Boolean
+                        get() = windowState.placement == WindowPlacement.Fullscreen
+                        set(value) { windowState.placement = if (value) WindowPlacement.Fullscreen else WindowPlacement.Maximized }
+                })
+            }
             val dvAuthorization = remember {
                 // Only the Intel register helper needs administrator authorization; the patched KWin doesn't.
                 val path = dev.silage.app.playback.dvPath(uiPrefs.experimentalDolbyVision, compositor = dev.silage.app.playback.kwinDvLease)
@@ -235,7 +242,7 @@ fun main(args: Array<String>) {
                             LaunchedEffect(signedIn) { if (signedIn) profileUi.load() else koin.get<dev.silage.app.shell.SidebarStore>().clear() }
                             CompositionLocalProvider(dev.silage.app.settings.LocalProfileUi provides ui) {
                             KeyRoot(route, onBack = nav::back, onQuit = closeSilage,
-                                onFullscreen = if (isWindows) ({ playbackFullscreen.toggle() }) else null, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
+                                onFullscreen = { playbackFullscreen.toggle() }, onSearch = { if (route !in setOf(Route.Connect, Route.SignIn, Route.Profiles, Route.Search)) nav.go(Route.Search) }) { EntryHost(nav) { entry -> dev.silage.app.nav.BrowseNavigation(nav) { AppRoutes(koin, nav, entry.route) } } }
                             }
                         }
                         if (!splashDone) SplashScreen(ready = navigator != null) { splashDone = true }
