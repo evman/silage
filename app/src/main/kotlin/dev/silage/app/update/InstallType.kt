@@ -58,7 +58,8 @@ fun detectInstallType(
                 null -> {
                     // The launcher is <installDir>/bin/silage.
                     val installDir = launcher.parent?.parent ?: launcher.parent ?: launcher
-                    InstallType.Tarball(installDir, isWritable(installDir))
+                    // Replacing it renames the folder and unpacks beside it, so its parent must be writable too.
+                    InstallType.Tarball(installDir, isWritable(installDir) && installDir.parent?.let(isWritable) == true)
                 }
             }
         }

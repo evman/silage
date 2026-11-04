@@ -80,7 +80,8 @@ class Updater(
             delay(FIRST_CHECK_DELAY_MS)
             while (true) {
                 check()
-                delay(intervalMs)
+                // A failure (offline, a dropped download) is retried soon rather than hours later.
+                delay(if (_state.value is UpdateState.Failed) minOf(RETRY_AFTER_FAILURE_MS, intervalMs) else intervalMs)
             }
         }
     }
@@ -155,6 +156,8 @@ class Updater(
         }
         _latest.value = release
         if (running == null || release.version <= running) {
+            // Up to date: an installer or package used for the update just finished isn't needed again.
+            if (!offering) deleteDownloads()
             if (!offering) _state.value = UpdateState.Idle
             return
         }
@@ -245,6 +248,7 @@ class Updater(
 
     companion object {
         const val FIRST_CHECK_DELAY_MS = 20_000L
+        const val RETRY_AFTER_FAILURE_MS = 15 * 60_000L
         private const val SUMS = "SHA256SUMS"
         private const val SUMS_SIGNATURE = "SHA256SUMS.sig"
         private const val COULD_NOT_CHECK = "Couldn't check for updates"

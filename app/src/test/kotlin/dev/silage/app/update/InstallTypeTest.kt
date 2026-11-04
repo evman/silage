@@ -59,7 +59,16 @@ class InstallTypeTest {
             InstallType.Tarball(Path.of("/home/me/.local/lib/silage"), writable = true),
             detect(launcherPath = launcher, isWritable = { checked.add(it); true }),
         )
-        assertEquals(listOf(Path.of("/home/me/.local/lib/silage")), checked)
+        // Replacing it renames the folder and unpacks beside it: both need write access.
+        assertEquals(setOf(Path.of("/home/me/.local/lib/silage"), Path.of("/home/me/.local/lib")), checked.toSet())
+    }
+
+    @Test fun aTarballInAReadOnlyParentCanOnlyNotify() {
+        val launcher = "/home/me/.local/lib/silage/bin/silage"
+        assertEquals(
+            InstallType.Tarball(Path.of("/home/me/.local/lib/silage"), writable = false),
+            detect(launcherPath = launcher, isWritable = { it == Path.of("/home/me/.local/lib/silage") }),
+        )
     }
 
     @Test fun devRunsNeverUpdate() {

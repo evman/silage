@@ -63,8 +63,17 @@ data class SidebarProfile(val name: String, val avatarUrl: String?, val avatarKe
 /** The sidebar's update entry: [title] beside the icon, [subtitle] beneath it. */
 data class SidebarUpdate(val title: String, val subtitle: String, val onSelect: () -> Unit)
 
-/** The update entry's title and subtitle for [state]; null when there is nothing to offer. */
-fun sidebarUpdateFor(state: UpdateState): Pair<String, String>? = when (state) {
+/**
+ * The update entry's title and subtitle for the offered [state]; null when there is nothing to
+ * offer. While the updater's [current] state downloads the offer, the subtitle shows its progress.
+ */
+fun sidebarUpdateFor(state: UpdateState, current: UpdateState? = null): Pair<String, String>? = when {
+    state is UpdateState.Ready && current is UpdateState.Downloading ->
+        "Update ready" to "Downloading ${current.version}… ${kotlin.math.round(current.fraction * 100).toInt()}%"
+    else -> sidebarOffer(state)
+}
+
+private fun sidebarOffer(state: UpdateState): Pair<String, String>? = when (state) {
     is UpdateState.Ready -> "Update ready" to "Restart to update to ${state.version}"
     is UpdateState.RestartToFinish -> "Update ready" to "Restart to finish updating to ${state.version}"
     is UpdateState.Available -> "Update available" to "Silage ${state.version}"

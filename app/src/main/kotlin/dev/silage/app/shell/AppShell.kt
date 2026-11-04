@@ -54,8 +54,9 @@ fun AppShell(nav: AppNavigator, koin: Koin, current: Route, content: @Composable
     }
     val shownUpdate = updates?.shown?.collectAsState()?.value
     val updateNotice = updates?.notice?.collectAsState()?.value
+    val currentUpdate = updates?.progress?.collectAsState()?.value
     val update = shownUpdate?.let { state ->
-        sidebarUpdateFor(state)?.let { (title, subtitle) -> SidebarUpdate(title, subtitle) { updates?.select() } }
+        sidebarUpdateFor(state, currentUpdate)?.let { (title, subtitle) -> SidebarUpdate(title, subtitle) { updates?.select() } }
     }
 
     // Right-click menus on the page's cards, with a short confirmation for their actions.

@@ -342,6 +342,32 @@ class UpdaterTest {
         assertIs<UpdateState.Ready>(updater.state.value)
     }
 
+    /** A failure (offline, a dropped download) is tried again soon, not six hours later. */
+    @Test fun aFailureIsRetriedAfterFifteenMinutes() = runTest {
+        val updater = updater()
+        updater.start()
+        advanceTimeBy(Updater.FIRST_CHECK_DELAY_MS + 1)
+        runCurrent()
+        assertEquals(1, source.calls)
+        assertIs<UpdateState.Failed>(updater.state.value) // Nothing published: GitHub "unreachable".
+        publish("0.5.1")
+        advanceTimeBy(15 * 60_000L)
+        runCurrent()
+        assertEquals(2, source.calls)
+        assertIs<UpdateState.Ready>(updater.state.value)
+    }
+
+    /** After updating (a Windows installer especially), its download isn't left in the cache. */
+    @Test fun anUpToDateCopyClearsEarlierDownloads() = runTest {
+        val updater = updater(running = "0.5.1")
+        publish("0.5.1")
+        Files.createDirectories(updatesDir)
+        Files.writeString(updatesDir.resolve("Silage-0.5.1-Setup.exe"), "used installer")
+        check(updater)
+        assertEquals(UpdateState.Idle, updater.state.value)
+        assertEquals(emptyList(), updatesDir.listDirectoryEntries())
+    }
+
     @Test fun checksRepeatEveryInterval() = runTest {
         val updater = updater(intervalMs = 60_000L)
         publish("0.5.0")

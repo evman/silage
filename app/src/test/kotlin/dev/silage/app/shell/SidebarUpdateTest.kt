@@ -30,6 +30,14 @@ class SidebarUpdateTest {
         assertNull(sidebarUpdateFor(UpdateState.Failed("Couldn't check for updates")))
     }
 
+    /** Selecting Update ready with automatic downloads off downloads first: show that it's happening. */
+    @Test fun anOfferBeingDownloadedShowsItsProgress() {
+        assertEquals("Update ready" to "Downloading 0.5.1… 40%",
+            sidebarUpdateFor(UpdateState.Ready(v, null), current = UpdateState.Downloading(v, 0.4f)))
+        assertEquals("Update ready" to "Restart to update to 0.5.1",
+            sidebarUpdateFor(UpdateState.Ready(v, null), current = UpdateState.Ready(v, Path.of("/tmp/x.deb"))))
+    }
+
     private fun ComposeUiTest.shell(update: SidebarUpdate?) {
         val nav = AppNavigator(Route.Home)
         setContent { MaterialTheme { AppShellContent(nav, Route.Home, null, emptyList(), update = update) { Text("Home") } } }

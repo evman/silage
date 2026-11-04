@@ -41,6 +41,9 @@ class UpdateOffer(
     private val _notice = MutableStateFlow<UpdateNotice?>(null)
     val notice: StateFlow<UpdateNotice?> = _notice.asStateFlow()
 
+    /** What the updater is doing now, so the entry can show a download it started. */
+    val progress: StateFlow<UpdateState> get() = updater.state
+
     private val busy = AtomicBoolean(false)
 
     init {
