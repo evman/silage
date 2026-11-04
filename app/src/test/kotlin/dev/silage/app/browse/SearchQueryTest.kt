@@ -46,23 +46,28 @@ class SearchQueryTest {
 
     private fun item(title: String, type: String, id: String = "$type:$title") = BrowseItem(contentId = id, type = type, title = title)
 
-    /** Typing "fallout" must lead with the show, not hundreds of episodes titled "Fallout". */
-    @Test fun showsThenMoviesThenEpisodesWithExactTitlesFirst() = runTest {
+    /**
+     * Typing "fallout" must lead with the show, not hundreds of episodes titled
+     * "Fallout"; the server's loose matches (a show matched on its description)
+     * must not bury a movie with "Fallout" in its title.
+     */
+    @Test fun titleMatchesLeadShowsBeforeMoviesAndEpisodesLast() = runTest {
         val asked = mutableListOf<String?>()
         val answer = rankedSearch("fallout") { q, type ->
             asked += type
             assertEquals("fallout", q)
             ApiResult.Success(CatalogResponse(items = when (type) {
-                "series" -> listOf(item("Thirst Trap: The Fame. The Fantasy. The Fallout.", "series"), item("Fallout", "series"))
+                "series" -> listOf(item("Thirst Trap: The Fame. The Fantasy. The Fallout.", "series"), item("Happy Endings", "series"), item("Fallout", "series"))
                 "movie" -> listOf(item("Mission: Impossible - Fallout", "movie"), item("Fallout: The Ghoul Log", "movie"), item("The Fallout", "movie"))
                 else -> listOf(item("Fallout", "episode", "ep1"), item("Fallout", "series"), item("Fallout", "episode", "ep2"), item("Fallout", "collection"))
             }))
         }
         assertEquals(setOf("series", "movie", null), asked.toSet())
         assertEquals(
-            listOf("series:Fallout", "series:Thirst Trap: The Fame. The Fantasy. The Fallout.",
-                "movie:The Fallout", "movie:Fallout: The Ghoul Log", "movie:Mission: Impossible - Fallout",
-                "collection:Fallout", "ep1", "ep2"),
+            listOf("series:Fallout", "movie:The Fallout", "collection:Fallout",
+                "movie:Fallout: The Ghoul Log",
+                "series:Thirst Trap: The Fame. The Fantasy. The Fallout.", "movie:Mission: Impossible - Fallout",
+                "series:Happy Endings", "ep1", "ep2"),
             assertIs<ApiResult.Success<CatalogResponse>>(answer).data.items.map { it.contentId },
         )
     }

@@ -22,10 +22,11 @@ sealed interface SearchResults {
 /**
  * The library search, ordered the way people expect: the server's search over
  * everything leads with episodes (dozens of shows have one titled "Fallout"), so
- * shows and movies are also asked for on their own, all at once. Shows come first,
- * then movies, then anything else, then episodes; within each, an exact title
- * ("fallout", "The Fallout"), then titles starting with the text, then the
- * server's order. One failed search still shows the others' results.
+ * shows and movies are also asked for on their own, all at once. Results go by
+ * how well the title matches (exact, as in "fallout" or "The Fallout"; then
+ * starting with the text; then containing it; then the server's looser matches),
+ * shows before movies before anything else at each level, and episodes last.
+ * One failed search still shows the others' results.
  */
 suspend fun rankedSearch(query: String, search: suspend (query: String, type: String?) -> ApiResult<CatalogResponse>): ApiResult<CatalogResponse> =
     kotlinx.coroutines.coroutineScope {
@@ -36,9 +37,13 @@ suspend fun rankedSearch(query: String, search: suspend (query: String, type: St
         val items = found.flatMap { it.data.items }.filter { seen.add(it.contentId) }
         fun key(text: String) = text.lowercase().removePrefix("the ").filter { it.isLetterOrDigit() }
         val wanted = key(query)
-        fun typeRank(type: String?) = when (type) { "series" -> 0; "movie" -> 1; "episode" -> 3; else -> 2 }
-        fun titleRank(title: String?) = key(title.orEmpty()).let { if (it == wanted) 0 else if (it.startsWith(wanted)) 1 else 2 }
-        ApiResult.Success(CatalogResponse(items = items.sortedWith(compareBy({ typeRank(it.type) }, { titleRank(it.title) }))))
+        fun typeRank(type: String?) = when (type) { "series" -> 0; "movie" -> 1; else -> 2 }
+        fun titleRank(title: String?) = key(title.orEmpty()).let {
+            when { it == wanted -> 0; it.startsWith(wanted) -> 1; wanted in it -> 2; else -> 3 }
+        }
+        ApiResult.Success(CatalogResponse(items = items.sortedWith(
+            compareBy({ it.type == "episode" }, { titleRank(it.title) }, { typeRank(it.type) }),
+        )))
     }
 
 /** Search-as-you-type: waits [debounceMs] after the last keystroke and keeps only the newest query's answer. */
