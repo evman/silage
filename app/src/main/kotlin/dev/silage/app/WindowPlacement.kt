@@ -9,7 +9,8 @@ import androidx.compose.ui.window.WindowPlacement
  */
 /** [linuxWindowed]: Settings → Interface → Window → Normal window on Linux (issue #7); Linux otherwise opens fullscreen. */
 internal fun windowPlacement(borderless: Boolean, saved: SavedWindow?, osName: String = System.getProperty("os.name"), linuxWindowed: Boolean = false): WindowPlacement = when {
-    !osName.startsWith("Windows") -> if (linuxWindowed) WindowPlacement.Maximized else WindowPlacement.Fullscreen
+    // Linux: a normal window; fullscreen is asked of the window manager once it shows (LinuxFullscreen).
+    !osName.startsWith("Windows") -> WindowPlacement.Maximized
     borderless -> WindowPlacement.Floating
     saved != null && !saved.maximized -> WindowPlacement.Floating
     else -> WindowPlacement.Maximized

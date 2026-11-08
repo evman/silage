@@ -43,6 +43,8 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.zxing.core)
+    // X11 bindings (Linux fullscreen through the window manager); shared already bundles it.
+    implementation("net.java.dev.jna:jna-platform:${libs.versions.jna.get()}")
     implementation("com.github.hypfvieh:dbus-java-core:5.2.2")
     runtimeOnly("com.github.hypfvieh:dbus-java-transport-native-unixsocket:5.2.2")
     testImplementation(kotlin("test"))

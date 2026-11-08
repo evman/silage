@@ -20,7 +20,9 @@ class WindowPlacementTest {
 
     /** Issue #7: Linux opens fullscreen unless Settings → Interface → Window says Normal window. */
     @Test fun linuxOpensFullscreenOrAsANormalWindow() {
-        assertEquals(WindowPlacement.Fullscreen, windowPlacement(borderless = false, saved = null, osName = "Linux"))
+        // A normal (maximized) window either way: fullscreen is asked of the window manager after it
+        // opens (LinuxFullscreen), never Compose's Fullscreen, which is AWT's exclusive mode.
+        assertEquals(WindowPlacement.Maximized, windowPlacement(borderless = false, saved = null, osName = "Linux"))
         assertEquals(WindowPlacement.Maximized, windowPlacement(borderless = false, saved = null, osName = "Linux", linuxWindowed = true))
     }
 }

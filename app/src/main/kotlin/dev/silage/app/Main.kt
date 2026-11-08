@@ -172,13 +172,23 @@ fun main(args: Array<String>) {
             undecorated = borderless, resizable = !borderless,
             onPreviewKeyEvent = { e -> !splashDone || (interfaceZoomKey(e)?.let { step -> uiPrefs.interfaceSize = step(uiPrefs.interfaceSize); true } ?: false) }) {
             BorderlessStartup(window, isWindows, borderless)
-            val playbackFullscreen = remember(window) {
-                // Linux: F11 and the player's button switch the window's own fullscreen placement (issue #7).
-                dev.silage.app.playback.PlaybackFullscreen(window, linux = if (isWindows) null else object : dev.silage.app.playback.LinuxPlacement {
-                    override var fullscreen: Boolean
-                        get() = windowState.placement == WindowPlacement.Fullscreen
-                        set(value) { windowState.placement = if (value) WindowPlacement.Fullscreen else WindowPlacement.Maximized }
-                })
+            // Linux: F11 and the player's button ask KWin for fullscreen (never AWT's exclusive mode,
+            // which KDE doesn't let a window leave); Compose's placement only if that can't be asked.
+            val linuxFullscreen = remember(window) {
+                if (isWindows) null else dev.silage.app.playback.LinuxFullscreen(
+                    request = { dev.silage.app.playback.X11Fullscreen.request(window, it) },
+                    fallback = { windowState.placement = if (it) WindowPlacement.Fullscreen else WindowPlacement.Maximized },
+                )
+            }
+            val playbackFullscreen = remember(window) { dev.silage.app.playback.PlaybackFullscreen(window, linux = linuxFullscreen) }
+            // Linux opens fullscreen unless Settings → Interface → Window says Normal window. KWin acts on
+            // the request once it manages the window; asking again shortly after is harmless.
+            if (linuxFullscreen != null && !uiPrefs.linuxWindowed) LaunchedEffect(window) {
+                while (!window.isShowing) delay(20)
+                delay(250)
+                linuxFullscreen.fullscreen = true
+                delay(750)
+                if (linuxFullscreen.fullscreen) dev.silage.app.playback.X11Fullscreen.request(window, true)
             }
             val dvAuthorization = remember {
                 // Only the Intel register helper needs administrator authorization; the patched KWin doesn't.
