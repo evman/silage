@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-11-08
 
+- Fix F11 not leaving fullscreen on Linux (KDE): Silage now asks the window manager for
+  fullscreen, as browsers and video players do, instead of Java's exclusive fullscreen.
+- Add a Sponsor button and a progress bar towards the Apple Developer and Google Play
+  accounts, which will bring Silage to macOS, iPhone, iPad, Apple TV and Android.
 - Send where you got to in a download to the server once it can be reached, so
   other devices can carry on from there.
 - Rate titles with stars on their page.

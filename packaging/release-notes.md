@@ -1,14 +1,21 @@
 ## Silage @VERSION@ — Linux and Windows
 
-This release opens Silage fullscreen on Windows by default, adds a Dolby Vision
-comparison key, and updates the libraries Silage is built on. If you have 0.5.0
-or later, Silage offers it as **Update ready** in the sidebar above Settings.
+The biggest Silage release yet: downloads, Watch Together, game controllers and
+profile management. If you have 0.5.0 or later, Silage offers it as **Update ready**
+in the sidebar above Settings.
 
 ### What's new
 
-- **Fullscreen by default on Windows**, as on Linux. Pick **Normal window** in Settings → Interface → Window to open Silage in a window instead (choose it again once if you picked it before), or press **F11** to switch at any time.
-- **Compare Dolby Vision with HDR10.** Press **D** while a Dolby Vision title plays to turn Dolby Vision off and on.
-- **Up-to-date foundations:** Gradle 9.8.2, Kotlin 2.4.21, Compose Multiplatform 1.12.2 and current libraries.
+- **Downloads.** Save a title, an episode or a whole season from its page and watch with no connection, subtitles included. Stopped downloads pick up where they left off, and where you got to is sent to the server once it can be reached.
+- **Watch Together.** Host or join a party with a code or a `silo://` link, choose or vote on a title, and watch in sync. Hosts choose who can play and pause.
+- **Game controllers.** Xbox-style pads and DualSense / DualShock 4 work on every page and in the player, on Windows and Linux, with an on-screen keyboard (press A on any text box).
+- **Profiles.** Add, edit and delete profiles from "Who's watching?" or Settings → Account: PINs, kids profiles, rating limits and library limits.
+- **A better player.** Picture previews and chapter names above the seek bar, marked intros and credits, a lighter player bar with grouped buttons, subtitle styling while you watch, and upload a subtitle file from the Subtitles menu.
+- **Smarter 4K.** A 4K video that keeps stopping to buffer can switch to its 1080p version at the same moment, with no converting, and back again (Settings → Video).
+- **Your library, your way.** Star ratings, an A–Z bar for title-sorted libraries, editable Home rows, your taste on For You, and audio, subtitles and auto-skip remembered for each show.
+- **Windows:** what's playing in the Windows media overlay, and play controls under the taskbar thumbnail.
+- **Linux:** F11 now leaves fullscreen properly on KDE.
+- **Support Silage.** A Sponsor button and progress bar towards the Apple Developer and Google Play accounts needed to bring Silage to macOS, iPhone, iPad, Apple TV and Android.
 
 **Upgrading from 0.4.x.** Windows: install `Silage-Setup.exe` once and sign in again; the old portable folder can then be deleted. Linux: run the one-command installer below once; updates then arrive with normal system updates.
 

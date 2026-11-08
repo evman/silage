@@ -13,8 +13,8 @@ kotlin {
     sourceSets.test { languageSettings.optIn("kotlinx.coroutines.ExperimentalCoroutinesApi") }
 }
 
-// The release version comes from the tag: ./gradlew ... -PappVersion=0.5.3
-val appVersion = (findProperty("appVersion") as String?) ?: "0.5.3-dev"
+// The release version comes from the tag: ./gradlew ... -PappVersion=0.6.0
+val appVersion = (findProperty("appVersion") as String?) ?: "0.6.0-dev"
 val buildInfoDir = layout.buildDirectory.dir("generated/buildinfo")
 val generateBuildInfo = tasks.register("generateBuildInfo") {
     inputs.property("version", appVersion)
