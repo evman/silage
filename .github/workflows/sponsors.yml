@@ -1,0 +1,49 @@
+# Redraws the README's sponsor progress bar (scripts/sponsors/progress.py) from every sponsor's
+# lifetime amount, and publishes it as progress.svg on the sponsor-progress branch, committing only
+# when the total changed. SPONSORS_TOKEN is a classic token of the sponsored account (read:user,
+# read:org): only that account can read what it has received. Totals only, never names.
+name: Sponsor progress
+
+on:
+  schedule:
+    - cron: '41 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sponsor-progress
+  cancel-in-progress: false
+
+jobs:
+  draw:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Draw the progress bar
+        env:
+          SPONSORS_TOKEN: ${{ secrets.SPONSORS_TOKEN }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          python3 scripts/sponsors/progress.py "$RUNNER_TEMP/out/progress.svg"
+      - name: Publish it on the sponsor-progress branch when it changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pub="$RUNNER_TEMP/pub"
+          git init -q "$pub" && cd "$pub"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git fetch -q --depth 1 origin sponsor-progress; then
+            git checkout -q -B sponsor-progress FETCH_HEAD
+          else
+            git checkout -q --orphan sponsor-progress
+          fi
+          cp "$RUNNER_TEMP/out/progress.svg" progress.svg
+          git add progress.svg
+          if git rev-parse -q --verify HEAD >/dev/null && git diff --cached --quiet; then
+            echo "Unchanged"; exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "Sponsor progress: $(grep -o '\$[0-9.]* of \$[0-9]* raised' progress.svg | head -1)"
+          git push -q origin sponsor-progress

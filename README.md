@@ -15,6 +15,8 @@
   <a href="#linux"><b>Install on Linux</b></a>
   &nbsp;·&nbsp;
   <a href="CHANGELOG.md">What's new</a>
+  &nbsp;·&nbsp;
+  <a href="#support-silage">Support Silage</a>
 </p>
 
 <p align="center">
@@ -100,6 +102,16 @@ On a text box, a controller's A opens an on-screen keyboard.
 - **Something not working?** [Open an issue](https://github.com/evman/silage/issues) and attach the logs from the folder shown in **Settings → About**.
 - **Platform details:** [Linux](docs/LINUX.md) · [Windows](docs/WINDOWS.md) · [Dolby Vision](docs/DOLBY_VISION.md)
 - **Building or contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
+
+## Support Silage
+
+Silage is free, and always will be. The next step is bringing it to more of your screens:
+**macOS, iPhone, iPad and Apple TV** need an Apple Developer account ($99 a year), and
+**Android and Android TV** need a Google Play account ($25 once).
+If Silage is useful to you, [sponsoring it on GitHub](https://github.com/sponsors/evman) helps
+pay for both. GitHub takes no fee.
+
+<a href="https://github.com/sponsors/evman"><img src="https://raw.githubusercontent.com/evman/silage/sponsor-progress/progress.svg" alt="Sponsor progress towards the Apple Developer and Google Play accounts" width="460"></a>
 
 ## License
 
