@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="86" viewBox="0 0 460 86" role="img" aria-label="$0 of $125 raised">
+  <rect width="460" height="86" rx="10" fill="#0d1117"/>
+  <text x="20" y="30" fill="#f0f6fc" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="600">$0 of $125 raised</text>
+  <text x="440" y="30" fill="#8b949e" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="14" text-anchor="end">0%</text>
+  <text x="20" y="50" fill="#8b949e" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="12">Apple Developer + Google Play accounts</text>
+  <rect x="20" y="62" width="420" height="10" rx="5" fill="#30363d"/>
+  <rect x="20" y="62" width="0.0" height="10" rx="5" fill="#db61a2"/>
+</svg>
