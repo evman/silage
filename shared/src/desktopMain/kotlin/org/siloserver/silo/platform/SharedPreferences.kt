@@ -9,6 +9,7 @@ interface SharedPreferences {
     val all: Map<String, Any?>
     fun getString(key: String, defValue: String?): String?
     fun getLong(key: String, defValue: Long): Long
+    fun getInt(key: String, defValue: Int): Int
     fun getBoolean(key: String, defValue: Boolean): Boolean
     fun contains(key: String): Boolean
     fun edit(): Editor
@@ -16,6 +17,7 @@ interface SharedPreferences {
     interface Editor {
         fun putString(key: String, value: String?): Editor
         fun putLong(key: String, value: Long): Editor
+        fun putInt(key: String, value: Int): Editor
         fun putBoolean(key: String, value: Boolean): Editor
         fun remove(key: String): Editor
         fun clear(): Editor

@@ -2,10 +2,12 @@ package org.siloserver.silo.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import org.siloserver.silo.model.feature.RequestsFeatureStore
 import org.siloserver.silo.model.request.MediaRequest
 import org.siloserver.silo.model.request.MyRequestsBucket
-import org.siloserver.silo.model.request.RequestActionCopy
+import org.siloserver.silo.common.i18n.SharedString
+import org.siloserver.silo.common.i18n.UiText
+import org.siloserver.silo.common.i18n.errorText
+import org.siloserver.silo.model.request.RequestActionMessage
 import org.siloserver.silo.model.request.RequestActionHold
 import org.siloserver.silo.model.request.RequestDiscoverySection
 import org.siloserver.silo.model.request.RequestDisplayState
@@ -13,11 +15,12 @@ import org.siloserver.silo.model.request.RequestMediaResult
 import org.siloserver.silo.model.request.RequestMediaType
 import org.siloserver.silo.model.request.RequestMutationFailure
 import org.siloserver.silo.model.request.RequestOutcome
-import org.siloserver.silo.model.request.RequestStatus
-import org.siloserver.silo.model.request.applyingRequestUpdate
+import org.siloserver.silo.model.request.applyingFollowUpdate
 import org.siloserver.silo.network.ApiResult
-import org.siloserver.silo.network.errorMessage
+import org.siloserver.silo.model.feature.RequestsFeatureStore
+import org.siloserver.silo.repository.RequestEvent
 import org.siloserver.silo.repository.RequestsRepository
+import org.siloserver.silo.repository.applyingRequestEvent
 import kotlin.time.Duration
 import kotlin.time.TimeSource
 import kotlinx.coroutines.Job
@@ -37,13 +40,11 @@ data class RequestsUiState(
     val isRefreshing: Boolean = false,
     val hasLoaded: Boolean = false,
     val sections: List<RequestDiscoverySection> = emptyList(),
+    /** The sections are the server's own Discover rows, each with a See all page. */
+    val rowsBrowsable: Boolean = false,
     /** The signed-in user's requests, needs-attention first, newest first within each group. */
     val myRequests: List<MediaRequest> = emptyList(),
-    /** Requests waiting on this admin's decision; zero for everyone else. */
-    val pendingApprovals: Int = 0,
-    /** More requests wait than [pendingApprovals]: the count reads one page. */
-    val morePendingApprovals: Boolean = false,
-    val error: String? = null,
+    val error: UiText? = null,
     val query: String = "",
     val searchResults: List<RequestMediaResult> = emptyList(),
     /** TMDB's total for the query, for the "N results" line. */
@@ -73,9 +74,6 @@ data class RequestsUiState(
  */
 class RequestsViewModel(
     private val repository: RequestsRepository,
-    private val featureStore: RequestsFeatureStore? = null,
-    /** False where the page reads the full approval queue itself (TV), so the hub doesn't read it twice. */
-    private val countsPendingApprovals: Boolean = true,
     /** Loads on creation; the TV page loads when it composes. */
     loadOnInit: Boolean = true,
 ) : ViewModel() {
@@ -89,14 +87,17 @@ class RequestsViewModel(
     init {
         if (loadOnInit) load()
         viewModelScope.launch {
-            repository.lastUpdate.drop(1).filterNotNull().collect { applyRequestUpdate(it.record) }
+            repository.lastFollow.drop(1).filterNotNull().collect { event ->
+                _uiState.update { state ->
+                    state.copy(
+                        searchResults = state.searchResults.applyingFollowUpdate(event),
+                        sections = state.sections.map { it.copy(results = it.results.applyingFollowUpdate(event)) },
+                    )
+                }
+            }
         }
         viewModelScope.launch {
-            repository.lastModeration.drop(1).filterNotNull().collect { loadPendingApprovals() }
-        }
-        featureStore?.let { store ->
-            // Moderation can be confirmed after the hub's first load.
-            viewModelScope.launch { store.canModerate.drop(1).collect { loadPendingApprovals() } }
+            repository.lastUpdate.drop(1).filterNotNull().collect { applyRequestUpdate(it) }
         }
     }
 
@@ -116,8 +117,6 @@ class RequestsViewModel(
     suspend fun fetch(): Boolean {
         val generation = ++loadGeneration
         _uiState.update { it.copy(isLoading = it.sections.isEmpty() && it.myRequests.isEmpty(), error = null) }
-        // The admin queue can take many pages; it fills its card when it lands.
-        val approvals = viewModelScope.launch { loadPendingApprovals() }
         val discover = viewModelScope.async { repository.discover() }
         val mine = repository.refreshMine()
         val sections = discover.await()
@@ -126,11 +125,13 @@ class RequestsViewModel(
         if (succeeded) {
             val records = repository.mine.value
             val ordered = MyRequestsBucket.bucket(records).flatMap { it.second }
+            val layout = (sections as ApiResult.Success).data
             _uiState.update {
                 it.copy(
                     isLoading = false,
                     hasLoaded = true,
-                    sections = mergeDiscoverCarousels((sections as ApiResult.Success).data.sections),
+                    sections = discoverCarousels(layout),
+                    rowsBrowsable = layout.rowOrder.isNotEmpty(),
                     myRequests = ordered,
                     error = null,
                 )
@@ -144,25 +145,12 @@ class RequestsViewModel(
                 it.copy(
                     isLoading = false,
                     hasLoaded = true,
-                    error = failure.errorMessage("Failed to load requests")
+                    error = failure.errorText(SharedString.RequestsLoadFailed)
                         .takeIf { _ -> it.sections.isEmpty() && it.myRequests.isEmpty() },
                 )
             }
         }
-        approvals.join()
         return succeeded
-    }
-
-    /** The hub's approvals card is a nudge, not a list: a failed read hides it. */
-    private suspend fun loadPendingApprovals() {
-        if (!countsPendingApprovals || featureStore?.canModerate?.value != true) {
-            _uiState.update { it.copy(pendingApprovals = 0, morePendingApprovals = false) }
-            return
-        }
-        // One page answers the card; it doesn't need the whole queue.
-        val result = repository.adminRequestCount(status = RequestStatus.Pending, outcome = RequestOutcome.Active)
-        val pending = (result as? ApiResult.Success)?.data
-        _uiState.update { it.copy(pendingApprovals = pending?.count ?: 0, morePendingApprovals = pending?.hasMore == true) }
     }
 
     /** Debounced TMDB search (300 ms), as the Apple hub does. */
@@ -210,18 +198,19 @@ class RequestsViewModel(
     }
 
     /** Patches every visible surface in place after a mutation anywhere in the app. */
-    private fun applyRequestUpdate(record: MediaRequest) {
+    private fun applyRequestUpdate(event: RequestEvent) {
+        val record = event.record
         _uiState.update { state ->
             val index = state.myRequests.indexOfFirst { it.id == record.id }
             val mine = when {
-                index >= 0 && record.outcome == RequestOutcome.Cancelled -> state.myRequests.filterNot { it.id == record.id }
+                event.removed || record.outcome == RequestOutcome.Cancelled -> state.myRequests.filterNot { it.id == record.id }
                 index >= 0 -> state.myRequests.toMutableList().also { it[index] = record }
                 record.outcome == RequestOutcome.Active -> listOf(record) + state.myRequests
                 else -> state.myRequests
             }
             state.copy(
-                searchResults = state.searchResults.applyingRequestUpdate(record),
-                sections = state.sections.map { it.copy(results = it.results.applyingRequestUpdate(record)) },
+                searchResults = state.searchResults.applyingRequestEvent(event),
+                sections = state.sections.map { it.copy(results = it.results.applyingRequestEvent(event)) },
                 myRequests = mine,
             )
         }
@@ -244,7 +233,7 @@ data class RequestSearchUiState(
     val page: Int = 1,
     val totalPages: Int = 1,
     val totalResults: Int = 0,
-    val error: String? = null,
+    val error: UiText? = null,
 ) {
     val hasSubmittedQuery: Boolean
         get() = submittedQuery.isNotBlank() && query.trim() == submittedQuery
@@ -263,7 +252,12 @@ class RequestSearchViewModel(
     init {
         viewModelScope.launch {
             repository.lastUpdate.drop(1).filterNotNull().collect { event ->
-                _uiState.update { it.copy(results = it.results.applyingRequestUpdate(event.record)) }
+                _uiState.update { it.copy(results = it.results.applyingRequestEvent(event)) }
+            }
+        }
+        viewModelScope.launch {
+            repository.lastFollow.drop(1).filterNotNull().collect { event ->
+                _uiState.update { it.copy(results = it.results.applyingFollowUpdate(event)) }
             }
         }
     }
@@ -317,7 +311,7 @@ class RequestSearchViewModel(
                     page = 1,
                     totalPages = 1,
                     totalResults = 0,
-                    error = "Enter a search term.",
+                    error = UiText.Key(SharedString.RequestSearchEmpty),
                 )
             }
             return
@@ -355,7 +349,7 @@ class RequestSearchViewModel(
                         it.copy(
                             isLoading = false,
                             submittedQuery = query,
-                            error = result.errorMessage("Failed to search requests"),
+                            error = result.errorText(SharedString.RequestSearchFailed),
                         )
                     }
                 }
@@ -379,9 +373,15 @@ data class MyRequestsUiState(
     val cancellingId: String? = null,
     /** Requests whose cancel was sent without a usable answer; held until the request changes, or the hold lapses. */
     val unconfirmedCancelIds: Set<String> = emptySet(),
-    /** Inline message for a failed cancel; cleared on the next action. */
-    val actionErrorMessage: String? = null,
-    val error: String? = null,
+    /** Inline message for a failed cancel or removal; cleared on the next action. */
+    val actionErrorMessage: RequestActionMessage? = null,
+    /** The server takes removals of failed requests (`remove_failed_supported`). */
+    val removeFailedSupported: Boolean = false,
+    /** The request being removed; its row dims and takes no taps. */
+    val removingId: String? = null,
+    /** A confirmation to show once, such as "Request removed". */
+    val notice: RequestNotice? = null,
+    val error: UiText? = null,
 ) {
     val requests: List<MediaRequest> get() = buckets.flatMap { it.second }
     val isEmpty: Boolean get() = hasLoaded && buckets.isEmpty()
@@ -389,7 +389,14 @@ data class MyRequestsUiState(
     /** Whether [record] may offer Cancel: pending, and no cancel of it held. */
     fun canCancel(record: MediaRequest): Boolean =
         RequestDisplayState.of(record).isCancelable && record.id !in unconfirmedCancelIds && cancellingId == null
+
+    /** Whether [record] may offer Remove: a failed request that delivered nothing, on a server that takes it. */
+    fun canRemove(record: MediaRequest): Boolean =
+        removeFailedSupported && record.isRemovableFailure && removingId == null
 }
+
+/** A one-time confirmation; [sequence] makes a repeat of the same text a new notice. */
+data class RequestNotice(val message: RequestActionMessage, val sequence: Long)
 
 class MyRequestsViewModel(
     private val repository: RequestsRepository,
@@ -397,9 +404,12 @@ class MyRequestsViewModel(
     loadOnInit: Boolean = true,
     private val holdLifetime: Duration = RequestActionHold.Lifetime,
     private val timeSource: TimeSource = TimeSource.Monotonic,
+    /** Gates Remove on `remove_failed_supported`; without it Remove is never offered. */
+    private val featureStore: RequestsFeatureStore? = null,
 ) : ViewModel() {
 
     private var loadGeneration = 0
+    private var noticeSequence = 0L
     private val cancelHolds = mutableMapOf<String, RequestActionHold>()
     private val _uiState = MutableStateFlow(MyRequestsUiState())
     val uiState: StateFlow<MyRequestsUiState> = _uiState.asStateFlow()
@@ -407,11 +417,18 @@ class MyRequestsViewModel(
 
     init {
         if (loadOnInit) load()
+        featureStore?.let { store ->
+            viewModelScope.launch {
+                store.removeFailedSupported.collect { supported -> _uiState.update { it.copy(removeFailedSupported = supported) } }
+            }
+        }
         viewModelScope.launch {
             // A mutation elsewhere (detail submit) while this list is mounted:
             // the list is short, so a full refetch is the simplest correct answer.
             repository.lastUpdate.drop(1).filterNotNull().collect {
-                if (!_uiState.value.hasLoaded || _uiState.value.cancellingId != null) return@collect
+                val state = _uiState.value
+                // This model's own cancel or removal re-reads when it finishes.
+                if (!state.hasLoaded || state.cancellingId != null || state.removingId != null) return@collect
                 reloadJob?.cancel()
                 reloadJob = viewModelScope.launch { fetch() }
             }
@@ -455,7 +472,7 @@ class MyRequestsViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        error = result.errorMessage("Failed to load your requests").takeIf { _ -> it.buckets.isEmpty() },
+                        error = result.errorText(SharedString.MyRequestsLoadFailed).takeIf { _ -> it.buckets.isEmpty() },
                     )
                 }
                 false
@@ -489,13 +506,55 @@ class MyRequestsViewModel(
                         }
                     }
                     holdCancel(record, reread)
-                    _uiState.update { it.copy(cancellingId = null, actionErrorMessage = RequestActionCopy.UnconfirmedCancel) }
+                    _uiState.update { it.copy(cancellingId = null, actionErrorMessage = RequestActionMessage.UnconfirmedCancel) }
                     reread()
                 }
                 else -> _uiState.update {
-                    it.copy(cancellingId = null, actionErrorMessage = RequestActionCopy.failure(result, "Couldn't cancel the request"))
+                    it.copy(cancellingId = null, actionErrorMessage = RequestActionMessage.failure(result, SharedString.RequestCancelFailed))
                 }
             }
+        }
+    }
+
+    /**
+     * Removes one of the user's failed requests, after the screen's
+     * confirmation. This model's list is read again whatever the answer, so
+     * the row shows what happened: gone, or retried or completed since it
+     * loaded (409). [refresh] re-reads the list that shows the row when it
+     * isn't this model's (the TV hub), and runs only when the removal isn't
+     * confirmed: a confirmed one has already left every list the repository
+     * feeds. Nothing is held after an uncertain answer: a resend of a removal
+     * that landed answers 404 and changes nothing.
+     */
+    fun removeFailed(record: MediaRequest, refresh: (suspend () -> Boolean)? = null) {
+        if (!_uiState.value.canRemove(record)) return
+        _uiState.update { it.copy(removingId = record.id, actionErrorMessage = null) }
+        viewModelScope.launch {
+            val result = repository.removeFailed(record)
+            // A confirmed removal has already left every list the repository
+            // feeds (the TV hub included); anything else re-reads to show what happened.
+            if (refresh == null) fetch() else if (result !is ApiResult.Success) refresh()
+            val gone = repository.mine.value.none { it.id == record.id }
+            _uiState.update { current ->
+                val settled = current.copy(removingId = null)
+                when {
+                    // The repository has dropped it already; a failed re-read must not bring the row back.
+                    result is ApiResult.Success -> settled.copy(
+                        buckets = MyRequestsBucket.bucket(repository.mine.value),
+                        notice = RequestNotice(RequestActionMessage.Removed, ++noticeSequence),
+                    )
+                    // Removed elsewhere since the list loaded: the repository has dropped it too.
+                    result is ApiResult.Error && result.code == 404 -> settled.copy(buckets = MyRequestsBucket.bucket(repository.mine.value))
+                    // Requests turned off also answers 409, as capability_disabled.
+                    result is ApiResult.Error && result.code == 409 && result.error == "conflict" ->
+                        settled.copy(actionErrorMessage = RequestActionMessage.RemoveConflict)
+                    RequestMutationFailure.isUncertain(result) && gone ->
+                        settled.copy(notice = RequestNotice(RequestActionMessage.Removed, ++noticeSequence))
+                    RequestMutationFailure.isUncertain(result) -> settled.copy(actionErrorMessage = RequestActionMessage.UnconfirmedRemove)
+                    else -> settled.copy(actionErrorMessage = RequestActionMessage.failure(result, SharedString.RequestRemoveFailed))
+                }
+            }
+            if (RequestActionMessage.isCapabilityOff(result)) featureStore?.refresh()
         }
     }
 
@@ -529,7 +588,7 @@ class MyRequestsViewModel(
             it.copy(
                 unconfirmedCancelIds = cancelHolds.keys.toSet(),
                 actionErrorMessage = it.actionErrorMessage.takeUnless { m ->
-                    cancelHolds.isEmpty() && m == RequestActionCopy.UnconfirmedCancel
+                    cancelHolds.isEmpty() && m == RequestActionMessage.UnconfirmedCancel
                 },
             )
         }

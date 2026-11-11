@@ -2,6 +2,8 @@ package org.siloserver.silo.repository
 
 import org.siloserver.silo.domain.settings.CatalogLanguageRevision
 import org.siloserver.silo.repository.port.CatalogCacheScope
+import org.siloserver.silo.model.catalog.CatalogBoxSet
+import org.siloserver.silo.model.catalog.CatalogBoxSetDetail
 import org.siloserver.silo.model.catalog.CatalogFiltersResponse
 import org.siloserver.silo.model.catalog.CatalogQueryGroup
 import org.siloserver.silo.model.catalog.CatalogResponse
@@ -31,6 +33,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/**
+ * How long search holds its first page of titles for the box sets asked for
+ * beside it, once the titles are in. Past it the query shows no box sets.
+ */
+const val BOX_SET_SEARCH_GRACE_MILLIS = 1_500L
+
 class CatalogRepository(
     private val catalogApi: CatalogApi,
     /** Offline read cache for a library's default first page (Track B). No-op by default. */
@@ -38,6 +46,7 @@ class CatalogRepository(
     private val identityTransitions: IdentityTransitionBarrier = DefaultIdentityTransitionBarrier(),
     requestDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val catalogLanguage: CatalogLanguageRevision? = null,
+    private val artwork: ArtworkSizing = ArtworkSizing.None,
 ) {
     /**
      * Home may warm a detail immediately before its destination requests the
@@ -61,6 +70,7 @@ class CatalogRepository(
         val languageRevision: Long,
         val seriesId: String,
         val seasonNumber: Int,
+        val surface: ArtworkSurface,
     )
     private val episodesInFlight =
         mutableMapOf<EpisodesRequestKey, Deferred<ApiResult<EpisodesResponse>>>()
@@ -103,7 +113,10 @@ class CatalogRepository(
         seek: Int? = null,
     ): ApiResult<CatalogResponse> {
         val requestIdentityGeneration = identityTransitions.generation.value
+        val sized = if (continuation == null) artwork.sizedRead(ArtworkSurface.BROWSE) else null
+        val artworkFingerprint = artwork.cacheFingerprint(ArtworkSurface.BROWSE)
         val result = catalogApi.getCatalog(
+            widths = sized?.widths,
             source = source,
             query = query,
             mediaType = mediaType,
@@ -134,8 +147,10 @@ class CatalogRepository(
         } ?: return result
 
         if (result is ApiResult.Success) {
-            writeIfIdentityUnchanged(requestIdentityGeneration) { cacheWriteLease ->
-                catalogCache.cacheDefaultLibraryPage(cacheableLibraryId, result.data, cacheWriteLease)
+            if (sized?.cacheable == true) {
+                writeIfIdentityUnchanged(requestIdentityGeneration, artworkFingerprint) { cacheWriteLease ->
+                    catalogCache.cacheDefaultLibraryPage(cacheableLibraryId, result.data, cacheWriteLease)
+                }
             }
             return result
         }
@@ -144,6 +159,34 @@ class CatalogRepository(
         }
         return result
     }
+
+    /**
+     * A box set's movies in one library, in collection order. Live only: a box
+     * set is library-scoped, like the library-scoped item reads.
+     */
+    suspend fun getBoxSet(id: String, libraryId: String): ApiResult<CatalogBoxSetDetail> {
+        val detail = artwork.request(ArtworkSurface.DETAIL)
+        // The response sizes the hero and the member cards with one poster
+        // width; a compact phone hero draws no poster, so cards set it then.
+        val widths = detail?.copy(poster = detail.poster ?: artwork.request(ArtworkSurface.BROWSE)?.poster)
+        return catalogApi.getBoxSet(id, libraryId, widths)
+    }
+
+    /**
+     * The box set [contentId] belongs to, for the box set row on a movie's
+     * page, or null when it is in none. Live only, like [getBoxSet]; the
+     * member cards are sized as a poster rail.
+     */
+    suspend fun getItemBoxSet(contentId: String, libraryId: Int? = null): ApiResult<CatalogBoxSetDetail?> =
+        catalogApi.getItemBoxSet(contentId, libraryId, artwork.request(ArtworkSurface.SIMILAR))
+
+    /**
+     * Box sets matching a search, best match first. Box sets only come from
+     * libraries with box sets in search, and a failed read answers none, so it
+     * never fails the search it sits beside.
+     */
+    suspend fun searchBoxSets(query: String, limit: Int = 5): List<CatalogBoxSet> =
+        (catalogApi.searchBoxSets(query, limit) as? ApiResult.Success)?.data.orEmpty()
 
     suspend fun searchFacet(scope: org.siloserver.silo.network.apiv2.CatalogFacetScopeV2, facet: String, prefix: String) =
         catalogApi.searchFacet(scope, facet, prefix)
@@ -192,15 +235,20 @@ class CatalogRepository(
      * Live item detail. By default it joins a Home warm-up already in flight
      * for the same title; [joinWarmup] = false sends a fresh request instead,
      * for a reload whose answer must postdate an access change.
+     *
+     * [fresh] reads the server only: it neither joins a warm-up nor falls back
+     * to the cache, both of which can still hold the state from before a write.
      */
     suspend fun getItemDetail(
         contentId: String,
         libraryId: Int? = null,
         joinWarmup: Boolean = true,
+        fresh: Boolean = false,
     ): ApiResult<ItemDetail> {
-        if (libraryId != null) return catalogApi.getItemDetail(contentId, libraryId)
+        if (libraryId != null) return catalogApi.getItemDetail(contentId, libraryId, artwork.request(ArtworkSurface.DETAIL))
         val requestIdentityGeneration = identityTransitions.generation.value
         val requestLanguageRevision = currentLanguageRevision
+        if (fresh) return fetchItemDetail(contentId, requestIdentityGeneration, requestLanguageRevision, serveCacheOnFailure = false)
         val warmRequest = if (!joinWarmup) null else detailRequestMutex.withLock {
             itemDetailInFlight[DetailRequestKey(requestIdentityGeneration, requestLanguageRevision, contentId)]
         }
@@ -229,9 +277,12 @@ class CatalogRepository(
     /**
      * Cache-first detail for speculative UI enrichment. Unlike a detail screen,
      * prefetch must not re-download metadata that is already durable locally.
+     * A warm-up still in flight is newer than that copy, so it joins one.
      */
     suspend fun getItemDetailForPrefetch(contentId: String, libraryId: Int? = null): ApiResult<ItemDetail> {
-        if (libraryId != null) return catalogApi.getItemDetail(contentId, libraryId)
+        if (libraryId != null) return catalogApi.getItemDetail(contentId, libraryId, artwork.request(ArtworkSurface.DETAIL))
+        inFlight(itemDetailInFlight, DetailRequestKey(identityTransitions.generation.value, currentLanguageRevision, contentId))
+            ?.let { return it.await() }
         getCachedItemDetail(contentId)?.let { return ApiResult.Success(it) }
         return getItemDetail(contentId)
     }
@@ -278,63 +329,79 @@ class CatalogRepository(
     suspend fun getCachedSeasons(seriesId: String, libraryId: Int? = null): SeasonsResponse? =
         if (libraryId != null) null else readLocalizedCache { catalogCache.getCachedSeasons(seriesId) }
 
-    /** Cache-first season list for speculative detail navigation. */
+    /** Cache-first season list for speculative detail navigation; joins a warm-up still in flight. */
     suspend fun getSeasonsForPrefetch(seriesId: String, libraryId: Int? = null): ApiResult<SeasonsResponse> {
         if (libraryId != null) return catalogApi.getSeasons(seriesId, libraryId)
+        inFlight(seasonsInFlight, DetailRequestKey(identityTransitions.generation.value, currentLanguageRevision, seriesId))
+            ?.let { return it.await() }
         getCachedSeasons(seriesId)?.let { return ApiResult.Success(it) }
         return getSeasons(seriesId)
     }
 
     /**
      * Lists episodes for a specific season of a series (offline: last cached
-     * episodes). [fresh] behaves as on [getSeasons].
+     * episodes). [fresh] behaves as on [getSeasons]. [surface] is the page the
+     * episodes are drawn on, which sizes their stills.
      */
     suspend fun getEpisodes(
         seriesId: String,
         seasonNumber: Int,
         libraryId: Int? = null,
         fresh: Boolean = false,
+        surface: ArtworkSurface = ArtworkSurface.EPISODES,
     ): ApiResult<EpisodesResponse> {
-        if (libraryId != null) return catalogApi.getEpisodes(seriesId, seasonNumber, libraryId)
+        if (libraryId != null) return catalogApi.getEpisodes(seriesId, seasonNumber, libraryId, artwork.request(surface))
         val requestIdentityGeneration = identityTransitions.generation.value
         val requestLanguageRevision = currentLanguageRevision
-        if (fresh) return fetchEpisodes(seriesId, seasonNumber, requestIdentityGeneration, requestLanguageRevision, serveCacheOnFailure = false)
-        val requestKey = EpisodesRequestKey(requestIdentityGeneration, requestLanguageRevision, seriesId, seasonNumber)
+        if (fresh) {
+            return fetchEpisodes(seriesId, seasonNumber, surface, requestIdentityGeneration, requestLanguageRevision,
+                serveCacheOnFailure = false)
+        }
+        val requestKey = EpisodesRequestKey(requestIdentityGeneration, requestLanguageRevision, seriesId, seasonNumber, surface)
         val warmRequest = detailRequestMutex.withLock { episodesInFlight[requestKey] }
         return warmRequest?.await()
-            ?: fetchEpisodes(seriesId, seasonNumber, requestIdentityGeneration, requestLanguageRevision)
+            ?: fetchEpisodes(seriesId, seasonNumber, surface, requestIdentityGeneration, requestLanguageRevision)
     }
 
     /** Starts a process-owned live episode-list warm-up for a pending detail route. */
     suspend fun warmEpisodes(
         seriesId: String,
         seasonNumber: Int,
+        surface: ArtworkSurface = ArtworkSurface.EPISODES,
     ): ApiResult<EpisodesResponse> {
         val requestIdentityGeneration = identityTransitions.generation.value
         val requestLanguageRevision = currentLanguageRevision
         return coalescedDetailRequest(
             requests = episodesInFlight,
-            key = EpisodesRequestKey(requestIdentityGeneration, requestLanguageRevision, seriesId, seasonNumber),
+            key = EpisodesRequestKey(requestIdentityGeneration, requestLanguageRevision, seriesId, seasonNumber, surface),
         ) {
-            fetchEpisodes(seriesId, seasonNumber, requestIdentityGeneration, requestLanguageRevision)
+            fetchEpisodes(seriesId, seasonNumber, surface, requestIdentityGeneration, requestLanguageRevision)
         }
     }
 
     /** Returns one cached season's episodes without touching the network. */
-    suspend fun getCachedEpisodes(seriesId: String, seasonNumber: Int, libraryId: Int? = null): EpisodesResponse? =
-        if (libraryId != null) null else readLocalizedCache { catalogCache.getCachedEpisodes(seriesId, seasonNumber) }
+    suspend fun getCachedEpisodes(
+        seriesId: String,
+        seasonNumber: Int,
+        libraryId: Int? = null,
+        surface: ArtworkSurface = ArtworkSurface.EPISODES,
+    ): EpisodesResponse? =
+        if (libraryId != null) null else readLocalizedCache { catalogCache.getCachedEpisodes(seriesId, seasonNumber, surface) }
 
-    /** Cache-first episode list for speculative detail navigation. */
+    /** Cache-first episode list for speculative detail navigation; joins a warm-up still in flight. */
     suspend fun getEpisodesForPrefetch(
         seriesId: String,
         seasonNumber: Int,
         libraryId: Int? = null,
+        surface: ArtworkSurface = ArtworkSurface.EPISODES,
     ): ApiResult<EpisodesResponse> {
-        if (libraryId != null) return catalogApi.getEpisodes(seriesId, seasonNumber, libraryId)
-        getCachedEpisodes(seriesId, seasonNumber)?.let {
+        if (libraryId != null) return catalogApi.getEpisodes(seriesId, seasonNumber, libraryId, artwork.request(surface))
+        val key = EpisodesRequestKey(identityTransitions.generation.value, currentLanguageRevision, seriesId, seasonNumber, surface)
+        inFlight(episodesInFlight, key)?.let { return it.await() }
+        getCachedEpisodes(seriesId, seasonNumber, surface = surface)?.let {
             return ApiResult.Success(it)
         }
-        return getEpisodes(seriesId, seasonNumber)
+        return getEpisodes(seriesId, seasonNumber, surface = surface)
     }
 
     /** Lists all episodes directly attached to an item (e.g. a season content ID). */
@@ -376,21 +443,27 @@ class CatalogRepository(
             mediaType = mediaType,
             continuation = continuation,
             limit = limit,
+            widths = if (continuation == null) artwork.request(ArtworkSurface.BROWSE) else null,
         )
 
     private suspend fun fetchItemDetail(
         contentId: String,
         requestIdentityGeneration: Long,
         requestLanguageRevision: Long,
+        serveCacheOnFailure: Boolean = true,
     ): ApiResult<ItemDetail> {
-        val result = catalogApi.getItemDetail(contentId)
+        val sized = artwork.sizedRead(ArtworkSurface.DETAIL)
+        val artworkFingerprint = artwork.cacheFingerprint(ArtworkSurface.DETAIL)
+        val result = catalogApi.getItemDetail(contentId, widths = sized.widths)
         if (result is ApiResult.Success) {
-            writeLocalizedCache(requestIdentityGeneration, requestLanguageRevision) { cacheWriteLease ->
-                catalogCache.cacheItemDetail(contentId, result.data, cacheWriteLease)
+            if (sized.cacheable) {
+                writeLocalizedCache(requestIdentityGeneration, requestLanguageRevision, artworkFingerprint) { cacheWriteLease ->
+                    catalogCache.cacheItemDetail(contentId, result.data, cacheWriteLease)
+                }
             }
             return result
         }
-        if (result.canServeCache()) {
+        if (serveCacheOnFailure && result.canServeCache()) {
             getCachedItemDetail(contentId)?.let { return ApiResult.Success(it) }
         }
         return result
@@ -418,24 +491,30 @@ class CatalogRepository(
     private suspend fun fetchEpisodes(
         seriesId: String,
         seasonNumber: Int,
+        surface: ArtworkSurface,
         requestIdentityGeneration: Long,
         requestLanguageRevision: Long,
         serveCacheOnFailure: Boolean = true,
     ): ApiResult<EpisodesResponse> {
-        val result = catalogApi.getEpisodes(seriesId, seasonNumber)
+        val sized = artwork.sizedRead(surface)
+        val artworkFingerprint = artwork.cacheFingerprint(surface)
+        val result = catalogApi.getEpisodes(seriesId, seasonNumber, widths = sized.widths)
         if (result is ApiResult.Success) {
-            writeLocalizedCache(requestIdentityGeneration, requestLanguageRevision) { cacheWriteLease ->
-                catalogCache.cacheEpisodes(
-                    seriesId,
-                    seasonNumber,
-                    result.data,
-                    cacheWriteLease,
-                )
+            if (sized.cacheable) {
+                writeLocalizedCache(requestIdentityGeneration, requestLanguageRevision, artworkFingerprint) { cacheWriteLease ->
+                    catalogCache.cacheEpisodes(
+                        seriesId,
+                        seasonNumber,
+                        result.data,
+                        cacheWriteLease,
+                        surface,
+                    )
+                }
             }
             return result
         }
         if (serveCacheOnFailure && result.canServeCache()) {
-            getCachedEpisodes(seriesId, seasonNumber)?.let {
+            getCachedEpisodes(seriesId, seasonNumber, surface = surface)?.let {
                 return ApiResult.Success(it)
             }
         }
@@ -476,6 +555,7 @@ class CatalogRepository(
     private suspend fun writeLocalizedCache(
         requestIdentityGeneration: Long,
         requestLanguageRevision: Long,
+        artworkFingerprint: String? = null,
         write: suspend (CatalogCacheWriteLease) -> Unit,
     ) {
         localizedCacheMutex.withLock {
@@ -483,19 +563,23 @@ class CatalogRepository(
             if (requestLanguageRevision == revision &&
                 requestIdentityGeneration == identityTransitions.generation.value
             ) {
-                write(CatalogCacheWriteLease(requestIdentityGeneration))
+                write(CatalogCacheWriteLease(requestIdentityGeneration, artworkFingerprint))
             }
         }
     }
 
     private suspend fun writeIfIdentityUnchanged(
         requestGeneration: Long,
+        artworkFingerprint: String? = null,
         write: suspend (CatalogCacheWriteLease) -> Unit,
     ) {
         if (requestGeneration == identityTransitions.generation.value) {
-            write(CatalogCacheWriteLease(requestGeneration))
+            write(CatalogCacheWriteLease(requestGeneration, artworkFingerprint))
         }
     }
+
+    private suspend fun <K, T> inFlight(requests: MutableMap<K, Deferred<T>>, key: K): Deferred<T>? =
+        detailRequestMutex.withLock { requests[key] }
 
     private suspend fun <K, T> coalescedDetailRequest(
         requests: MutableMap<K, Deferred<T>>,

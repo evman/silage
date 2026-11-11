@@ -7,6 +7,7 @@ import org.siloserver.silo.network.apiv2.CatalogSearchDiagnosticsV2
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 // --- Browse / Catalog ---
 
@@ -70,6 +71,13 @@ data class BrowseItem(
     @SerialName("poster_thumbhash") val posterThumbhash: String? = null,
     @SerialName("backdrop_url") val backdropUrl: String? = null,
     @SerialName("backdrop_thumbhash") val backdropThumbhash: String? = null,
+    /** Episode cards: the parent series' and season's artwork, never an episode still. Absent on older servers. */
+    @SerialName("series_poster_url") val seriesPosterUrl: String? = null,
+    @SerialName("series_poster_thumbhash") val seriesPosterThumbhash: String? = null,
+    @SerialName("series_backdrop_url") val seriesBackdropUrl: String? = null,
+    @SerialName("series_backdrop_thumbhash") val seriesBackdropThumbhash: String? = null,
+    @SerialName("season_poster_url") val seasonPosterUrl: String? = null,
+    @SerialName("season_poster_thumbhash") val seasonPosterThumbhash: String? = null,
     @SerialName("added_at") val addedAt: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
     @SerialName("last_air_date") val lastAirDate: String? = null,
@@ -87,6 +95,8 @@ data class BrowseItem(
     @SerialName("pending_translation_language") val pendingTranslationLanguage: String? = null,
     /** Localized fields ("overview", "tagline") whose text was machine-translated by AI. */
     @SerialName("machine_translated_fields") val machineTranslatedFields: List<String> = emptyList(),
+    /** The box set a [BOX_SET_TYPE] search card stands for. */
+    @SerialName("box_set") val boxSet: CatalogBoxSet? = null,
 )
 
 @Serializable
@@ -118,11 +128,19 @@ data class CatalogEffectiveSort(
 data class CatalogQueryRule(
     val field: String,
     val op: String,
-    val value: String,
+    /** Sent as-is, so its JSON type is the wire type: boolean fields (watched,
+     *  in_progress, favorited, in_watchlist, hdr, dolby_vision) need a JSON
+     *  boolean; the server rejects the string "true". */
+    val value: JsonPrimitive,
     /** Range ops ("between") carry indexed values instead of [value] —
      *  encoded as value[0], value[1] on the wire (iOS CatalogQueryBuilder). */
     val values: List<String> = emptyList(),
-)
+) {
+    constructor(field: String, op: String, value: String, values: List<String> = emptyList()) :
+        this(field, op, JsonPrimitive(value), values)
+
+    constructor(field: String, op: String, value: Boolean) : this(field, op, JsonPrimitive(value))
+}
 
 data class CatalogQueryGroup(
     val match: String = "all",
@@ -218,6 +236,13 @@ data class ItemDetail(
     @SerialName("poster_thumbhash") val posterThumbhash: String? = null,
     @SerialName("backdrop_url") val backdropUrl: String? = null,
     @SerialName("backdrop_thumbhash") val backdropThumbhash: String? = null,
+    /** Episode cards: the parent series' and season's artwork, never an episode still. Absent on older servers. */
+    @SerialName("series_poster_url") val seriesPosterUrl: String? = null,
+    @SerialName("series_poster_thumbhash") val seriesPosterThumbhash: String? = null,
+    @SerialName("series_backdrop_url") val seriesBackdropUrl: String? = null,
+    @SerialName("series_backdrop_thumbhash") val seriesBackdropThumbhash: String? = null,
+    @SerialName("season_poster_url") val seasonPosterUrl: String? = null,
+    @SerialName("season_poster_thumbhash") val seasonPosterThumbhash: String? = null,
     @SerialName("logo_url") val logoUrl: String? = null,
     @SerialName("season_count") val seasonCount: Int? = null,
     @SerialName("series_id") val seriesId: String? = null,
@@ -233,6 +258,16 @@ data class ItemDetail(
     val versions: List<FileVersion> = emptyList(),
     @SerialName("playback_variants") val playbackVariants: List<PlaybackVariant> = emptyList(),
     val subtitles: List<SubtitleInfo> = emptyList(),
+    /**
+     * The subtitle choice the viewer's preferences resolve to for this item,
+     * including a choice remembered for its series; absent when it is the
+     * contract default. Same fields as [WatchDetail]'s.
+     */
+    @SerialName("effective_subtitle_language") val effectiveSubtitleLanguage: String? = null,
+    @SerialName("effective_subtitle_mode") val effectiveSubtitleMode: String? = null,
+    @SerialName("effective_show_forced_subtitles") val effectiveShowForcedSubtitles: Boolean? = null,
+    @SerialName("effective_subtitle_track_signature")
+    val effectiveSubtitleTrackSignature: org.siloserver.silo.model.playback.SubtitleTrackSignature? = null,
     @SerialName("overlay_summary") val overlaySummary: OverlaySummary? = null,
     val intro: TimeRange? = null,
     val credits: TimeRange? = null,
@@ -250,6 +285,28 @@ data class ItemDetail(
     val videos: List<ItemVideo>? = null,
     /** Scanner-discovered local trailers and featurettes. */
     val extras: List<ItemExtra>? = null,
+    /**
+     * The local theme audio this page may play. A season without its own set
+     * carries its series' set, an episode its season's then its series', so
+     * [ThemeSelection.ownerId] can name a different item. Null when the server
+     * predates themes or its theme lookup failed.
+     */
+    val themes: ThemeSelection? = null,
+)
+
+/** One owner's ordered theme audio; [items] is empty when it has none. */
+@Serializable
+data class ThemeSelection(
+    @SerialName("owner_id") val ownerId: String,
+    val items: List<ThemeTrack> = emptyList(),
+)
+
+@Serializable
+data class ThemeTrack(
+    val id: String,
+    val title: String? = null,
+    @SerialName("duration_seconds") val durationSeconds: Int? = null,
+    val container: String? = null,
 )
 
 @Serializable
@@ -269,6 +326,9 @@ data class ItemExtra(
     val title: String? = null,
     @SerialName("duration_seconds") val durationSeconds: Int? = null,
     @SerialName("file_id") val fileId: Int? = null,
+    /** 16:9 image: a sidecar beside the file or a frame of the video. */
+    @SerialName("still_url") val stillUrl: String? = null,
+    @SerialName("still_thumbhash") val stillThumbhash: String? = null,
 )
 
 @Serializable
@@ -338,6 +398,10 @@ data class FileVersion(
     val credits: TimeRange? = null,
     val recap: TimeRange? = null,
     val preview: TimeRange? = null,
+    /** Every marker occurrence in source-time order (v2 watch detail); null from older servers. */
+    @SerialName("marker_segments") val markerSegments: List<MarkerSegment>? = null,
+    /** The server publishes seek-bar previews for this file (`TrickplayV2Api`). */
+    @SerialName("trickplay_available") val trickplayAvailable: Boolean = false,
 )
 
 @Serializable
@@ -419,6 +483,8 @@ data class AudioTrack(
     @SerialName("sample_rate") val sampleRate: Int? = null,
     val language: String? = null,
     val title: String? = null,
+    /** The title stored in the container; part of the server's audio track signature. */
+    @SerialName("embedded_title") val embeddedTitle: String? = null,
     @SerialName("default") val isDefault: Boolean = false
 )
 
@@ -431,7 +497,8 @@ data class SubtitleTrack(
     val forced: Boolean = false,
     @SerialName("default") val isDefault: Boolean = false,
     val external: Boolean = false,
-    @SerialName("external_path") val externalPath: String? = null
+    @SerialName("external_path") val externalPath: String? = null,
+    @SerialName("hearing_impaired") val hearingImpaired: Boolean = false,
 )
 
 @Serializable
@@ -447,6 +514,18 @@ data class SubtitleInfo(
 data class TimeRange(
     val start: Double,
     val end: Double
+)
+
+/**
+ * One marker occurrence from the server's `marker_segments`. A kind may occur
+ * more than once; the singular `intro`/`credits`/`recap`/`preview` fields
+ * project only the first occurrence. See [org.siloserver.silo.domain.player.MarkerTimeline].
+ */
+@Serializable
+data class MarkerSegment(
+    val kind: String,
+    @SerialName("start_seconds") val startSeconds: Double,
+    @SerialName("end_seconds") val endSeconds: Double,
 )
 
 // --- Seasons / Episodes ---
@@ -610,6 +689,9 @@ data class WatchDetail(
     @SerialName("effective_subtitle_language") val effectiveSubtitleLanguage: String? = null,
     @SerialName("effective_subtitle_mode") val effectiveSubtitleMode: String? = null,
     @SerialName("effective_show_forced_subtitles") val effectiveShowForcedSubtitles: Boolean? = null,
+    /** The subtitle track this profile last chose for the series (or movie); absent when none. */
+    @SerialName("effective_subtitle_track_signature")
+    val effectiveSubtitleTrackSignature: org.siloserver.silo.model.playback.SubtitleTrackSignature? = null,
     // Optional forward-compatible artwork. Current servers expose these on
     // ItemDetail rather than WatchDetail, so playback clients must fall back
     // to the full catalog detail when these fields are absent.

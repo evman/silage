@@ -28,7 +28,10 @@ class RememberRestartProcessTest {
             if (System.getProperty("os.name").startsWith("Windows")) {
                 val view = Files.getFileAttributeView(file, java.nio.file.attribute.AclFileAttributeView::class.java)
                 assertTrue(view.acl.filter { it.type() == java.nio.file.attribute.AclEntryType.ALLOW }.all { it.principal() == view.owner })
-                assertFalse(Files.readString(file).contains("dummy-"))
+                // Tokens stay in the DPAPI part. The account registry (usernames, last profile id) is public metadata.
+                val text = Files.readString(file)
+                for (secret in listOf("dummy-access", "dummy-refresh", "dummy-profile-token", "dummy-other-access", "dummy-other-refresh"))
+                    assertFalse(text.contains(secret), "plaintext $secret")
             } else {
                 assertEquals(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(file))
             }

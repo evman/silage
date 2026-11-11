@@ -1,15 +1,22 @@
 package org.siloserver.silo.repository
 
-import org.siloserver.silo.model.request.AdminRequestAction
-import org.siloserver.silo.model.request.AdminRequestCapabilities
 import org.siloserver.silo.model.request.CreateMediaRequest
 import org.siloserver.silo.model.request.MediaRequest
+import org.siloserver.silo.model.request.RequestFollowEvent
 import org.siloserver.silo.model.request.RequestMediaDetail
 import org.siloserver.silo.model.request.RequestMediaPage
+import org.siloserver.silo.model.request.RequestMediaResult
+import org.siloserver.silo.model.request.RequestState
 import org.siloserver.silo.model.request.RequestsDiscoverResponse
 import org.siloserver.silo.model.request.RequestsFeatureStatus
+import org.siloserver.silo.model.request.applyingFollow
+import org.siloserver.silo.model.request.applyingFollowUpdate
+import org.siloserver.silo.model.request.applyingRemoval
+import org.siloserver.silo.model.request.applyingRequestUpdate
+import org.siloserver.silo.model.request.RequestDiscoverySection
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.network.api.RequestsApi
+import org.siloserver.silo.network.map
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
@@ -22,8 +29,13 @@ import kotlinx.coroutines.flow.update
 /**
  * One request mutation, broadcast so every mounted request surface can patch
  * its own items in place. [sequence] makes a repeat of the same record a new event.
+ * [removed] means the server deleted [record]: it leaves every list.
  */
-data class RequestEvent(val record: MediaRequest, val sequence: Long)
+data class RequestEvent(val record: MediaRequest, val sequence: Long, val removed: Boolean = false)
+
+/** These results after [event]: a removed request leaves its title requestable again. */
+fun List<RequestMediaResult>.applyingRequestEvent(event: RequestEvent): List<RequestMediaResult> =
+    if (event.removed) applyingRemoval(event.record) else applyingRequestUpdate(event.record)
 
 /**
  * Profile-scoped request state: the user's own list, the mutation broadcasts,
@@ -44,7 +56,7 @@ class RequestsRepository(
 
     private var eventSequence = 0L
 
-    /** Bumped by each of this client's own creates and cancels as they land. */
+    /** Bumped by each of this client's own creates, cancels and removals as they land. */
     private var ownMutations = 0L
 
     /** Bumped by [reset]: anything still running from the previous session drops its result. */
@@ -55,23 +67,22 @@ class RequestsRepository(
     private var mineReadAt: TimeMark? = null
 
     private val _lastUpdate = MutableStateFlow<RequestEvent?>(null)
-    /** The most recent create or cancel of the signed-in user's own request. */
+    /** The most recent create, cancel or removal of the signed-in user's own request. */
     val lastUpdate: StateFlow<RequestEvent?> = _lastUpdate.asStateFlow()
 
-    private val _lastModeration = MutableStateFlow<RequestEvent?>(null)
-    /**
-     * The most recent admin decision (approve, decline, retry) on anyone's
-     * request. Kept apart from [lastUpdate], whose consumers treat every record
-     * as the signed-in user's own.
-     */
-    val lastModeration: StateFlow<RequestEvent?> = _lastModeration.asStateFlow()
+    private val _lastFollow = MutableStateFlow<RequestFollowEvent?>(null)
+    /** The most recent follow or unfollow, so cards and pages showing the title agree. */
+    val lastFollow: StateFlow<RequestFollowEvent?> = _lastFollow.asStateFlow()
+
+    /** Each title's latest follow or unfollow this session, for reads that were out when it landed. */
+    private val follows = mutableMapOf<RequestDetailCache.Key, RequestFollowEvent>()
 
     suspend fun status(): ApiResult<RequestsFeatureStatus> = api.status()
 
     suspend fun discover(): ApiResult<RequestsDiscoverResponse> = api.discover()
 
-    suspend fun discoverSection(section: String, page: Int = 1): ApiResult<RequestMediaPage> =
-        api.discoverSection(section, page)
+    suspend fun discoverRow(rowKey: String, page: Int = 1): ApiResult<RequestDiscoverySection> =
+        api.discoverRow(rowKey, page)
 
     suspend fun search(
         query: String,
@@ -80,7 +91,7 @@ class RequestsRepository(
     ): ApiResult<RequestMediaPage> = api.search(query, mediaType, page)
 
     suspend fun detail(mediaType: String, tmdbId: Int): ApiResult<RequestMediaDetail> =
-        read({ api.detail(mediaType, tmdbId) }) { cache.store(it) }
+        read({ fetchDetail(mediaType, tmdbId) }) { cache.store(it) }
 
     suspend fun get(id: String): ApiResult<MediaRequest> = api.get(id)
 
@@ -131,33 +142,29 @@ class RequestsRepository(
     suspend fun cancel(id: String): ApiResult<MediaRequest> =
         mutate({ api.cancel(id) }, ::publish)
 
-    suspend fun adminCapabilities(): ApiResult<AdminRequestCapabilities> = api.adminCapabilities()
-
-    suspend fun adminRequests(
-        status: String? = null,
-        outcome: String? = null,
-        mediaType: String? = null,
-        tmdbId: Int? = null,
-    ): ApiResult<List<MediaRequest>> = when (val result = read({ api.adminRequests(status, outcome, mediaType, tmdbId) })) {
-        is ApiResult.Success -> ApiResult.Success(result.data.requests)
-        is ApiResult.Error -> result
-        is ApiResult.NetworkError -> result
+    /**
+     * Deletes one of the user's failed requests that delivered nothing
+     * ([MediaRequest.isRemovableFailure]). A 404 means it is already gone
+     * (removed on another device since the list loaded), so it leaves the lists too.
+     */
+    suspend fun removeFailed(record: MediaRequest): ApiResult<Unit> {
+        val session = generation
+        val result = api.removeFailed(record.id)
+        val gone = result is ApiResult.Success || (result is ApiResult.Error && result.code == 404)
+        if (session == generation && gone) publishRemoval(record)
+        return result
     }
 
-    /** How many requests match, up to one page, and whether more follow. */
-    suspend fun adminRequestCount(status: String? = null, outcome: String? = null): ApiResult<AdminRequestCount> =
-        when (val result = read({ api.adminRequestsFirstPage(status, outcome) })) {
-            is ApiResult.Success -> ApiResult.Success(AdminRequestCount(result.data.requests.size, result.data.page.hasMore))
-            is ApiResult.Error -> result
-            is ApiResult.NetworkError -> result
-        }
+    /** Get notified when a title someone else requested becomes available. */
+    suspend fun follow(mediaType: String, tmdbId: Int): ApiResult<RequestState> =
+        mutate({ api.follow(mediaType, tmdbId) }) { publishFollow(mediaType, tmdbId, following = true, state = it) }
 
-    suspend fun adminAction(id: String, action: AdminRequestAction, reason: String? = null): ApiResult<MediaRequest> =
-        mutate({ api.adminAction(id, action, reason) }, ::publishModeration)
+    suspend fun unfollow(mediaType: String, tmdbId: Int): ApiResult<Unit> =
+        mutate({ api.unfollow(mediaType, tmdbId) }) { publishFollow(mediaType, tmdbId, following = false, state = null) }
 
     /** Warms the first rows' details so opening them lands on a finished page. */
     fun prefetch(records: List<MediaRequest>) {
-        cache.prefetch(records) { key -> api.detail(key.mediaType, key.tmdbId) }
+        cache.prefetch(records) { key -> fetchDetail(key.mediaType, key.tmdbId) }
     }
 
     fun reset() {
@@ -165,7 +172,8 @@ class RequestsRepository(
         mineReadAt = null
         _mine.value = emptyList()
         _lastUpdate.value = null
-        _lastModeration.value = null
+        _lastFollow.value = null
+        follows.clear()
         cache.clear()
     }
 
@@ -201,12 +209,39 @@ class RequestsRepository(
         _lastUpdate.value = RequestEvent(request, ++eventSequence)
     }
 
-    private fun publishModeration(request: MediaRequest) {
-        cache.unpinModeration(request)
-        // An admin deciding on their own request: their own lists update too.
-        if (cache.ownRecord(request.cacheKey())?.id == request.id) publish(request)
-        _lastModeration.value = RequestEvent(request, ++eventSequence)
+    private fun publishRemoval(record: MediaRequest) {
+        ownMutations++
+        _mine.update { list -> list.filterNot { it.id == record.id } }
+        cache.removeOwnRecord(record)
+        _lastUpdate.value = RequestEvent(record, ++eventSequence, removed = true)
     }
+
+    private fun publishFollow(mediaType: String, tmdbId: Int, following: Boolean, state: RequestState?) {
+        val key = RequestDetailCache.Key(mediaType, tmdbId)
+        val event = RequestFollowEvent(mediaType, tmdbId, following, state, ++eventSequence)
+        follows[key] = event
+        cache.patchRequestState(key) { it.applyingFollow(event) }
+        _lastFollow.value = event
+    }
+
+    /**
+     * The title's detail with the follows and unfollows that landed while the
+     * read was out: one sent before a follow can answer after it, and must not
+     * bring back the state the follow replaced.
+     */
+    private suspend fun fetchDetail(mediaType: String, tmdbId: Int): ApiResult<RequestMediaDetail> {
+        val since = eventSequence
+        return api.detail(mediaType, tmdbId).map { it.withFollowsAfter(since) }
+    }
+
+    private fun RequestMediaDetail.withFollowsAfter(since: Long): RequestMediaDetail =
+        follows.values.filter { it.sequence > since }.fold(this) { detail, event ->
+            val own = event.mediaType == detail.mediaType && event.tmdbId == detail.tmdbId
+            detail.copy(
+                request = if (own) detail.request.applyingFollow(event) else detail.request,
+                recommendations = detail.recommendations.applyingFollowUpdate(event),
+            )
+        }
 
     private fun upsertMine(request: MediaRequest) {
         _mine.update { list ->
@@ -222,6 +257,3 @@ class RequestsRepository(
         private val SessionChanged = ApiResult.Error(0, "identity_changed", "The acting account or profile changed.")
     }
 }
-
-/** A count of admin requests, read one page deep: [hasMore] means there are more than [count]. */
-data class AdminRequestCount(val count: Int, val hasMore: Boolean)

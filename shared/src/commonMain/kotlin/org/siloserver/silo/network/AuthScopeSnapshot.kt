@@ -52,6 +52,12 @@ data class AuthScopeSnapshot(
      * recorded.
      */
     val credentialEpoch: Long = 0L,
+    /**
+     * The saved account ([org.siloserver.silo.model.server.AccountEntry.localAccountId])
+     * whose credential slot this scope reads, or null for "[serverId]'s
+     * current account". Local data captured with this scope is keyed by it.
+     */
+    val accountId: String? = null,
 ) {
     /**
      * Whether [current] is still the identity this snapshot was captured from:
@@ -61,6 +67,7 @@ data class AuthScopeSnapshot(
     fun isSameIdentityAs(current: AuthScopeSnapshot?): Boolean =
         current != null &&
             current.serverId == serverId &&
+            (accountId == null || current.accountId == null || current.accountId == accountId) &&
             current.identityGeneration == identityGeneration &&
             current.credentialEpoch == credentialEpoch
 
@@ -72,19 +79,44 @@ data class AuthScopeSnapshot(
          * epoch, so the request is pinned to [identityGeneration] instead: a late
          * refresh can't overwrite a same-server account replacement.
          */
-        fun profileless(serverId: String, serverUrl: String, identityGeneration: Long) = AuthScopeSnapshot(
+        fun profileless(serverId: String, serverUrl: String, identityGeneration: Long, accountId: String? = null) = AuthScopeSnapshot(
             serverId = serverId,
+            accountId = accountId,
             serverUrl = serverUrl,
             profileId = null,
             profileToken = null,
             identityGeneration = identityGeneration,
             isIdentityGenerationStamped = true,
         )
+
+        /**
+         * [profileless] for one of the saved account's profiles: the scope a
+         * push sent for another server or profile is fetched (or that server's
+         * push registration removed) under, whatever is active.
+         */
+        fun savedLogin(
+            serverId: String,
+            serverUrl: String,
+            profileId: String,
+            profileToken: String?,
+            identityGeneration: Long,
+            accountId: String? = null,
+        ) = profileless(serverId, serverUrl, identityGeneration, accountId).copy(profileId = profileId, profileToken = profileToken)
     }
+
+    /**
+     * Pinned to [identityGeneration] alone ([profileless], [savedLogin]) rather
+     * than captured from the active scope, so it can name a saved server that
+     * is not active and must not be compared with the active scope. The token
+     * manager stops handing out its credentials once any identity transition
+     * follows [identityGeneration].
+     */
+    val isGenerationPinned: Boolean
+        get() = credentialGenerationId == null && credentialEpoch == 0L && isIdentityGenerationStamped
 
     override fun toString(): String =
         "AuthScopeSnapshot(" +
-            "serverId=<redacted>, profileId=<redacted>, serverUrl=<redacted>, " +
+            "serverId=<redacted>, accountId=<redacted>, profileId=<redacted>, serverUrl=<redacted>, " +
             "profileToken=<redacted>, credentialGenerationId=<redacted>, " +
             "identityGeneration=<redacted>, isIdentityGenerationStamped=<redacted>, " +
             "credentialEpoch=<redacted>)"
@@ -139,6 +171,18 @@ fun HttpRequestBuilder.skipSiloAuth() {
  */
 internal val FreshSiloAuthAttributeKey: AttributeKey<Boolean> = AttributeKey("SiloFreshAuth")
 internal fun HttpRequestBuilder.freshSiloAuth() { attributes.put(FreshSiloAuthAttributeKey, true) }
+
+/**
+ * A pinned [freshSiloAuth] request whose scope is refreshed first however long
+ * its access token has left, and which isn't sent unless the token rotated.
+ * Used after a temporary password changes: the token that changed it keeps the
+ * server's restriction until it is replaced.
+ */
+internal val ForceSiloRefreshAttributeKey: AttributeKey<Boolean> = AttributeKey("SiloForceRefresh")
+internal fun HttpRequestBuilder.forceSiloRefresh() {
+    freshSiloAuth()
+    attributes.put(ForceSiloRefreshAttributeKey, true)
+}
 
 /** A nonretryable mutation must not be replayed by the auth-refresh interceptor. */
 internal val SingleAttemptAttributeKey = AttributeKey<Boolean>("SiloSingleAttempt")

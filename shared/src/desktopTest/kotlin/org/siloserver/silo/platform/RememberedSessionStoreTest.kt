@@ -10,6 +10,22 @@ class RememberedSessionStoreTest {
             override fun protect(bytes: ByteArray) = bytes.map { (it.toInt() xor 0x55).toByte() }.toByteArray()
             override fun unprotect(bytes: ByteArray) = protect(bytes)
         })
+    @Test fun accountScopedTokensFollowTheirServersRememberMeChoice() {
+        val dir = Files.createTempDirectory("silage-accounts")
+        try {
+            val path = dir.resolve("session.json")
+            val prefs = PersistentPreferences(store(path))
+            assertTrue(prefs.edit().putBoolean("kept.remember_sign_in", true)
+                .putString("kept.acct-1.refresh_token", "dummy-kept")
+                .putString("gone.acct-2.refresh_token", "dummy-gone")
+                .putString("server_registry.accounts_migrated.v1", "done").commit())
+            val restarted = PersistentPreferences(store(path))
+            assertEquals("dummy-kept", restarted.getString("kept.acct-1.refresh_token", null))
+            assertNull(restarted.getString("gone.acct-2.refresh_token", null))
+            assertEquals("done", restarted.getString("server_registry.accounts_migrated.v1", null))
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
     @Test fun legacyPlaintextIsRetiredOnReadWithoutRestoringUnconsentedTokens() {
         val dir = Files.createTempDirectory("silage-legacy")
         try {

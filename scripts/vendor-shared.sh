@@ -13,12 +13,24 @@ rm -rf "$S/commonMain" "$S/commonTest"
 cp -r "$UPS/commonMain" "$S/commonMain"
 cp -r "$UPS/commonTest" "$S/commonTest"
 
+# Silage's own additions inside commonMain/commonTest (letter seek, devices, history
+# removal, advisory age, profile patching, runtime rules). Regenerate this patch after
+# changing them: diff -ruN <upstream shared/src> <ours shared/src>, paths a/shared/src/...
+if ! git -C "$ROOT" apply --whitespace=nowarn shared/silage-local.patch; then
+  echo "ERROR: shared/silage-local.patch no longer applies; merge it by hand (git apply --reject)" >&2; exit 1
+fi
+
 # Pure-JVM androidMain files, copied verbatim under desktop names.
 D="$S/desktopMain/$PKG"
-mkdir -p "$D/model/settings" "$D/overlays" "$D/player" "$D/network/vendored"
+mkdir -p "$D/model/settings" "$D/player" "$D/network/vendored"
 cp "$UPS/androidMain/$PKG/model/settings/LanguagePresentation.android.kt" "$D/model/settings/LanguagePresentation.desktop.kt"
-cp "$UPS/androidMain/$PKG/overlays/OverlayLanguageName.android.kt"        "$D/overlays/OverlayLanguageName.desktop.kt"
 cp "$UPS/androidMain/$PKG/player/SubtitleTrackDisplayLabel.kt"            "$D/player/SubtitleTrackDisplayLabel.kt"
+
+# English string catalog (generated Android resource) for the desktop UiText resolver,
+# without its per-string translator comments.
+mkdir -p "$S/desktopMain/resources/org/siloserver/silo/i18n"
+grep -vE '^\s*<!--.*-->\s*$' "$UP/android-shared/src/androidMain/res/values/strings_catalog.xml" \
+  > "$S/desktopMain/resources/org/siloserver/silo/i18n/strings_catalog.xml"
 
 # Persistence classes: swap the two Android imports for desktop shims (Task 2).
 for f in EncryptedTokenManagerImpl.kt AndroidServerRegistry.kt; do

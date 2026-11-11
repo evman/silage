@@ -9,7 +9,7 @@ class LinuxSessionStore(private val secure: BlobStore) : BlobStore {
         val values = runCatching { Json.parseToJsonElement(raw).jsonObject.toMutableMap() }.getOrNull() ?: return null
         // Older Linux releases always saved sessions. Keep those existing sign-ins
         // and make their previously implicit choice visible in the new checkbox.
-        val servers = values.keys.filterNot(::isPublic).map { it.substringBeforeLast('.', "") }.filter { it.isNotEmpty() }.toSet()
+        val servers = values.keys.filterNot(RememberedSessionStore::isPublic).map(RememberedSessionStore::serverOf).filter { it.isNotEmpty() }.toSet()
         var migrated = false
         for (server in servers) {
             val key = "$server.${RememberedSessionStore.REMEMBER}"
@@ -26,10 +26,7 @@ class LinuxSessionStore(private val secure: BlobStore) : BlobStore {
     override fun write(contents: String): Boolean = secure.write(retained(Json.parseToJsonElement(contents).jsonObject))
 
     private fun retained(values: Map<String, JsonElement>): String = JsonObject(values.filterKeys { key ->
-        isPublic(key) || values["${key.substringBeforeLast('.', "")}.${RememberedSessionStore.REMEMBER}"]
+        RememberedSessionStore.isPublic(key) || values["${RememberedSessionStore.serverOf(key)}.${RememberedSessionStore.REMEMBER}"]
             ?.jsonObject?.get("b")?.jsonPrimitive?.booleanOrNull == true
     }).toString()
-
-    private fun isPublic(key: String): Boolean = key == "server_registry.v1" || key == "server_registry.migrated.v1" ||
-        key == "server_url" || key.endsWith(".${RememberedSessionStore.REMEMBER}")
 }

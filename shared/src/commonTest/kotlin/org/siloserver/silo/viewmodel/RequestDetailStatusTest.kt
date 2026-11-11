@@ -1,9 +1,9 @@
 package org.siloserver.silo.viewmodel
 
+import org.siloserver.silo.common.i18n.english
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import org.siloserver.silo.model.request.AdminRequestAction
 import org.siloserver.silo.model.request.RequestAttention
 import org.siloserver.silo.model.request.RequestAvailability
 import org.siloserver.silo.model.request.RequestDisplayState
@@ -35,7 +35,7 @@ class RequestDetailStatusTest {
             record = record(status = RequestStatus.Completed, state = RequestUserState.Processing),
         )
         assertEquals(RequestPrimaryAction.Status(RequestDisplayState.OnTheWay), state.primaryAction)
-        assertEquals("Adding to your library", state.primaryActionTitle)
+        assertEquals("Adding to your library", state.primaryActionTitle.english())
     }
 
     @Test
@@ -43,13 +43,8 @@ class RequestDetailStatusTest {
         val failed = record(status = RequestStatus.Downloading, outcome = RequestOutcome.Failed)
         val requester = RequestDetailUiState(detail = requestable, record = failed)
         assertEquals(RequestPrimaryAction.Request, requester.primaryAction)
-        assertEquals("Request Again", requester.primaryActionTitle)
+        assertEquals("Request Again", requester.primaryActionTitle.english())
         assertEquals(RequestDisplayState.NeedsAttention(RequestAttention.Failed, null), requester.progress?.display)
-
-        // An admin who can retry it gets Retry as the only action.
-        val admin = RequestDetailUiState(detail = requestable, moderationRecord = failed)
-        assertEquals(RequestPrimaryAction.Status(RequestDisplayState.NeedsAttention(RequestAttention.Failed, null)), admin.primaryAction)
-        assertEquals(listOf(AdminRequestAction.Retry), admin.moderationActions)
     }
 
     @Test
@@ -63,14 +58,16 @@ class RequestDetailStatusTest {
     }
 
     @Test
-    fun pendingRequestsOfferCancelToTheRequesterAndDecisionsToTheAdmin() {
+    fun pendingRequestsOfferCancelOnlyToTheRequester() {
         val pending = record(status = RequestStatus.Pending)
         val detail = requestable.copy(request = RequestState(status = RequestStatus.Pending, requestId = pending.id))
         assertEquals(true, RequestDetailUiState(detail = detail, record = pending).canCancel)
-        val moderating = RequestDetailUiState(detail = detail, moderationRecord = pending, openedForModeration = true)
-        assertEquals(false, moderating.canCancel)
-        assertEquals(listOf(AdminRequestAction.Approve, AdminRequestAction.Decline), moderating.moderationActions)
-        assertEquals("Requested by someone on this server", moderating.eyebrow)
+        // Someone else's pending request: the page shows its status and offers
+        // no action on it. Deciding on requests stays in web admin.
+        val someoneElses = RequestDetailUiState(detail = detail)
+        assertEquals(false, someoneElses.canCancel)
+        assertEquals(RequestPrimaryAction.Status(RequestDisplayState.Pending), someoneElses.primaryAction)
+        assertEquals("Requested", someoneElses.eyebrow?.english())
     }
 
     @Test

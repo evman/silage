@@ -32,6 +32,19 @@ class PushRegistrationApiTest {
         try {
             val r = assertIs<ApiResult.Success<PushDeviceRegisterResponse>>(DefaultPushRegistrationApi(client, tokens, ApiV2Gate.Unrestricted).register(request,key,9007199254740993,expected)).data
             assertEquals("opaque:r",r.id); assertEquals("opaque:d",r.serverDeviceId); assertEquals("9007199254740993",r.generation)
+            assertNull(r.serverId, "servers that predate server_id")
+        } finally { client.close() }
+    }
+    @Test fun receiptNamesTheServerDeploymentButAMalformedOneNeverFailsRegistration() = runTest {
+        var body = receipt.replace("}", ""","server_id":"deploy-1"}""")
+        val client = HttpClient(MockEngine { respond(body,HttpStatusCode.OK,headersOf(HttpHeaders.ContentType,"application/json")) }) {
+            install(ContentNegotiation) { json(SiloJson) }
+        }
+        try {
+            val api = DefaultPushRegistrationApi(client, tokens, ApiV2Gate.Unrestricted)
+            assertEquals("deploy-1", assertIs<ApiResult.Success<PushDeviceRegisterResponse>>(api.register(request,key,9007199254740993,owner)).data.serverId)
+            body = receipt.replace("}", ""","server_id":7}""")
+            assertNull(assertIs<ApiResult.Success<PushDeviceRegisterResponse>>(api.register(request,key,9007199254740993,owner)).data.serverId)
         } finally { client.close() }
     }
     @Test fun rejectsNumericMismatchedMissingAndWrongStatusReceipts() = runTest {
@@ -76,6 +89,31 @@ class PushRegistrationApiTest {
             late=true; val captured=owner
             assertIs<ApiResult.Error>(api.register(request,key,9007199254740993,captured)); assertEquals(2,sends)
             assertIs<ApiResult.Error>(api.register(request,key,9007199254740993,captured)); assertEquals(2,sends)
+        } finally { client.close() }
+    }
+    @Test fun retirementCarriesOnlyTheKeyAndGenerationAndRequiresAReceiptForThatGeneration() = runTest {
+        var body = """{"generation":"7","removed":true}"""
+        var status = HttpStatusCode.OK
+        val client = HttpClient(MockEngine {
+            assertEquals(HttpMethod.Post, it.method)
+            assertEquals("https://cabin.invalid/api/v2/notifications/push/devices/device%2Fone/retire", it.url.toString())
+            assertEquals(key, it.headers["X-Push-Installation-Key"]); assertEquals("7", it.headers["X-Push-Generation"])
+            // No login of any kind: the auth plugin attaches no credentials to it.
+            assertTrue(it.attributes[SkipSiloAuthAttributeKey]); assertNull(it.attributes.getOrNull(AuthScopeAttributeKey))
+            assertTrue(it.attributes[SingleAttemptAttributeKey])
+            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
+        }) { install(ContentNegotiation) { json(SiloJson) } }
+        try {
+            val api = DefaultPushRegistrationApi(client, tokens, ApiV2Gate.Unrestricted)
+            suspend fun retire() = api.retire("https://cabin.invalid/", "device/one", key, 7)
+            assertIs<ApiResult.Success<Unit>>(retire())
+            for (bad in listOf("""{"generation":"6","removed":true}""", """{"generation":7,"removed":true}""", """{"generation":"7","removed":false}""", "{}")) {
+                body = bad; assertEquals("invalid_response", assertIs<ApiResult.Error>(retire()).error, bad)
+            }
+            body = "{}"
+            for (refused in listOf(HttpStatusCode.NotFound, HttpStatusCode.Forbidden, HttpStatusCode.Conflict)) {
+                status = refused; assertEquals(refused.value, assertIs<ApiResult.Error>(retire()).code)
+            }
         } finally { client.close() }
     }
     @Test fun capabilityRequiresOrderedRevisionPlatformAndStorage() = runTest {

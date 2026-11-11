@@ -1,7 +1,5 @@
 package org.siloserver.silo.repository
 
-import org.siloserver.silo.model.request.AdminRequestAction
-import org.siloserver.silo.model.request.AdminRequestCapabilities
 import org.siloserver.silo.model.request.CreateMediaRequest
 import org.siloserver.silo.model.request.MediaRequest
 import org.siloserver.silo.model.request.RequestMediaDetail
@@ -12,6 +10,7 @@ import org.siloserver.silo.model.request.RequestsDiscoverResponse
 import org.siloserver.silo.model.request.RequestsFeatureStatus
 import org.siloserver.silo.model.request.RequestsListResponse
 import org.siloserver.silo.model.request.RequestStatus
+import org.siloserver.silo.model.request.RequestDiscoverySection
 import org.siloserver.silo.network.ApiResult
 import org.siloserver.silo.network.api.RequestsApi
 import kotlinx.coroutines.CompletableDeferred
@@ -56,8 +55,8 @@ private class FakeRequestsApi(
     override suspend fun discover(): ApiResult<RequestsDiscoverResponse> =
         ApiResult.Success(RequestsDiscoverResponse())
 
-    override suspend fun discoverSection(section: String, page: Int): ApiResult<RequestMediaPage> =
-        ApiResult.Success(RequestMediaPage(page = page))
+    override suspend fun discoverRow(rowKey: String, page: Int): ApiResult<RequestDiscoverySection> =
+        ApiResult.Success(RequestDiscoverySection(key = rowKey, title = rowKey, page = page))
 
     override suspend fun search(
         query: String,
@@ -86,18 +85,6 @@ private class FakeRequestsApi(
 
     override suspend fun cancel(id: String): ApiResult<MediaRequest> = cancelResult
 
-    override suspend fun adminCapabilities(): ApiResult<AdminRequestCapabilities> =
-        ApiResult.NetworkError(IllegalStateException("no fake"))
-
-    override suspend fun adminRequests(
-        status: String?,
-        outcome: String?,
-        mediaType: String?,
-        tmdbId: Int?,
-    ): ApiResult<RequestsListResponse> = ApiResult.NetworkError(IllegalStateException("no fake"))
-
-    override suspend fun adminAction(id: String, action: AdminRequestAction, reason: String?): ApiResult<MediaRequest> =
-        ApiResult.NetworkError(IllegalStateException("no fake"))
 }
 
 class RequestsRepositoryTest {

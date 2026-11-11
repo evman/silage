@@ -1,16 +1,14 @@
 package org.siloserver.silo.network.api
 
-import org.siloserver.silo.model.request.AdminRequestAction
-import org.siloserver.silo.model.request.AdminRequestActionBody
-import org.siloserver.silo.model.request.AdminRequestCapabilities
 import org.siloserver.silo.model.request.CreateMediaRequest
 import org.siloserver.silo.model.request.MediaRequest
 import org.siloserver.silo.model.request.RequestMediaDetail
 import org.siloserver.silo.model.request.RequestMediaPage
-import org.siloserver.silo.model.request.RequestMediaType
+import org.siloserver.silo.model.request.RequestState
 import org.siloserver.silo.model.request.RequestsDiscoverResponse
 import org.siloserver.silo.model.request.RequestsFeatureStatus
 import org.siloserver.silo.model.request.RequestsListResponse
+import org.siloserver.silo.model.request.RequestDiscoverySection
 import org.siloserver.silo.network.apiv2.ApiV2Gate
 import org.siloserver.silo.network.apiv2.OwnerPolicy
 import org.siloserver.silo.network.apiv2.ownedV2Call
@@ -19,12 +17,15 @@ import org.siloserver.silo.network.TokenManager
 import org.siloserver.silo.network.authScope
 import org.siloserver.silo.network.ApiResult
 import io.ktor.client.HttpClient
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLPathPart
 
 /**
  * User-facing media request endpoints. Kept behind an interface so repository
@@ -36,7 +37,8 @@ interface RequestsApi {
 
     suspend fun discover(): ApiResult<RequestsDiscoverResponse>
 
-    suspend fun discoverSection(section: String, page: Int = 1): ApiResult<RequestMediaPage>
+    /** One page of a row of the server's Discover layout, for its See all page. */
+    suspend fun discoverRow(rowKey: String, page: Int = 1): ApiResult<RequestDiscoverySection>
 
     suspend fun search(
         query: String,
@@ -60,33 +62,26 @@ interface RequestsApi {
     suspend fun cancel(id: String): ApiResult<MediaRequest>
 
     /**
-     * `GET /api/v2/admin/requests/capabilities`. Answers only for an admin
-     * acting as the account's primary profile; anyone else gets a problem,
-     * which callers read as "can't moderate".
+     * `DELETE /api/v2/requests/{id}`: delete one of the viewer's failed
+     * requests that delivered nothing. Answers 204, or 409 once the request was
+     * retried, completed, or delivered a copy. Offered only when the server
+     * reports `remove_failed_supported`; fakes that don't exercise it inherit this refusal.
      */
-    suspend fun adminCapabilities(): ApiResult<AdminRequestCapabilities>
+    suspend fun removeFailed(id: String): ApiResult<Unit> =
+        ApiResult.Error(0, "capability_unsupported", "Removing failed requests is not supported.")
 
     /**
-     * Every request matching the filter, across all users, loaded completely
-     * or not at all. [tmdbId] narrows the list to one title through `q`, which
-     * also matches titles containing the number, so callers still match the id.
+     * `PUT /api/v2/requests/follows/{media_type}/{tmdb_id}`: notify the viewer
+     * when a title someone else requested becomes available. Answers with the
+     * title's request state. Idempotent. Fakes that don't exercise following
+     * inherit these refusals.
      */
-    suspend fun adminRequests(
-        status: String? = null,
-        outcome: String? = null,
-        mediaType: String? = null,
-        tmdbId: Int? = null,
-    ): ApiResult<RequestsListResponse>
+    suspend fun follow(mediaType: String, tmdbId: Int): ApiResult<RequestState> =
+        ApiResult.Error(0, "capability_unsupported", "Following is not supported.")
 
-    /**
-     * The first page of [adminRequests] and whether more follow: enough for a
-     * count badge without reading the whole queue.
-     */
-    suspend fun adminRequestsFirstPage(status: String? = null, outcome: String? = null): ApiResult<RequestsListResponse> =
-        adminRequests(status, outcome)
-
-    /** Approve, decline, or retry someone's request. `non_retryable`: never resent after an uncertain outcome. */
-    suspend fun adminAction(id: String, action: AdminRequestAction, reason: String? = null): ApiResult<MediaRequest>
+    /** `DELETE` of the same path: stop the notification. Answers 204 whether or not the viewer followed. */
+    suspend fun unfollow(mediaType: String, tmdbId: Int): ApiResult<Unit> =
+        ApiResult.Error(0, "capability_unsupported", "Following is not supported.")
 }
 
 class DefaultRequestsApi(
@@ -103,8 +98,8 @@ class DefaultRequestsApi(
         client.get("/api/v2/requests/discover")
     }
 
-    override suspend fun discoverSection(section: String, page: Int): ApiResult<RequestMediaPage> = safeApiV2Call(gate) {
-        client.get("/api/v2/requests/discover/$section") {
+    override suspend fun discoverRow(rowKey: String, page: Int): ApiResult<RequestDiscoverySection> = safeApiV2Call(gate) {
+        client.get("/api/v2/requests/discover/rows/${rowKey.encodeURLPathPart()}") {
             parameter("page", page)
         }
     }
@@ -143,31 +138,6 @@ class DefaultRequestsApi(
             parameter("status", status)
             parameter("outcome", outcome)
         }
-    }
-
-    override suspend fun adminRequests(
-        status: String?,
-        outcome: String?,
-        mediaType: String?,
-        tmdbId: Int?,
-    ): ApiResult<RequestsListResponse> =
-        pagedRequests("/api/v2/admin/requests", OwnerPolicy.PROFILE, maxPages = 40, limit = null) {
-            parameter("status", status)
-            parameter("outcome", outcome)
-            parameter("media_type", mediaType?.takeIf { it == RequestMediaType.Movie || it == RequestMediaType.Series })
-            parameter("q", tmdbId?.toString())
-        }
-
-    override suspend fun adminRequestsFirstPage(status: String?, outcome: String?): ApiResult<RequestsListResponse> {
-        val pinned = tokenManager?.snapshotCurrentScope()
-        return ownedV2Call<RequestsListResponse, RequestsListResponse>(gate, tokenManager, pinned, OwnerPolicy.PROFILE, null, { owner ->
-            client.get("/api/v2/admin/requests") {
-                owner?.let { authScope(it) }
-                parameter("status", status)
-                parameter("outcome", outcome)
-                parameter("limit", 50)
-            }
-        }) { it }
     }
 
     /**
@@ -223,18 +193,15 @@ class DefaultRequestsApi(
         }
     }
 
-    override suspend fun adminCapabilities(): ApiResult<AdminRequestCapabilities> = safeApiV2Call(gate) {
-        client.get("/api/v2/admin/requests/capabilities")
+    override suspend fun removeFailed(id: String): ApiResult<Unit> = safeApiV2Call(gate) {
+        client.delete("/api/v2/requests/${id.encodeURLPathPart()}")
     }
 
-    override suspend fun adminAction(
-        id: String,
-        action: AdminRequestAction,
-        reason: String?,
-    ): ApiResult<MediaRequest> = safeApiV2Call(gate) {
-        client.post("/api/v2/admin/requests/$id/${action.path}") {
-            contentType(ContentType.Application.Json)
-            setBody(AdminRequestActionBody(reason = reason?.takeIf { it.isNotBlank() }))
-        }
+    override suspend fun follow(mediaType: String, tmdbId: Int): ApiResult<RequestState> = safeApiV2Call(gate) {
+        client.put("/api/v2/requests/follows/$mediaType/$tmdbId")
+    }
+
+    override suspend fun unfollow(mediaType: String, tmdbId: Int): ApiResult<Unit> = safeApiV2Call(gate) {
+        client.delete("/api/v2/requests/follows/$mediaType/$tmdbId")
     }
 }

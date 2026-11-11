@@ -107,10 +107,18 @@ class RememberedSessionStore(
         const val REMEMBER = "remember_sign_in"
         const val READ_ERROR = "Saved sign-in could not be unlocked. Sign in again, or turn off Remember me to forget it. Use the same Windows account."
         const val WRITE_ERROR = "Windows could not securely save sign-in. Check access to the Silage data folder, or turn off Remember me and sign in for this session only."
-        private fun isPublic(key: String): Boolean = key == "server_registry.v1" ||
-            key == "server_registry.migrated.v1" || key == "server_url" || key.endsWith(".$REMEMBER")
+        /** Registry state and markers (server_registry.v1, .migrated.v1, .accounts_migrated.v1) and each Remember me choice. */
+        internal fun isPublic(key: String): Boolean = key.startsWith("server_registry.") ||
+            key == "server_url" || key.endsWith(".$REMEMBER")
+
+        /**
+         * The server a credential key belongs to: "<server>.<key>" (pre-account layout) or
+         * "<server>.<account>.<key>". Server ids are unpadded URL-safe base64, so never contain a dot.
+         */
+        internal fun serverOf(key: String): String = key.substringBefore('.', "")
+
         private fun enabledFor(key: String, values: Map<String, JsonElement>): Boolean {
-            val server = key.substringBeforeLast('.', "")
+            val server = serverOf(key)
             if (server.isEmpty()) return false
             return values["$server.$REMEMBER"]?.jsonObject?.get("b")?.jsonPrimitive?.booleanOrNull == true
         }

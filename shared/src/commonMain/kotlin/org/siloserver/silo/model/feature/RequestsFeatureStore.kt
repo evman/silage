@@ -17,10 +17,8 @@ import org.siloserver.silo.repository.RequestsRepository
  * server or profile switch. The feature counts only when the server
  * says this profile is `allowed` and the state is `available`.
  *
- * [canModerate] says whether the signed-in user can approve, decline, and retry
- * everyone's requests: an admin acting as the primary profile on a server with
- * the request integration configured. It is probed only once requests are
- * enabled, and is false on any answer other than `available: true`.
+ * Request administration (approve, decline, retry, limits) stays in web admin:
+ * the native clients never probe or expose it.
  */
 class RequestsFeatureStore(
     private val repository: RequestsRepository,
@@ -28,12 +26,17 @@ class RequestsFeatureStore(
     private val _isEnabled = MutableStateFlow(false)
     val isEnabled: StateFlow<Boolean> = _isEnabled.asStateFlow()
 
-    private val _canModerate = MutableStateFlow(false)
-    val canModerate: StateFlow<Boolean> = _canModerate.asStateFlow()
-
     private val _isResolved = MutableStateFlow(false)
     /** A probe has answered (or failed) since the last [reset]; until then [isEnabled] is only a default. */
     val isResolved: StateFlow<Boolean> = _isResolved.asStateFlow()
+
+    private val _followSupported = MutableStateFlow(false)
+    /** The server lets a viewer follow a title someone else requested (`follow_supported`). */
+    val followSupported: StateFlow<Boolean> = _followSupported.asStateFlow()
+
+    private val _removeFailedSupported = MutableStateFlow(false)
+    /** The server lets a viewer remove their own failed request (`remove_failed_supported`). */
+    val removeFailedSupported: StateFlow<Boolean> = _removeFailedSupported.asStateFlow()
 
     // Written on the UI dispatcher (reset) and read after IO resumption
     // (refresh); Volatile gives the stale-response guard a happens-before.
@@ -42,30 +45,20 @@ class RequestsFeatureStore(
 
     suspend fun refresh() {
         val refreshGeneration = generation
-        val enabled = when (val result = repository.status()) {
-            is ApiResult.Success -> result.data.isAvailable
+        val status = repository.status()
+        val enabled = when (status) {
+            is ApiResult.Success -> status.data.isAvailable
             // A transient failure shouldn't yank an already-visible entry point.
             is ApiResult.Error,
             is ApiResult.NetworkError,
             -> _isEnabled.value
         }
+        // Like [isEnabled], a failed probe keeps the previous answer.
+        val follows = enabled && ((status as? ApiResult.Success)?.data?.followSupported ?: _followSupported.value)
+        val removes = enabled && ((status as? ApiResult.Success)?.data?.removeFailedSupported ?: _removeFailedSupported.value)
         if (refreshGeneration != generation) return
-        val moderates = if (!enabled) {
-            false
-        } else {
-            when (val result = repository.adminCapabilities()) {
-                is ApiResult.Success -> result.data.available
-                // The server answered: not an admin, not the primary profile,
-                // or no integration configured.
-                is ApiResult.Error -> false
-                // Transport trouble: keep the previous value.
-                is ApiResult.NetworkError -> _canModerate.value
-            }
-        }
-        if (refreshGeneration != generation) return
-        // Moderation first: a screen that appears when Requests does already
-        // knows whether to load the approval queue.
-        _canModerate.value = moderates
+        _followSupported.value = follows
+        _removeFailedSupported.value = removes
         _isEnabled.value = enabled
         _isResolved.value = true
     }
@@ -74,7 +67,8 @@ class RequestsFeatureStore(
         generation += 1
         repository.reset()
         _isEnabled.value = false
-        _canModerate.value = false
+        _followSupported.value = false
+        _removeFailedSupported.value = false
         _isResolved.value = false
     }
 }

@@ -1,0 +1,433 @@
+diff -ruN a/shared/src/commonMain/kotlin/org/siloserver/silo/model/catalog/CatalogModels.kt b/shared/src/commonMain/kotlin/org/siloserver/silo/model/catalog/CatalogModels.kt
+--- a/shared/src/commonMain/kotlin/org/siloserver/silo/model/catalog/CatalogModels.kt
++++ b/shared/src/commonMain/kotlin/org/siloserver/silo/model/catalog/CatalogModels.kt
+@@ -205,6 +205,8 @@
+     val tagline: String? = null,
+     val runtime: Int = 0,
+     @SerialName("content_rating") val contentRating: String? = null,
++    /** Recommended minimum viewer age from an advisory service (e.g. 13), when the server has one. */
++    @SerialName("advisory_age") val advisoryAge: Int? = null,
+     val genres: List<String> = emptyList(),
+     @SerialName("rating_imdb") val ratingImdb: Double? = null,
+     @SerialName("rating_tmdb") val ratingTmdb: Double? = null,
+diff -ruN a/shared/src/commonMain/kotlin/org/siloserver/silo/network/api/CatalogApi.kt b/shared/src/commonMain/kotlin/org/siloserver/silo/network/api/CatalogApi.kt
+--- a/shared/src/commonMain/kotlin/org/siloserver/silo/network/api/CatalogApi.kt
++++ b/shared/src/commonMain/kotlin/org/siloserver/silo/network/api/CatalogApi.kt
+@@ -23,6 +23,7 @@
+         namePrefix: String? = null, yearMin: Int? = null, yearMax: Int? = null,
+         queryGroups: List<CatalogQueryGroup> = emptyList(), match: String? = null,
+         skipTotal: Boolean = false, widths: ArtworkWidths? = null,
++        seek: Int? = null,
+     ): ApiResult<CatalogResponse> {
+         val groups = queryGroups.toV2Groups().toMutableList()
+         val implicit = buildList {
+@@ -40,10 +41,13 @@
+         }
+         return v2.browse(CatalogQueryV2(source = source ?: "query", q = query, type = mediaType,
+             libraryId = libraryId?.toString(), sort = sort, order = order, limit = limit ?: 50,
+-            namePrefix = namePrefix, groups = groups, match = match, skipTotal = skipTotal), continuation, widths = widths)
++            namePrefix = namePrefix, groups = groups, match = match, skipTotal = skipTotal, seek = seek), continuation, widths = widths)
+             .map { it.toCatalogResponse() }
+     }
+ 
++    suspend fun getLetters(libraryId: Int?, queryGroups: List<CatalogQueryGroup>, match: String?, order: String?) =
++        v2.letters(libraryId?.toString(), queryGroups.toV2Groups(), match, order)
++
+     suspend fun getAudiobookGroups(libraryId: Int, groupBy: String, sort: String = "name",
+         continuation: CatalogContinuationV2? = null, limit: Int? = null, query: String? = null,
+         includeTotal: Boolean? = null): ApiResult<AudiobookGroupsResponse> =
+@@ -116,8 +120,13 @@
+ 
+ internal fun List<CatalogQueryGroup>.toV2Groups() = map { group ->
+     CatalogRuleGroupV2(group.match, group.rules.map { rule ->
++        // Runtime bounds are numbers (minutes) on the wire; the other fields keep their strings.
++        fun primitive(v: String): JsonPrimitive =
++            if (rule.field == "runtime") v.toDoubleOrNull()?.let { n -> if (n % 1.0 == 0.0) JsonPrimitive(n.toLong()) else JsonPrimitive(n) } ?: JsonPrimitive(v)
++            else JsonPrimitive(v)
+         val value = when {
+-            rule.values.isNotEmpty() -> JsonArray(rule.values.map(::JsonPrimitive))
++            rule.values.isNotEmpty() -> JsonArray(rule.values.map(::primitive))
++            rule.field == "runtime" && rule.value.isString -> primitive(rule.value.content)
+             // The server rejects flag rules whose value is not a JSON boolean (iOS CatalogQueryBuilder).
+             rule.field in BOOLEAN_RULE_FIELDS -> JsonPrimitive(rule.value.content == "true")
+             else -> rule.value
+diff -ruN a/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/AccountToolsV2Api.kt b/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/AccountToolsV2Api.kt
+--- a/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/AccountToolsV2Api.kt
++++ b/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/AccountToolsV2Api.kt
+@@ -0,0 +1,91 @@
++package org.siloserver.silo.network.apiv2
++
++import io.ktor.client.HttpClient
++import io.ktor.client.request.*
++import io.ktor.http.*
++import kotlinx.serialization.SerialName
++import kotlinx.serialization.Serializable
++import kotlinx.serialization.json.*
++import org.siloserver.silo.network.*
++
++/** Hides titles from the acting profile's watch history (`removeHistoryEntries`). */
++class HistoryRemovalV2Api(private val client: HttpClient, private val tokens: TokenManager, private val gate: ApiV2Gate) {
++    /**
++     * Removes [contentId] from history: a movie, or a series card with all of its episodes
++     * (the server expands a series to its episodes). Success is the server's 204.
++     */
++    suspend fun remove(contentId: String): ApiResult<Unit> {
++        if (contentId.isBlank()) return ApiResult.Error(422, "validation_failed", "Nothing to remove.")
++        val owner = tokens.captureProfileScope() ?: return identityChanged()
++        return ownedV2Call<Unit, Unit>(gate, tokens, owner, OwnerPolicy.PROFILE, HttpStatusCode.NoContent, { scope ->
++            client.post("/api/v2/history/remove") {
++                authScope(scope!!)
++                requireSiloAuth()
++                contentType(ContentType.Application.Json)
++                setBody(buildJsonObject {
++                    putJsonArray("targets") { addJsonObject { put("content_id", contentId); put("scope", "item") } }
++                })
++            }
++        }) { }
++    }
++}
++
++/** One sign-in on the account (`listSessions`): which device, from where, and when it was last used. */
++@Serializable
++data class LoginSessionV2(
++    val id: String,
++    @SerialName("device_name") val deviceName: String = "",
++    @SerialName("ip_address") val ipAddress: String = "",
++    @SerialName("created_at") val createdAt: String? = null,
++    @SerialName("expires_at") val expiresAt: String? = null,
++    @SerialName("device_id") val deviceId: String? = null,
++    @SerialName("device_platform") val devicePlatform: String? = null,
++    @SerialName("last_seen_at") val lastSeenAt: String? = null,
++    val current: Boolean = false,
++)
++
++@Serializable
++private data class LoginSessionPageV2(val items: List<LoginSessionV2> = emptyList(), val page: PageInfo? = null)
++
++/** The account's signed-in devices (`listSessions`) and signing one out (`deleteSession`). */
++class LoginSessionsV2Api(private val client: HttpClient, private val tokens: TokenManager, private val gate: ApiV2Gate) {
++    /** Every live sign-in, newest first, following the pages (up to [maxPages] of 100). */
++    suspend fun list(maxPages: Int = 10): ApiResult<List<LoginSessionV2>> {
++        val owner = tokens.snapshotCurrentScope() ?: return identityChanged()
++        val all = mutableListOf<LoginSessionV2>()
++        var cursor: String? = null
++        repeat(maxPages) {
++            val page = ownedV2Call<LoginSessionPageV2, LoginSessionPageV2>(gate, tokens, owner, OwnerPolicy.IDENTITY, HttpStatusCode.OK, { scope ->
++                client.get("/api/v2/auth/sessions") {
++                    authScope(scope!!)
++                    requireSiloAuth()
++                    parameter("limit", 100)
++                    cursor?.let { parameter("cursor", it) }
++                }
++            }) { it }
++            when (page) {
++                is ApiResult.Success -> {
++                    all += page.data.items
++                    val info = page.data.page
++                    cursor = if (info != null && info.hasMore) info.nextCursor else null
++                    if (cursor == null) return ApiResult.Success(all.distinctBy { it.id })
++                }
++                is ApiResult.Error -> return page
++                is ApiResult.NetworkError -> return page
++            }
++        }
++        return ApiResult.Success(all.distinctBy { it.id })
++    }
++
++    /** Signs [id] out; it must be one of the account's own sign-ins. */
++    suspend fun signOut(id: String): ApiResult<Unit> {
++        if (id.isBlank()) return ApiResult.Error(422, "validation_failed", "No session given.")
++        val owner = tokens.snapshotCurrentScope() ?: return identityChanged()
++        return ownedV2Call<Unit, Unit>(gate, tokens, owner, OwnerPolicy.IDENTITY, HttpStatusCode.NoContent, { scope ->
++            client.delete("/api/v2/auth/sessions/${id.encodeURLPathPart()}") {
++                authScope(scope!!)
++                requireSiloAuth()
++            }
++        }) { }
++    }
++}
+diff -ruN a/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogDetailReadV2Models.kt b/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogDetailReadV2Models.kt
+--- a/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogDetailReadV2Models.kt
++++ b/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogDetailReadV2Models.kt
+@@ -31,6 +31,7 @@
+     val tagline: String? = null,
+     val runtime: Int = 0,
+     @SerialName("content_rating") val contentRating: String? = null,
++    @SerialName("advisory_age") val advisoryAge: Int? = null,
+     val genres: List<String> = emptyList(),
+     @SerialName("rating_imdb") val ratingImdb: Double? = null,
+     @SerialName("rating_tmdb") val ratingTmdb: Double? = null,
+@@ -118,6 +119,7 @@
+         tagline = tagline,
+         runtime = runtime,
+         contentRating = contentRating,
++        advisoryAge = advisoryAge,
+         genres = genres,
+         ratingImdb = ratingImdb,
+         ratingTmdb = ratingTmdb,
+diff -ruN a/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogV2Api.kt b/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogV2Api.kt
+--- a/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogV2Api.kt
++++ b/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogV2Api.kt
+@@ -35,7 +35,7 @@
+         widths: ArtworkWidths? = null,
+     ): ApiResult<CatalogPageV2<BrowseItem>> {
+         if (query.limit !in 1..100) return invalid("Page size must be between 1 and 100.")
+-        val usePost = query.groups.isNotEmpty()
++        val usePost = query.groups.isNotEmpty() || query.seek != null
+         // A listing keeps the widths it started with: the server binds its cursors to them.
+         val artwork = if (continuation != null) continuation.widths else widths
+         val key = "${if (usePost) "POST" else "GET"}/catalog:$imageSize:${artwork?.key.orEmpty()}:${SiloJson.encodeToString(query)}"
+@@ -48,7 +48,8 @@
+                 artworkWidths(artwork, scope)
+                 contentType(ContentType.Application.Json)
+                 val body = SiloJson.encodeToJsonElement(CatalogQueryV2.serializer(), query).jsonObject.toMutableMap()
+-                continuation?.let { body["cursor"] = JsonPrimitive(it.cursor) }
++                // The cursor carries on from where the seek landed.
++                continuation?.let { body.remove("seek"); body["cursor"] = JsonPrimitive(it.cursor) }
+                 setBody(JsonObject(body))
+             } else client.get("/api/v2/catalog") {
+                 scope?.let { authScope(it) }
+@@ -88,6 +89,25 @@
+         }
+     }
+ 
++    /** Where each letter starts in the same query sorted by title, for an A–Z bar. */
++    suspend fun letters(
++        libraryId: String?, groups: List<CatalogRuleGroupV2>, match: String?, order: String?,
++    ): ApiResult<List<CatalogLetterV2>> {
++        val scope = tokenManager?.snapshotCurrentScope()
++        return ownedV2Call<CatalogLettersWireV2, List<CatalogLetterV2>>(gate, tokenManager, scope, OwnerPolicy.IDENTITY, null, { _ ->
++            client.post("/api/v2/catalog/letters") {
++                scope?.let { authScope(it) }
++                contentType(ContentType.Application.Json)
++                setBody(buildMap<String, kotlinx.serialization.json.JsonElement> {
++                    libraryId?.let { put("library_id", JsonPrimitive(it)) }
++                    if (groups.isNotEmpty()) put("groups", SiloJson.encodeToJsonElement(kotlinx.serialization.builtins.ListSerializer(CatalogRuleGroupV2.serializer()), groups))
++                    match?.let { put("match", JsonPrimitive(it)) }
++                    order?.let { put("order", JsonPrimitive(it)) }
++                }.let(::JsonObject))
++            }
++        }) { it.letters }
++    }
++
+     suspend fun audiobookGroups(
+         libraryId: String, groupBy: String, sort: String = "name", q: String? = null,
+         limit: Int = 50, skipTotal: Boolean = false, continuation: CatalogContinuationV2? = null,
+diff -ruN a/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogV2Models.kt b/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogV2Models.kt
+--- a/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogV2Models.kt
++++ b/shared/src/commonMain/kotlin/org/siloserver/silo/network/apiv2/CatalogV2Models.kt
+@@ -31,9 +31,17 @@
+     @SerialName("query_limit") val queryLimit: Int? = null,
+     @SerialName("skip_total") val skipTotal: Boolean = false,
+     val limit: Int = 50,
++    /** The list position to start from, for the first page only (a jump to a letter). */
++    val seek: Int? = null,
+ )
+ 
+ @Serializable
++data class CatalogLetterV2(val letter: String, val count: Int, val position: Int)
++
++@Serializable
++internal data class CatalogLettersWireV2(val letters: List<CatalogLetterV2> = emptyList())
++
++@Serializable
+ data class CatalogRuleGroupV2(val match: String, val rules: List<CatalogRuleV2>)
+ @Serializable
+ data class CatalogRuleV2(val field: String, val op: String, val value: JsonElement)
+diff -ruN a/shared/src/commonMain/kotlin/org/siloserver/silo/repository/CatalogRepository.kt b/shared/src/commonMain/kotlin/org/siloserver/silo/repository/CatalogRepository.kt
+--- a/shared/src/commonMain/kotlin/org/siloserver/silo/repository/CatalogRepository.kt
++++ b/shared/src/commonMain/kotlin/org/siloserver/silo/repository/CatalogRepository.kt
+@@ -89,6 +89,10 @@
+             else -> null
+         }
+ 
++    /** Where each letter starts in this library sorted by title. */
++    suspend fun letters(libraryId: Int?, queryGroups: List<CatalogQueryGroup>, match: String?, order: String?) =
++        catalogApi.getLetters(libraryId, queryGroups, match, order)
++
+     /** Browse the catalog with optional filters, sorting, and pagination. */
+     suspend fun browse(
+         source: String? = null,
+@@ -106,6 +110,7 @@
+         yearMax: Int? = null,
+         queryGroups: List<CatalogQueryGroup> = emptyList(),
+         match: String? = null,
++        seek: Int? = null,
+     ): ApiResult<CatalogResponse> {
+         val requestIdentityGeneration = identityTransitions.generation.value
+         val sized = if (continuation == null) artwork.sizedRead(ArtworkSurface.BROWSE) else null
+@@ -127,12 +132,13 @@
+             yearMax = yearMax,
+             queryGroups = queryGroups,
+             match = match,
++            seek = seek,
+         )
+ 
+         // Only the unfiltered, first-page default browse of a single library is
+         // cached for offline (every request-shaping param must be at its default).
+         val cacheableLibraryId = libraryId?.takeIf {
+-            continuation == null &&
++            continuation == null && seek == null &&
+                 query == null && genre == null && contentRating == null &&
+                 namePrefix == null && yearMin == null && yearMax == null &&
+                 source == null && mediaType == null &&
+diff -ruN a/shared/src/commonMain/kotlin/org/siloserver/silo/repository/ProfileRepository.kt b/shared/src/commonMain/kotlin/org/siloserver/silo/repository/ProfileRepository.kt
+--- a/shared/src/commonMain/kotlin/org/siloserver/silo/repository/ProfileRepository.kt
++++ b/shared/src/commonMain/kotlin/org/siloserver/silo/repository/ProfileRepository.kt
+@@ -59,6 +59,10 @@
+     open suspend fun updateProfile(id: String, request: UpdateProfileRequest): ApiResult<Profile> =
+         householdManagement.run { profileApi.updateProfile(id, request, it) }
+ 
++    /** The same, with fields that can be cleared (a PIN, a rating limit), which a request can't say. */
++    suspend fun patchProfile(id: String, update: org.siloserver.silo.network.apiv2.ProfileUpdate): ApiResult<Profile> =
++        householdManagement.run { profileApi.updateProfile(id, update, it) }
++
+     /** Updates the selected profile as itself, even while manage mode is on. */
+     suspend fun updateActiveProfile(request: UpdateProfileRequest): ApiResult<Profile> {
+         val profileId = getActiveProfileId()
+diff -ruN a/shared/src/commonMain/kotlin/org/siloserver/silo/repository/SequencedPlayback.kt b/shared/src/commonMain/kotlin/org/siloserver/silo/repository/SequencedPlayback.kt
+--- a/shared/src/commonMain/kotlin/org/siloserver/silo/repository/SequencedPlayback.kt
++++ b/shared/src/commonMain/kotlin/org/siloserver/silo/repository/SequencedPlayback.kt
+@@ -410,7 +410,17 @@
+         val plan = decision.playbackPlan ?: return decision
+         val references = (plan.subtitle.inventory.mapNotNull { it.url } + listOfNotNull(plan.subtitle.artifact?.url))
+             .filter(::isProxyAuxiliaryUrl).toSet()
+-        if (references.isEmpty()) return decision
++        // The API stream route requires bearer auth even when it carries an st
++        // signature. Only the admitted server's exact session route may inherit
++        // captured credentials; opaque/external signed URLs must remain untouched.
++        val apiPrimary = runCatching {
++            val raw = plan.stream.url
++            val absolute = if (raw.startsWith("/") && !raw.startsWith("//")) entry.origin.trimEnd('/') + raw else raw
++            val url = io.ktor.http.Url(absolute)
++            isSameHttpOrigin(entry.origin, absolute) && url.user == null && url.password == null &&
++                url.fragment.isEmpty() && url.encodedPath == "/api/v2/stream/${decision.sessionId}"
++        }.getOrDefault(false)
++        if (references.isEmpty() && !(apiPrimary && sentHeaders.isNotEmpty())) return decision
+         val headers = capturedProxyAuxiliaryHeaders(sentHeaders)
+         require(headers["X-Profile-Id"] == entry.profileId)
+         val sessionId = requireNotNull(decision.sessionId)
+@@ -455,7 +465,7 @@
+                 val hasProxyAuxiliary = plan?.subtitle?.let { subtitle ->
+                     (subtitle.inventory.mapNotNull { row -> row.url } + listOfNotNull(subtitle.artifact?.url)).any(::isProxyAuxiliaryUrl)
+                 } == true
+-                if (hasProxyAuxiliary && plan != null) {
++                if ((hasProxyAuxiliary || entry.attemptId in auxiliaryHeaders) && plan != null) {
+                     val headers = auxiliaryHeaders[entry.attemptId]
+                         ?: return@withLock failure("playback_unavailable", "The retained plan has no live auxiliary request authority.")
+                     return@withLock ApiResult.Success(decision.copy(playbackPlan = plan.copy(stream = plan.stream.copy(auxiliaryRequestHeaders = headers))))
+diff -ruN a/shared/src/commonTest/kotlin/org/siloserver/silo/network/api/CatalogRuntimeRuleTest.kt b/shared/src/commonTest/kotlin/org/siloserver/silo/network/api/CatalogRuntimeRuleTest.kt
+--- a/shared/src/commonTest/kotlin/org/siloserver/silo/network/api/CatalogRuntimeRuleTest.kt
++++ b/shared/src/commonTest/kotlin/org/siloserver/silo/network/api/CatalogRuntimeRuleTest.kt
+@@ -0,0 +1,22 @@
++package org.siloserver.silo.network.api
++
++import kotlinx.serialization.json.JsonArray
++import kotlinx.serialization.json.JsonPrimitive
++import org.siloserver.silo.model.catalog.CatalogQueryGroup
++import org.siloserver.silo.model.catalog.CatalogQueryRule
++import kotlin.test.Test
++import kotlin.test.assertEquals
++
++class CatalogRuntimeRuleTest {
++    @Test fun runtimeBoundsAreSentAsNumbersAndOtherFieldsAsText() {
++        val groups = listOf(CatalogQueryGroup("any", listOf(
++            CatalogQueryRule("runtime", "lt", "30"),
++            CatalogQueryRule("runtime", "between", "", listOf("60", "120")),
++            CatalogQueryRule("year", "between", "", listOf("1990", "1999")),
++        ))).toV2Groups()
++        val rules = groups.single().rules
++        assertEquals(JsonPrimitive(30L), rules[0].value)
++        assertEquals(JsonArray(listOf(JsonPrimitive(60L), JsonPrimitive(120L))), rules[1].value)
++        assertEquals(JsonArray(listOf(JsonPrimitive("1990"), JsonPrimitive("1999"))), rules[2].value)
++    }
++}
+diff -ruN a/shared/src/commonTest/kotlin/org/siloserver/silo/network/api/DiagnosticsApiTest.kt b/shared/src/commonTest/kotlin/org/siloserver/silo/network/api/DiagnosticsApiTest.kt
+--- a/shared/src/commonTest/kotlin/org/siloserver/silo/network/api/DiagnosticsApiTest.kt
++++ b/shared/src/commonTest/kotlin/org/siloserver/silo/network/api/DiagnosticsApiTest.kt
+@@ -84,12 +84,14 @@
+         assertTrue(fixture.request?.body?.contentType?.match(ContentType.MultiPart.FormData) == true)
+ 
+         val body = fixture.requestBody
+-        val manifestIndex = body.indexOf("name=manifest")
+-        val bundleIndex = body.indexOf("name=bundle")
++        // Ktor 3.6+ quotes the field name (name="manifest", RFC 7578); earlier versions didn't.
++        fun part(name: String) = Regex("""Content-Disposition: form-data; name="?$name"?;""")
++        val manifestIndex = part("manifest").find(body)?.range?.first ?: -1
++        val bundleIndex = part("bundle").find(body)?.range?.first ?: -1
+         assertTrue(manifestIndex >= 0, body)
+         assertTrue(bundleIndex > manifestIndex, body)
+-        assertEquals(1, Regex("Content-Disposition: form-data; name=manifest").findAll(body).count())
+-        assertEquals(1, Regex("Content-Disposition: form-data; name=bundle").findAll(body).count())
++        assertEquals(1, part("manifest").findAll(body).count(), body)
++        assertEquals(1, part("bundle").findAll(body).count(), body)
+         assertTrue(body.contains("filename=manifest.json"), body)
+         assertTrue(body.contains("Content-Type: application/json"), body)
+         assertTrue(body.contains("filename=bundle.tar.gz"), body)
+diff -ruN a/shared/src/commonTest/kotlin/org/siloserver/silo/repository/SequencedPlaybackTest.kt b/shared/src/commonTest/kotlin/org/siloserver/silo/repository/SequencedPlaybackTest.kt
+--- a/shared/src/commonTest/kotlin/org/siloserver/silo/repository/SequencedPlaybackTest.kt
++++ b/shared/src/commonTest/kotlin/org/siloserver/silo/repository/SequencedPlaybackTest.kt
+@@ -50,6 +50,63 @@
+     private fun MockRequestHandleScope.reply(body: String, status: HttpStatusCode = HttpStatusCode.OK) =
+         respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
+ 
++    @Test fun apiPrimaryUsesCapturedAuthorityWithoutProxySubtitles() = runTest {
++        val identity = Identity(); val store = Store()
++        val wire = adoptedDecision.replace("/api/v2/stream/session-1", "/api/v2/stream/session-1?st=opaque")
++        val c = client { req -> when (req.url.encodedPath) {
++            "/api/v2/playback/capabilities" -> reply(caps())
++            "/api/v2/account/me" -> reply(account)
++            "/api/v2/playback/start" -> reply(wire, HttpStatusCode.Created)
++            "/api/v2/playback/session-1/replan" -> reply(wire)
++            else -> error("Unexpected request")
++        } }.config { defaultRequest { header("Authorization", "Bearer captured-request"); header("X-Profile-Id", "profile") } }
++        try {
++            val runtime = SequencedPlayback(PlaybackV2Api(c, ApiV2Gate.Unrestricted), identity, identity, store) { stopId }
++            val decision = assertIs<ApiResult.Success<PlaybackDecisionResponseV3>>(runtime.start(request(), identity.scope)).data
++            val stream = decision.playbackPlan!!.stream
++            assertEquals("Bearer captured-request", stream.effectiveRequestHeaders["Authorization"])
++            assertEquals("profile", stream.effectiveRequestHeaders["X-Profile-Id"])
++            assertTrue(stream.headers.isEmpty())
++            assertFalse(SiloJson.encodeToString(decision).contains("captured-request"))
++            assertFalse(SiloJson.encodeToString(store.entries).contains("captured-request"))
++            val replacement = assertIs<ApiResult.Success<PlaybackDecisionResponseV3>>(runtime.replan("session-1", replanRequest())).data
++            val repeated = assertIs<ApiResult.Success<PlaybackDecisionResponseV3>>(runtime.replan("session-1", replanRequest())).data
++            assertEquals("Bearer captured-request", replacement.playbackPlan!!.stream.effectiveRequestHeaders["Authorization"])
++            assertSame(replacement.playbackPlan!!.stream.effectiveRequestHeaders, repeated.playbackPlan!!.stream.effectiveRequestHeaders)
++            assertFalse(SiloJson.encodeToString(repeated).contains("captured-request"))
++        } finally { c.close() }
++    }
++
++    @Test fun apiPrimaryNeverSendsCapturedCredentialsToOtherOriginsOrRoutes() = runTest {
++        for (url in listOf(
++            "https://elsewhere.invalid/api/v2/stream/session-1?st=opaque",
++            "//elsewhere.invalid/api/v2/stream/session-1?st=opaque",
++            "https://example.invalid/api/v2/stream/other-session?st=opaque",
++            "https://example.invalid/unrelated?st=opaque",
++            "https://example.invalid:444/api/v2/stream/session-1?st=opaque",
++        )) {
++            val wire = adoptedDecision.replace("/api/v2/stream/session-1", url)
++            val c = client { req -> when (req.url.encodedPath) {
++                "/api/v2/playback/capabilities" -> reply(caps())
++                "/api/v2/account/me" -> reply(account)
++                "/api/v2/playback/start" -> reply(wire, HttpStatusCode.Created)
++                else -> error("Unexpected request")
++            } }.config { defaultRequest { header("Authorization", "Bearer captured-request"); header("X-Profile-Id", "profile") } }
++            try {
++                val identity = Identity()
++                val runtime = SequencedPlayback(PlaybackV2Api(c, ApiV2Gate.Unrestricted), identity, identity, Store()) { stopId }
++                val result = runtime.start(request(), identity.scope)
++                if (url.startsWith("//")) {
++                    // The decoder rejects scheme-relative mounts before authority attachment.
++                    assertIs<ApiResult.NetworkError>(result)
++                } else {
++                    val decision = assertIs<ApiResult.Success<PlaybackDecisionResponseV3>>(result, "URL $url: $result").data
++                    assertTrue(decision.playbackPlan!!.stream.effectiveRequestHeaders.isEmpty(), "Do not forward captured authority to $url")
++                }
++            } finally { c.close() }
++        }
++    }
++
+     @Test fun proxyAuxiliaryUsesActualRequestHeadersOnlyEphemerallyAndFencesIdentity() = runTest {
+         val identity = Identity(); val store = Store()
+         val wire = adoptedDecision.replace("/api/v2/stream/session-1", "https://proxy.example/stream/direct/opaque-signed-reference")
