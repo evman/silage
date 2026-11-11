@@ -46,6 +46,11 @@
     <control>pointing</control>
   </supports>
   <releases>
+    <release version="0.7.0" date="2026-11-11">
+      <description>
+        <p>Silage opens faster, straight onto Home. Show what you're watching as your Discord status, with cover art (off unless you turn it on). Movie box sets, theme music on title pages (opt-in), Explore all for long rows, See all on Discover rows and a list of failed requests. Watch Together is now called Watch Party, as in Silo. The desktop media controls show the title's poster.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-11-08">
       <description>
         <p>Download titles to watch with no connection, watch together in sync with a party code, and use game controllers everywhere, with an on-screen keyboard. Profiles can be added and edited with PINs, kids profiles and limits. The player gains seek previews, chapter marks and subtitle styling, and a buffering 4K video can switch to 1080p at the same moment. F11 now leaves fullscreen properly on KDE.</p>

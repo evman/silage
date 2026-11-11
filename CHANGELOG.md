@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.0 — 2026-11-11
+
+- Call Watch Together "Watch Party", as Silo does.
+- Show what you're watching as your Discord status: off unless you turn it on in
+  Settings → Playback → Discord status. Works with the Discord app open on Windows
+  and Linux (including the Flatpak and Snap). Cover art can show beside it, when
+  your server's pictures can be reached from the internet over HTTPS. Trailers
+  don't change your status.
+- Show the title's poster in the Windows media overlay and the Linux media
+  controls with current Silo servers, which send it only with the full details.
+- Open faster: Home appears straight away from the last visit and refreshes behind,
+  and with one profile and no PIN, Silage picks it while the intro plays.
+- Play a title's theme music softly on its page, once or on a loop: off unless you
+  turn it on in Settings → Interface → Theme music.
+- Add movie box sets: search for a franchise ("harry potter") to find its set first,
+  and open it to see the films in release order, with a button that plays the next
+  one you haven't watched.
+- End long Home and library rows with Explore all, which opens the whole row, and
+  Requests' Discover rows with See all.
+- List failed requests on Requests, so they can be removed, where the server allows it.
+- Word calendar badges as the other Silo apps do: Premiere, New season, Finale, and
+  movies' Digital and Physical releases.
+- In search, Down or Enter goes straight to the results instead of the sidebar.
+- Under each poster, always show its title and details; Settings → Posters keeps the size.
+- Keep downloads deleted while offline apart for each account on the same server.
+- Bring the code shared with Silo's Android app up to date.
+
 ## 0.6.0 — 2026-11-08
 
 - Fix F11 not leaving fullscreen on Linux (KDE): Silage now asks the window manager for

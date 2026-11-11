@@ -1,21 +1,18 @@
 ## Silage @VERSION@ — Linux and Windows
 
-The biggest Silage release yet: downloads, Watch Together, game controllers and
-profile management. If you have 0.5.0 or later, Silage offers it as **Update ready**
-in the sidebar above Settings.
+A faster start, Discord status, movie box sets and theme music. If you have 0.5.0
+or later, Silage offers it as **Update ready** in the sidebar above Settings.
 
 ### What's new
 
-- **Downloads.** Save a title, an episode or a whole season from its page and watch with no connection, subtitles included. Stopped downloads pick up where they left off, and where you got to is sent to the server once it can be reached.
-- **Watch Together.** Host or join a party with a code or a `silo://` link, choose or vote on a title, and watch in sync. Hosts choose who can play and pause.
-- **Game controllers.** Xbox-style pads and DualSense / DualShock 4 work on every page and in the player, on Windows and Linux, with an on-screen keyboard (press A on any text box).
-- **Profiles.** Add, edit and delete profiles from "Who's watching?" or Settings → Account: PINs, kids profiles, rating limits and library limits.
-- **A better player.** Picture previews and chapter names above the seek bar, marked intros and credits, a lighter player bar with grouped buttons, subtitle styling while you watch, and upload a subtitle file from the Subtitles menu.
-- **Smarter 4K.** A 4K video that keeps stopping to buffer can switch to its 1080p version at the same moment, with no converting, and back again (Settings → Video).
-- **Your library, your way.** Star ratings, an A–Z bar for title-sorted libraries, editable Home rows, your taste on For You, and audio, subtitles and auto-skip remembered for each show.
-- **Windows:** what's playing in the Windows media overlay, and play controls under the taskbar thumbnail.
-- **Linux:** F11 now leaves fullscreen properly on KDE.
-- **Support Silage.** A Sponsor button and progress bar towards the Apple Developer and Google Play accounts needed to bring Silage to macOS, iPhone, iPad, Apple TV and Android.
+- **Opens faster.** Home appears straight away from your last visit and refreshes behind, and with one profile and no PIN, Silage picks it while the intro plays.
+- **Discord status.** Show what you're watching on your Discord profile, with a progress bar, while the Discord app is open on the same computer. Off until you turn it on in Settings → Playback; trailers never show. **Cover art on Discord** adds the poster when your server's pictures can be reached from the internet over HTTPS (Discord then sees your server's address).
+- **Movie box sets.** Search for a franchise to find its set first, then see its films in release order with a button that plays the next one you haven't watched.
+- **Theme music.** A title's theme plays softly on its page, once or on a loop. Off until you turn it on in Settings → Interface.
+- **Whole rows.** Long Home and library rows end with Explore all, Requests' Discover rows with See all, and failed requests are listed so you can remove them, where your server allows it.
+- **Watch Party.** Watch Together is now called Watch Party, as in Silo.
+- **Posters in the media controls.** The Windows media overlay and the Linux media controls show the title's poster.
+- **Smaller things.** Calendar badges worded as in the other Silo apps (Premiere, New season, Finale, Digital and Physical releases), Down or Enter in search goes straight to the results, and every poster shows its title and details.
 
 **Upgrading from 0.4.x.** Windows: install `Silage-Setup.exe` once and sign in again; the old portable folder can then be deleted. Linux: run the one-command installer below once; updates then arrive with normal system updates.
 
