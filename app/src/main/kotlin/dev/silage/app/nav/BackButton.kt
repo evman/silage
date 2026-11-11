@@ -38,7 +38,8 @@ internal fun showsBackButton(route: Route): Boolean = when (route) {
 
 /** Of those, the ones drawn inside the sidebar shell, which need room above the page and to clear the rail. */
 internal fun backButtonSharesShell(route: Route): Boolean =
-    showsBackButton(route) && route !is Route.Detail && route !is Route.RequestDetail && route !is Route.PartyLobby
+    showsBackButton(route) && !(route is Route.Detail && dev.silage.app.browse.parseBoxSetTarget(route.contentId) == null) &&
+        route !is Route.RequestDetail && route !is Route.PartyLobby
 
 /** A pill with an arrow and "Back": clearly a button, white while hovered or focused. */
 @Composable

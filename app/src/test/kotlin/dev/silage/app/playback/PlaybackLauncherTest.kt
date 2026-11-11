@@ -91,13 +91,13 @@ class PlaybackLauncherTest {
         assertIs<LaunchResult.Ready>(r)
         // The series and episode numbers ride along so the player can find the next episode.
         assertEquals(PlaybackMeta("Pilot", "Severance · S1 E3", TimeRange(30.0, 95.0), TimeRange(2900.0, 3000.0),
-            seriesId = "series-9", seriesTitle = "Severance", seasonNumber = 1, episodeNumber = 3), r.meta)
+            seriesId = "series-9", seriesTitle = "Severance", seasonNumber = 1, episodeNumber = 3, contentId = "ep-1"), r.meta)
     }
 
     @Test fun movieLineIsItsYear() = runTest {
         val r = launcher(item = { WatchDetail(contentId = it, type = "movie", title = "Dune", year = 2021, versions = listOf(FileVersion(fileId = 1))) }).launch("m")
         assertIs<LaunchResult.Ready>(r)
-        assertEquals(PlaybackMeta("Dune", "2021"), r.meta)
+        assertEquals(PlaybackMeta("Dune", "2021", contentId = "m"), r.meta)
     }
 
     private fun withSubs(delivery: String, selected: String?, embedded: String = "", stream: String = "/v") = SiloJson.decodeFromString(
@@ -301,10 +301,13 @@ class PlaybackLauncherTest {
         assertIs<LaunchResult.Ready>(r)
         assertEquals("1080p", sent.last().qualityPreference)
         assertEquals(40_000, sent.last().bandwidthCapKbps)
-        assertEquals(listOf("auto", "original", "1080p-medium"), r.qualities.map { it.id })
+        assertEquals(listOf("auto", "1080p-medium"), r.qualities.map { it.id })
         // A pick in the player wins over the setting for that playback.
+        l.launch("movie-1", qualityPreference = "1080p-medium")
+        assertEquals("1080p-medium", sent.last().qualityPreference)
+        // The retired "original" goes as Auto, which plays the source.
         l.launch("movie-1", qualityPreference = "original")
-        assertEquals("original", sent.last().qualityPreference)
+        assertEquals("auto", sent.last().qualityPreference)
         // No limit sends none.
         launcher(sent = sent).launch("movie-1")
         assertEquals("auto", sent.last().qualityPreference)

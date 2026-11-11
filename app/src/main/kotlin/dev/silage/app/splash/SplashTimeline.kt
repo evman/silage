@@ -26,13 +26,13 @@ data class SplashFrame(
  * grey, brightens to white, an amber glow breathes behind it while the app
  * loads, then the splash fades away — never before the intro has played.
  * The logo appears promptly and its glow keeps breathing. The splash stays
- * visible for at least four seconds, or longer if the app is still loading.
+ * visible for at least 1.5 seconds (the intro plus a short hold), or longer if the app is still loading.
  */
 class SplashTimeline(
     private val introMs: Long = 900,
     private val fadeMs: Long = 350,
     private val pulseMs: Long = 2400,
-    private val minimumVisibleMs: Long = 4_000,
+    private val minimumVisibleMs: Long = 1_500,
 ) {
     private fun ease(x: Float) = (1 - cos(PI * x.coerceIn(0f, 1f)).toFloat()) / 2
 

@@ -144,7 +144,7 @@ fun Sidebar(
                 Entry(Icons.Outlined.Home, "Home", current == Route.Home, open) { go(Route.Home) }
                 Entry(Icons.Outlined.AutoAwesome, "For You", current == Route.ForYou, open) { go(Route.ForYou) }
                 Entry(Icons.Outlined.CalendarMonth, "Calendar", current == Route.Calendar, open) { go(Route.Calendar) }
-                if (watchPartyOffered) Entry(dev.silage.app.watchparty.WatchPartyIcon, "Watch Together", current is Route.WatchParty, open) { go(Route.WatchParty()) }
+                if (watchPartyOffered) Entry(dev.silage.app.watchparty.WatchPartyIcon, "Watch Party", current is Route.WatchParty, open) { go(Route.WatchParty()) }
                 if (requestsEnabled) Entry(Icons.Outlined.AddCircleOutline, "Requests", current == Route.Requests, open) { go(Route.Requests) }
                 if (libraries.isNotEmpty()) Box(Modifier.padding(vertical = 10.dp, horizontal = 12.dp).fillMaxWidth().height(1.dp).background(Silage.Hairline))
                 libraries.filter { it.visible }.forEach { lib ->

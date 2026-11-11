@@ -23,7 +23,7 @@ class LibraryFiltersTest {
         assertEquals(3, f.activeCount)
         val groups = f.groups()
         assertEquals(listOf("genre", "genre"), groups.first { g -> g.rules.any { it.field == "genre" } }.rules.map { it.field })
-        assertTrue(groups.any { g -> g.rules.any { it.field == "resolution" && it.value == "2160p" } })
+        assertTrue(groups.any { g -> g.rules.any { it.field == "resolution" && it.value.content == "2160p" } })
         val duration = groups.last()
         assertEquals("any", duration.match)
         assertEquals(listOf("lt", "between"), duration.rules.map { it.op })

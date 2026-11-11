@@ -68,7 +68,10 @@ fun ProfilesScreen(presenter: ProfilesPresenter, onSelected: () -> Unit, onChang
             state = loaded
         }
     }
-    LaunchedEffect(profiles.isNotEmpty(), pinTarget) { if (profiles.isNotEmpty() && pinTarget == null) runCatching { firstAvatar.requestFocus() } }
+    LaunchedEffect(profiles.isNotEmpty(), pinTarget) {
+        if (profiles.isNotEmpty()) dev.silage.app.StartupTrace.mark("profiles shown")
+        if (profiles.isNotEmpty() && pinTarget == null) runCatching { firstAvatar.requestFocus() }
+    }
     fun choose(p: ProfileRow, pinValue: String?) = scope.launch {
         state = presenter.choose(p, pinValue)
         when (val s = state) {

@@ -1,5 +1,6 @@
 package dev.silage.app.watchparty
 
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -91,15 +92,15 @@ internal fun partyEndedText(reason: String): String = when (reason) {
     WatchPartyEndReason.HostLeft -> "The host ended the party."
     WatchPartyEndReason.Replaced -> "You joined this party on another device."
     WatchPartyEndReason.ConnectionLost -> "The connection to the party was lost. You can rejoin below."
-    WatchPartyEndReason.Unauthorized -> "Sign in again to use Watch Together."
+    WatchPartyEndReason.Unauthorized -> "Sign in again to use Watch Party."
     else -> "That Watch Party has ended."
 }
 
-/** Why Watch Together can't be used here, or null when it can. */
+/** Why Watch Party can't be used here, or null when it can. */
 internal fun partyUnavailableText(availability: WatchPartyAvailability?): String? = when (availability) {
-    is WatchPartyAvailability.Unsupported -> "This server doesn't support Watch Together. Updating the server adds it."
-    WatchPartyAvailability.NotAllowed -> "Your account isn't allowed to use Watch Together on this server."
-    is WatchPartyAvailability.ProbeFailed -> "Couldn't check Watch Together on this server."
+    is WatchPartyAvailability.Unsupported -> "This server doesn't support Watch Party. Updating the server adds it."
+    WatchPartyAvailability.NotAllowed -> "Your account isn't allowed to use Watch Party on this server."
+    is WatchPartyAvailability.ProbeFailed -> "Couldn't check Watch Party on this server."
     else -> null
 }
 
@@ -124,9 +125,9 @@ fun WatchPartyHubScreen(koin: Koin, stage: WatchPartyItem?, invite: org.siloserv
     }
     val first = rememberInitialFocus(state.availability != null)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 64.dp, top = 72.dp, end = 64.dp, bottom = 64.dp).widthIn(max = 720.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Text("Watch Together", color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.Bold)
+        Text("Watch Party", color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.Bold)
         Text("Watch in sync with friends on this server. Everyone plays from their own device.", color = Silage.Text2, fontSize = 19.sp)
-        state.error?.let { PartyMessage(it) }
+        state.error?.let { PartyMessage(it.text()) }
         state.ended?.takeIf { state.error == null && state.current == null }?.let { PartyMessage(partyEndedText(it.reason)) }
         val problem = partyUnavailableText(state.availability)
         when {
@@ -176,7 +177,7 @@ fun WatchPartyLobbyScreen(koin: Koin, roomId: String, onPlay: () -> Unit, onExit
     val destination by vm.destination.collectAsState()
     val pick by picker.state.collectAsState()
     var message by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(vm) { vm.messages.collect { message = it } }
+    LaunchedEffect(vm) { vm.messages.collect { message = it.text() } }
     LaunchedEffect(picker) { picker.loadRows() }
     val room = state.room
     // Gone: the party ended, or this device left it.
@@ -213,15 +214,15 @@ fun WatchPartyLobbyScreen(koin: Koin, roomId: String, onPlay: () -> Unit, onExit
 
     Row(Modifier.fillMaxSize().padding(start = 64.dp, top = 92.dp, end = 48.dp, bottom = 40.dp), horizontalArrangement = Arrangement.spacedBy(48.dp)) {
         Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text(hero.eyebrow.uppercase(), color = Silage.Amber, fontSize = 14.sp, letterSpacing = 2.sp)
+            Text(hero.eyebrow.text().uppercase(), color = Silage.Amber, fontSize = 14.sp, letterSpacing = 2.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.Top) {
                 selected?.takeIf { !hero.isVoteQuestion }?.let { t -> Artwork(t.posterUrl, null, t.title, Modifier.width(150.dp).height(225.dp).clip(RoundedCornerShape(10.dp))) }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(hero.title ?: selected?.title ?: "…", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold, lineHeight = 46.sp)
-                    hero.supporting?.let { Text(it, color = Silage.Text2, fontSize = 18.sp) }
+                    Text(hero.title?.text() ?: selected?.title ?: "…", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold, lineHeight = 46.sp)
+                    hero.supporting?.let { Text(it.text(), color = Silage.Text2, fontSize = 18.sp) }
                 }
             }
-            watchPartyLobbyBanner(room, unavailable, reconnecting)?.let { PartyMessage(it) }
+            watchPartyLobbyBanner(room, unavailable, reconnecting)?.let { PartyMessage(it.text()) }
             message?.let { PartyMessage(it) }
             when (primary) {
                 is WatchPartyPrimaryAction.Start -> PrimaryButton(primary.title?.let { "Start $it" } ?: "Start", enabled = state.pending == null, modifier = Modifier.focusRequester(focus).widthIn(max = 420.dp)) {
@@ -234,7 +235,7 @@ fun WatchPartyLobbyScreen(koin: Koin, roomId: String, onPlay: () -> Unit, onExit
                 WatchPartyPrimaryAction.None -> Unit
             }
             if (secondary == WatchPartySecondaryAction.ChangeTitle) Text("Choose another title on the right to change it.", color = Silage.Text2, fontSize = 15.sp)
-            watchPartyLobbyHint(room, state.suggestions)?.let { Text(it, color = Silage.Text2, fontSize = 15.sp) }
+            watchPartyLobbyHint(room, state.suggestions)?.let { Text(it.text(), color = Silage.Text2, fontSize = 15.sp) }
 
             PartyHeading("Invite")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -265,7 +266,7 @@ fun WatchPartyLobbyScreen(koin: Koin, roomId: String, onPlay: () -> Unit, onExit
         Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (state.eligibility.canStage || state.eligibility.canSuggest) {
                 SilageField(pick.query, picker::onQuery, if (state.eligibility.canStage) "Find a title to watch" else "Suggest a title")
-                pick.error?.let { PartyMessage(it) }
+                pick.error?.let { PartyMessage(it.text()) }
                 if (pick.searching) CircularProgressIndicator(Modifier.size(28.dp), color = Silage.Text, strokeWidth = 3.dp)
                 pick.results.forEach { item -> TitleRow(item, null) { choose(item.toPartyItem()) } }
             }
@@ -356,7 +357,7 @@ private fun MemberSeat(member: RoomMember, phase: RoomPhase) {
         ))
         val role = listOfNotNull("host".takeIf { member.isHost }, "you".takeIf { member.isSelf }).joinToString(", ")
         Text(member.displayName.ifBlank { "Someone" } + if (role.isNotEmpty()) " ($role)" else "", color = Color.White, fontSize = 17.sp)
-        watchPartySeatStatus(seat)?.let { Text(it, color = Silage.Text2, fontSize = 14.sp) }
+        watchPartySeatStatus(seat)?.let { Text(it.text(), color = Silage.Text2, fontSize = 14.sp) }
     }
 }
 

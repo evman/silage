@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.siloserver.silo.model.catalog.CatalogBoxSet
 import org.siloserver.silo.model.catalog.CatalogResponse
+import org.siloserver.silo.model.catalog.toSearchCard
 import org.siloserver.silo.network.ApiResult
 
 sealed interface SearchResults {
@@ -26,13 +28,20 @@ sealed interface SearchResults {
  * how well the title matches (exact, as in "fallout" or "The Fallout"; then
  * starting with the text; then containing it; then the server's looser matches),
  * shows before movies before anything else at each level, and episodes last.
- * One failed search still shows the others' results.
+ * One failed search still shows the others' results. Movie box sets that match
+ * (a franchise name such as "harry potter") come first.
  */
-suspend fun rankedSearch(query: String, search: suspend (query: String, type: String?) -> ApiResult<CatalogResponse>): ApiResult<CatalogResponse> =
+suspend fun rankedSearch(
+    query: String,
+    boxSets: suspend (query: String) -> List<CatalogBoxSet> = { emptyList() },
+    search: suspend (query: String, type: String?) -> ApiResult<CatalogResponse>,
+): ApiResult<CatalogResponse> =
     kotlinx.coroutines.coroutineScope {
+        val sets = async { runCatching { boxSets(query) }.getOrDefault(emptyList()) }
         val answers = listOf("series", "movie", null).map { type -> async { search(query, type) } }.awaitAll()
         val found = answers.filterIsInstance<ApiResult.Success<CatalogResponse>>()
-        if (found.isEmpty()) return@coroutineScope answers.first()
+        val setCards = sets.await().map { it.toSearchCard() }
+        if (found.isEmpty()) return@coroutineScope if (setCards.isEmpty()) answers.first() else ApiResult.Success(CatalogResponse(items = setCards))
         val seen = HashSet<String>()
         val items = found.flatMap { it.data.items }.filter { seen.add(it.contentId) }
         fun key(text: String) = text.lowercase().removePrefix("the ").filter { it.isLetterOrDigit() }
@@ -41,7 +50,7 @@ suspend fun rankedSearch(query: String, search: suspend (query: String, type: St
         fun titleRank(title: String?) = key(title.orEmpty()).let {
             when { it == wanted -> 0; it.startsWith(wanted) -> 1; wanted in it -> 2; else -> 3 }
         }
-        ApiResult.Success(CatalogResponse(items = items.sortedWith(
+        ApiResult.Success(CatalogResponse(items = setCards + items.sortedWith(
             compareBy({ it.type == "episode" }, { titleRank(it.title) }, { typeRank(it.type) }),
         )))
     }

@@ -246,7 +246,7 @@ class DesktopDownloads(
         active?.takeIf { it.first == id }?.second?.cancelAndJoin()
         val authority = owner
         if (authority != null) runCatching {
-            repository.enqueueDurableDelete(authority.scope.serverId, authority.scope.profileId.orEmpty(), id, row.sidecar.record.mediaFileId)
+            repository.enqueueDurableDelete(authority.scope.serverId, authority.scope.accountId.orEmpty(), authority.scope.profileId.orEmpty(), id, row.sidecar.record.mediaFileId)
         }
         _rows.update { list -> list.filterNot { it.id == id } }
         withRetries { row.directory.toFile().deleteRecursively() }

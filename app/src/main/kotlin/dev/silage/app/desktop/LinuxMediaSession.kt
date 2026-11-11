@@ -120,11 +120,24 @@ internal class LinuxMediaSession(
         scope.cancel()
     }
 
+    @Volatile private var artUrl: String? = null
+
+    /** Shows [url] as the video's picture in the desktop's media controls. */
+    fun showArtwork(url: String) {
+        artUrl = url
+        val bus = connection ?: return
+        runCatching {
+            bus.sendMessage(Properties.PropertiesChanged(MprisPath, MprisPlayer,
+                mapOf("Metadata" to Variant(metadata(state.value), "a{sv}")), emptyList()))
+        }
+    }
+
     private fun status(s: PlayerState) = if (!s.loaded) "Stopped" else if (s.paused) "Paused" else "Playing"
-    private fun metadata(s: PlayerState): Map<String, Variant<*>> = mapOf(
-        "mpris:trackid" to Variant(track), "mpris:length" to Variant(micros(s.durationSeconds)),
-        "xesam:title" to Variant(title),
-    )
+    internal fun metadata(s: PlayerState): Map<String, Variant<*>> = buildMap {
+        put("mpris:trackid", Variant(track)); put("mpris:length", Variant(micros(s.durationSeconds)))
+        put("xesam:title", Variant(title))
+        artUrl?.let { put("mpris:artUrl", Variant(it)) }
+    }
     private fun micros(seconds: Double): Long = (seconds.coerceAtLeast(0.0) * 1_000_000).toLong()
 
     inner class Endpoint : MprisApplication, MprisPlayback, Properties {

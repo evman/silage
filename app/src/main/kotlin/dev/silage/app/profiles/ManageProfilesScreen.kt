@@ -2,6 +2,7 @@
 
 package dev.silage.app.profiles
 
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -145,7 +146,7 @@ fun ManageProfilesScreen(koin: Koin, onDone: () -> Unit, onOwnProfileDeleted: ()
         val first = pinFor
         when {
             askFor != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                PinPad(ProfileRow(askFor.profile.id, askFor.profile.name, true, askFor.profile.avatarUrl, askFor.profile.avatar), pin, askFor.error,
+                PinPad(ProfileRow(askFor.profile.id, askFor.profile.name, true, askFor.profile.avatarUrl, askFor.profile.avatar), pin, askFor.error?.text(),
                     onDigit = { if (pin.length < 8) pin += it }, onDelete = { pin = pin.dropLast(1) },
                     onSubmit = { session.submitPin(pin); pin = "" }, onCancel = { pin = ""; session.cancelReverify() })
             }

@@ -1,5 +1,6 @@
 package dev.silage.app.requests
 
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -85,7 +86,7 @@ fun RequestDetailScreen(koin: Koin, mediaType: String, tmdbId: Int, onOpenLibrar
     val state by vm.uiState.collectAsState()
     val detail = state.detail
     when {
-        detail == null && state.error != null -> ErrorState(state.error!!) { vm.load() }
+        detail == null && state.error != null -> ErrorState(state.error!!.text()) { vm.load() }
         detail == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
         else -> {
             val primaryFocus = rememberInitialFocus(true)
@@ -106,10 +107,10 @@ fun RequestDetailScreen(koin: Koin, mediaType: String, tmdbId: Int, onOpenLibrar
                                 state.progress?.let { StageTrack(it) }
                                 Spacer(Modifier.height(4.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    PrimaryAction(state.primaryAction, Modifier.focusRequester(primaryFocus), onRequest = vm::submitRequest, onOpen = onOpenLibrary)
+                                    PrimaryAction(state.primaryAction, state.primaryActionTitle.text(), Modifier.focusRequester(primaryFocus), onRequest = vm::submitRequest, onOpen = onOpenLibrary)
                                     if (state.canCancel) ActionButton(Icons.Filled.Close, "Cancel request") { vm.cancel() }
                                 }
-                                state.actionErrorMessage?.let { Text(it, color = RequestStatusTint.Rose.color(), fontSize = 17.sp) }
+                                state.actionErrorMessage?.let { Text(it.text.text(), color = RequestStatusTint.Rose.color(), fontSize = 17.sp) }
                             }
                         }
                     }
@@ -133,14 +134,14 @@ private fun credits(detail: RequestMediaDetail): String? = listOfNotNull(
 ).joinToString("   ·   ").takeIf { it.isNotBlank() }
 
 @Composable
-private fun PrimaryAction(action: RequestPrimaryAction, modifier: Modifier, onRequest: () -> Unit, onOpen: (String) -> Unit) {
+private fun PrimaryAction(action: RequestPrimaryAction, title: String, modifier: Modifier, onRequest: () -> Unit, onOpen: (String) -> Unit) {
     // Always one button in the same place, so focus stays on it as it changes.
     when (action) {
         RequestPrimaryAction.Loading -> ActionButton(Icons.Filled.Schedule, "Checking…", modifier) {}
         RequestPrimaryAction.Request -> ActionButton(Icons.Filled.Add, "Request", modifier, onRequest)
         RequestPrimaryAction.Submitting -> ActionButton(Icons.Filled.Schedule, "Requesting…", modifier) {}
         is RequestPrimaryAction.OpenInLibrary -> ActionButton(Icons.Filled.PlayArrow, "Open in library", modifier) { onOpen(action.contentId) }
-        is RequestPrimaryAction.Status -> ActionButton(statusIcon(action.state), action.state.detailTitle, modifier) {}
+        is RequestPrimaryAction.Status -> ActionButton(statusIcon(action.state), title, modifier) {}
     }
 }
 
@@ -158,7 +159,7 @@ private fun StageTrack(progress: RequestProgress) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(12.dp).clip(CircleShape).background(tint))
-            Text(progress.longLabel, color = tint, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp))
+            Text(progress.longText.text(), color = tint, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             RequestStep.entries.forEachIndexed { i, step ->
@@ -167,7 +168,7 @@ private fun StageTrack(progress: RequestProgress) {
                 Column(Modifier.width(150.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(Modifier.fillMaxWidth().height(5.dp).clip(CircleShape).background(
                         when { done -> Color.White; current -> tint; else -> Color.White.copy(alpha = 0.15f) }))
-                    Text(step.title, color = if (done || current) Silage.Text else Silage.Text3, fontSize = 15.sp)
+                    Text(step.text.text(), color = if (done || current) Silage.Text else Silage.Text3, fontSize = 15.sp)
                 }
             }
         }
@@ -176,8 +177,10 @@ private fun StageTrack(progress: RequestProgress) {
 
 /** The Requests page: the user's own requests, then the server's suggestions of what to request. */
 @Composable
-fun RequestsScreen(koin: Koin, onOpenLibrary: (String) -> Unit, onOpenRequest: (String, Int) -> Unit, onSearch: () -> Unit) {
-    val vm = rememberEntryViewModel { RequestsViewModel(koin.get(), koin.get<RequestsFeatureStore>()) }
+fun RequestsScreen(koin: Koin, onOpenLibrary: (String) -> Unit, onOpenRequest: (String, Int) -> Unit, onSearch: () -> Unit,
+    /** Opens a Discover row's See all page. */
+    onSeeAll: (key: String, title: String) -> Unit = { _, _ -> }) {
+    val vm = rememberEntryViewModel { RequestsViewModel(koin.get()) }
     val state by vm.uiState.collectAsState()
     // Loads on creation; coming back to the page re-reads it (a request may have changed).
     LaunchedEffect(vm) { if (state.hasLoaded) vm.refresh() }
@@ -185,7 +188,7 @@ fun RequestsScreen(koin: Koin, onOpenLibrary: (String) -> Unit, onOpenRequest: (
     val rows = remember(state.myRequests, state.sections) {
         buildList<Pair<String, Pair<String, List<CardModel>>>> {
             if (state.myRequests.isNotEmpty()) add("mine" to ("Your requests" to state.myRequests.map { it.toRequestCard() }))
-            state.sections.filter { it.results.isNotEmpty() }.forEach { add(it.key to (it.title to it.results.map { r -> r.toRequestCard() })) }
+            state.sections.filter { it.results.isNotEmpty() }.forEach { add(it.key to (it.title to (it.results.map { r -> r.toRequestCard() } + seeAllCard(it)))) }
         }
     }
     val first = rememberInitialFocus(rows.isNotEmpty())
@@ -208,13 +211,16 @@ fun RequestsScreen(koin: Koin, onOpenLibrary: (String) -> Unit, onOpenRequest: (
                 ).joinToString(" · ")
                 if (summary.isNotBlank()) Text(summary, color = Silage.Amber, fontSize = 18.sp, modifier = Modifier.padding(start = 64.dp, top = 12.dp))
             }
+            item {
+                FailedRequests(koin)
+            }
             when {
                 rows.isEmpty() && state.isLoading -> item {
                     Box(Modifier.fillMaxWidth().padding(top = 120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
                 }
                 rows.isEmpty() && state.error != null -> item {
                     Row(Modifier.padding(start = 64.dp, top = 40.dp), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(state.error!!, color = Silage.Text2, fontSize = 20.sp)
+                        Text(state.error!!.text(), color = Silage.Text2, fontSize = 20.sp)
                         dev.silage.app.browse.Pill("Retry") { vm.load() }
                     }
                 }
@@ -223,7 +229,7 @@ fun RequestsScreen(koin: Koin, onOpenLibrary: (String) -> Unit, onOpenRequest: (
                 }
                 else -> items(rows, key = { it.first }) { (key, row) ->
                     CardRow(row.first, row.second,
-                        onOpen = { lastRow = key; openRequestCard(it, onOpenLibrary, onOpenRequest) },
+                        onOpen = { lastRow = key; seeAllKey(it)?.let { k -> onSeeAll(k, row.first) } ?: openRequestCard(it, onOpenLibrary, onOpenRequest) },
                         onFocus = { focused = it },
                         firstCardFocus = if (key == (lastRow?.takeIf { r -> rows.any { it.first == r } } ?: rows.first().first)) first else null)
                 }

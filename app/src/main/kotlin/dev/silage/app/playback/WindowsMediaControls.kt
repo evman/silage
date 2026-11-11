@@ -13,7 +13,9 @@ import com.sun.jna.win32.StdCallLibrary
 import dev.silage.app.playback.hud.MediaKey
 import dev.silage.player.PlayerState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +56,9 @@ internal class WindowsMediaControls(
     private val scope = CoroutineScope(SupervisorJob() + executor.asCoroutineDispatcher())
     private var controls: Pointer? = null
     private var controls2: Pointer? = null
+    private val shown: MediaControlsInfo = info
+    /** The poster as PNG, once downloaded. */
+    @Volatile private var picture: ByteArray? = null
     private var buttonToken = 0L
     private var positionToken = 0L
     // Windows may still hold them after close, so they live as long as the process.
@@ -108,6 +113,21 @@ internal class WindowsMediaControls(
         LongByReference().let { Com.check(Com.call(smtc, 32, buttonHandler.pointer, it)); buttonToken = it.value }
         controls2?.let { c2 -> LongByReference().let { Com.check(Com.call(c2, 13, positionHandler.pointer, it)); positionToken = it.value } }
         showInfo(smtc, info)
+        info.artworkUrl?.let(::showArtwork)
+    }
+
+    /**
+     * Shows the poster at [url]. Windows ignores pictures given by address to a desktop app, so
+     * Silage downloads it, converts it to PNG and hands Windows the bytes in a stream.
+     */
+    fun showArtwork(url: String) {
+        scope.launch {
+            val png = withContext(Dispatchers.IO) { overlayPicture(url) }
+            if (png == null) { System.err.println("Silage: couldn't load the media overlay picture"); return@launch }
+            val smtc = controls ?: return@launch
+            picture = png
+            runCatching { showInfo(smtc, shown) }.onFailure { System.err.println("Silage: media overlay update failed: $it") }
+        }
     }
 
     private fun showInfo(smtc: Pointer, info: MediaControlsInfo) {
@@ -119,21 +139,29 @@ internal class WindowsMediaControls(
                 Winrt.string(info.title) { Com.check(Com.call(video, 7, it)) }
                 info.subtitle?.let { line -> Winrt.string(line) { Com.check(Com.call(video, 9, it)) } }
             } finally { Com.release(video) }
-            info.artworkUrl?.let { url -> runCatching { setArtwork(updater, url) } }
+            picture?.let { png -> runCatching { setPicture(updater, png) }.onFailure { System.err.println("Silage: media overlay picture failed: $it") } }
             Com.check(Com.call(updater, 17))
         } finally { Com.release(updater) }
     }
 
-    private fun setArtwork(updater: Pointer, url: String) {
-        val uriFactory = Winrt.factory("Windows.Foundation.Uri", UriFactoryIid)
-        val uri = try { Winrt.stringResult(url) { s, out -> Com.call(uriFactory, 6, s, out) } } finally { Com.release(uriFactory) }
+    /** Puts [png] in an in-memory WinRT stream (written synchronously through an IStream over it) as the thumbnail. */
+    private fun setPicture(updater: Pointer, png: ByteArray) {
+        val stream = Winrt.activate("Windows.Storage.Streams.InMemoryRandomAccessStream", RandomAccessStreamIid)
         try {
+            val out = PointerByReference()
+            Com.check(Shcore.lib.CreateStreamOverRandomAccessStream(stream, Com.guid(IStreamIid), out))
+            val istream = out.value ?: error("no IStream")
+            try {
+                val bytes = Memory(png.size.toLong()).apply { write(0, png, 0, png.size) }
+                Com.check(Com.call(istream, 4, bytes, png.size, IntByReference()))   // IStream::Write
+                Com.check(Com.call(istream, 5, 0L, 0, null))                        // IStream::Seek(0, STREAM_SEEK_SET)
+            } finally { Com.release(istream) }
             val statics = Winrt.factory("Windows.Storage.Streams.RandomAccessStreamReference", StreamReferenceStaticsIid)
             try {
-                val reference = Com.out { Com.call(statics, 7, uri, it) }
+                val reference = Com.out { Com.call(statics, 8, stream, it) }       // CreateFromStream
                 try { Com.check(Com.call(updater, 11, reference)) } finally { Com.release(reference) }
             } finally { Com.release(statics) }
-        } finally { Com.release(uri) }
+        } finally { Com.release(stream) }
     }
 
     private fun updateTimeline(s: PlayerState) {
@@ -176,7 +204,8 @@ internal class WindowsMediaControls(
         const val TimelineIid = "5125316a-c3a2-475b-8507-93534dc88f15"
         const val ButtonHandlerIid = "0557e996-7b23-5bae-aa81-ea0d671143a4"
         const val PositionHandlerIid = "44e34f15-bdc0-50a7-ace4-39e91fb753f1"
-        const val UriFactoryIid = "44a9796f-723e-4fdf-a218-033e75b0c084"
+        const val RandomAccessStreamIid = "905a0fe1-bc53-11df-8c49-001e4fc686da"
+        const val IStreamIid = "0000000c-0000-0000-c000-000000000046"
         const val StreamReferenceStaticsIid = "857309dc-3fbf-4e7d-986f-ef3b1a07a964"
 
         const val SlotPlayEnabled = 13
@@ -226,6 +255,35 @@ internal object Com {
             for (i in 0..7) setByte(8L + i, (id.leastSignificantBits ushr (56 - 8 * i)).toByte())
         }
     }
+}
+
+/** shcore's bridge from a WinRT stream to a classic COM IStream, which can be written without async calls. */
+private object Shcore {
+    interface Lib : StdCallLibrary {
+        fun CreateStreamOverRandomAccessStream(randomAccessStream: Pointer, riid: Pointer, out: PointerByReference): Int
+    }
+    val lib: Lib by lazy { Native.load("shcore", Lib::class.java) }
+}
+
+/** The poster at [url] as PNG for the overlay, or null when it can't be fetched or read. */
+internal fun overlayPicture(url: String, fetch: (String) -> ByteArray? = ::fetchPicture): ByteArray? =
+    runCatching { fetch(url) }.getOrNull()?.let(::pngPicture)
+
+/** Re-encodes any picture Skia reads (WebP, JPEG, PNG…) as PNG, which every Windows overlay shows. */
+internal fun pngPicture(encoded: ByteArray): ByteArray? = runCatching {
+    val image = org.jetbrains.skia.Image.makeFromEncoded(encoded)
+    try { image.encodeToData(org.jetbrains.skia.EncodedImageFormat.PNG)?.bytes } finally { image.close() }
+}.getOrNull()
+
+private val pictureClient by lazy {
+    java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(10))
+        .followRedirects(java.net.http.HttpClient.Redirect.NORMAL).build()
+}
+
+private fun fetchPicture(url: String): ByteArray? {
+    val request = java.net.http.HttpRequest.newBuilder(java.net.URI(url)).timeout(java.time.Duration.ofSeconds(15)).GET().build()
+    val response = pictureClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofByteArray())
+    return response.body().takeIf { response.statusCode() == 200 && it.size in 1..10_000_000 }
 }
 
 /** The WinRT runtime's own entry points. */

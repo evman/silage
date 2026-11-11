@@ -1,5 +1,6 @@
 package dev.silage.app.requests
 
+import org.siloserver.silo.common.i18n.text
 import dev.silage.app.browse.CardModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -68,14 +69,14 @@ private fun requestCard(
 /** A search or discover result as a card; its caption carries the request status when there is one. */
 fun RequestMediaResult.toRequestCard(): CardModel = requestCard(
     mediaType, tmdbId, title, year, overview, posterPath, backdropPath,
-    status = RequestProgress.of(availability, request)?.shortLabel,
+    status = RequestProgress.of(availability, request)?.shortText?.text(),
     libraryContentId = libraryItemToOpen(),
 )
 
 /** One of the user's own requests as a card. */
 fun MediaRequest.toRequestCard(): CardModel = requestCard(
     mediaType, tmdbId, title, year, overview, posterPath, backdropPath,
-    status = RequestProgress.of(this).shortLabel,
+    status = RequestProgress.of(this).shortText.text(),
     libraryContentId = libraryItemToOpen(),
 )
 

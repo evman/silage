@@ -17,7 +17,12 @@ import java.nio.file.StandardCopyOption
 private data class SavedDeletion(
     val serverId: String, val profileId: String, val recordId: String, val mediaFileId: Int? = null,
     val loginId: String? = null, val origin: String? = null, val deviceId: String? = null,
-)
+    // Added with multi-account support; rows saved before it have "" and match any account.
+    val accountId: String = "",
+) {
+    fun matches(serverId: String, accountId: String, profileId: String) =
+        this.serverId == serverId && this.profileId == profileId && (this.accountId.isEmpty() || this.accountId == accountId)
+}
 
 /**
  * Downloads removed here that the server hasn't heard about yet, in a file, so
@@ -41,23 +46,23 @@ class FileDownloadDeletions(
         Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
 
-    override suspend fun enqueue(serverId: String, profileId: String, recordId: String, mediaFileId: Int?) {
+    override suspend fun enqueue(serverId: String, accountId: String, profileId: String, recordId: String, mediaFileId: Int?) {
         val authority = authorities.snapshotDurableLoginAuthority()
         val device = devices.current()?.id
         lock.withLock {
-            write(read().filterNot { it.serverId == serverId && it.profileId == profileId && it.recordId == recordId } +
-                SavedDeletion(serverId, profileId, recordId, mediaFileId, authority?.loginId, authority?.scope?.serverUrl, device))
+            write(read().filterNot { it.matches(serverId, accountId, profileId) && it.recordId == recordId } +
+                SavedDeletion(serverId, profileId, recordId, mediaFileId, authority?.loginId, authority?.scope?.serverUrl, device, accountId))
         }
     }
 
     override suspend fun allPendingRecordIds(): Set<String> = lock.withLock { read().mapTo(HashSet()) { it.recordId } }
 
-    override suspend fun pendingForScope(serverId: String, profileId: String): List<PendingDownloadDeletion> = lock.withLock {
-        read().filter { it.serverId == serverId && it.profileId == profileId }
-            .map { PendingDownloadDeletion(it.serverId, it.profileId, it.recordId, it.mediaFileId, it.loginId, it.origin, it.deviceId) }
+    override suspend fun pendingForScope(serverId: String, accountId: String, profileId: String): List<PendingDownloadDeletion> = lock.withLock {
+        read().filter { it.matches(serverId, accountId, profileId) }
+            .map { PendingDownloadDeletion(it.serverId, accountId, it.profileId, it.recordId, it.mediaFileId, it.loginId, it.origin, it.deviceId) }
     }
 
-    override suspend fun remove(serverId: String, profileId: String, recordId: String) = lock.withLock {
-        write(read().filterNot { it.serverId == serverId && it.profileId == profileId && it.recordId == recordId })
+    override suspend fun remove(serverId: String, accountId: String, profileId: String, recordId: String) = lock.withLock {
+        write(read().filterNot { it.matches(serverId, accountId, profileId) && it.recordId == recordId })
     }
 }

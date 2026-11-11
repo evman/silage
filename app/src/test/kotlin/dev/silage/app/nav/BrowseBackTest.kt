@@ -64,6 +64,8 @@ class BrowseBackTest {
         assertTrue(backButtonSharesShell(Route.Person(1, "A")))
         assertTrue(backButtonSharesShell(Route.Watchlist))
         assertFalse(backButtonSharesShell(Route.Detail("m")))
+        // A box set page sits in the sidebar shell, so Back gets its row there.
+        assertTrue(backButtonSharesShell(Route.Detail("box_set:3:1241")))
         assertFalse(backButtonSharesShell(Route.PartyLobby("r")))
     }
 

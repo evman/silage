@@ -1,5 +1,6 @@
 package dev.silage.app.browse
 
+import org.siloserver.silo.model.catalog.boxSetCard
 import org.siloserver.silo.model.catalog.BrowseItem
 import org.siloserver.silo.model.section.SectionItem
 
@@ -105,7 +106,7 @@ fun SectionItem.toCard(landscape: Boolean): CardModel = card(
     imageIsStill = org.siloserver.silo.model.settings.EpisodeSpoilers.selectedImageIsStill(this).takeIf { landscape } ?: posterIsEpisodeStill,
 ).copy(progressUpdatedAt = progressUpdatedAt, seriesId = seriesId, seasonNumber = seasonNumber, itemSource = itemSource)
 
-fun BrowseItem.toCard(): CardModel = card(
+fun BrowseItem.toCard(): CardModel = boxSetCard?.toCard() ?: card(
     contentId, type, title, seriesTitle, seasonNumber, episodeNumber, year, runtime, contentRating, overview,
     positionSeconds, durationSeconds, posterUrl, posterThumbhash, backdropUrl, backdropThumbhash, logoUrl = null,
     played = userState?.played == true, landscape = false, inWatchlist = userState?.inWatchlist == true,

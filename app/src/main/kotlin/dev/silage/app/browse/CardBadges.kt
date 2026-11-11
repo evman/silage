@@ -1,5 +1,6 @@
 package dev.silage.app.browse
 
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -50,7 +51,7 @@ data class Badge(val text: String, val icon: OverlayIconId?, val accent: String?
 fun badgesAt(position: OverlayPosition, prefs: CardOverlayPrefs, data: OverlayData?): List<Badge> {
     if (data == null) return emptyList()
     return OverlayRegistry.enabled(position, prefs).mapNotNull { def ->
-        val text = def.getValue(data)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        val text = def.getValue(data)?.text()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
         val cfg = prefs.items[def.id]
         Badge(text, iconFor(def, cfg?.showIcon, prefs.preset, data), cfg?.accentColor ?: def.defaultAccent)
     }

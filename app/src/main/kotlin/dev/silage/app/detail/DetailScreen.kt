@@ -1,5 +1,7 @@
 package dev.silage.app.detail
 
+import androidx.compose.runtime.DisposableEffect
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerInput
@@ -111,6 +113,11 @@ fun DetailScreen(koin: Koin, contentId: String, onPlay: (String, Boolean, Int?) 
     val watchPartyOffered = dev.silage.app.watchparty.rememberWatchPartyOffered(koin)
     var item by remember(contentId) { mutableStateOf<ItemDetail?>(null) }
     var error by remember(contentId) { mutableStateOf<String?>(null) }
+    // Theme music (when it's on in Settings): plays while this page is on screen, fades when it leaves.
+    val themeMusic = remember { koin.get<dev.silage.app.playback.DesktopThemeMusic>() }
+    val themePage = remember(contentId) { Any() }
+    LaunchedEffect(themePage, item?.themes) { themeMusic.show(themePage, item?.themes) }
+    DisposableEffect(themePage) { onDispose { themeMusic.hide(themePage) } }
     var seasons by remember(contentId) { mutableStateOf(emptyList<Season>()) }
     var season by rememberSaveable(contentId) { mutableStateOf(initialSeason) }
     var episodes by remember(contentId) { mutableStateOf(emptyList<EpisodeListItem>()) }
@@ -189,6 +196,12 @@ private fun DetailContent(
         listState.animateScrollToItem(episodeScrollIndex(i))
     }
     // Titles like this one, as Silo's web client shows them: loaded after the page itself.
+    // A movie in a box set (a franchise) gets a row of the set's films, in release order.
+    var boxSet by remember(contentId) { mutableStateOf<org.siloserver.silo.model.catalog.CatalogBoxSetDetail?>(null) }
+    LaunchedEffect(contentId) {
+        val personal = koin.get<org.siloserver.silo.repository.PersonalDataRepository>()
+        (org.siloserver.silo.viewmodel.loadMovieBoxSet(koin.get<CatalogRepository>(), personal, item, null) as? ApiResult.Success)?.let { boxSet = it.data }
+    }
     var similar by remember(contentId) { mutableStateOf(emptyList<dev.silage.app.browse.CardModel>()) }
     LaunchedEffect(contentId) {
         if (!showsMoreLikeThis(item.type)) return@LaunchedEffect
@@ -266,7 +279,7 @@ private fun DetailContent(
                             if (m.canPlayFromStart) ActionButton(Icons.Filled.Replay, "Play from beginning") { onPlay(contentId, true, selected?.fileId) }
                         }
                         if (watchPartyOffered) (if (m.isSeries) next?.contentId?.let { it to "episode" } else contentId to "movie")?.let { (id, type) ->
-                            ActionButton(dev.silage.app.watchparty.WatchPartyIcon, "Watch together") {
+                            ActionButton(dev.silage.app.watchparty.WatchPartyIcon, "Watch Party") {
                                 onWatchTogether(org.siloserver.silo.viewmodel.WatchPartyItem(id, type, m.title, fileId = selected?.fileId.takeIf { !m.isSeries }))
                             }
                         }
@@ -353,9 +366,21 @@ private fun DetailContent(
                             },
                         )
                     }) {
-                        EpisodeRowView(e.toRow(dev.silage.app.settings.LocalProfileUi.current.spoilers), highlighted = e.contentId == focusEpisode, onToggleWatched = { now -> actions.setWatched(e.contentId, now).also { if (it) onEpisodesChanged() } }) {
+                        EpisodeRowView(e.toRow(dev.silage.app.settings.LocalProfileUi.current.spoilers), highlighted = e.contentId == focusEpisode, onToggleWatched = { now -> actions.setWatched(e.contentId, now).also { if (it) onEpisodesChanged() } },
+                            onFromStart = { onPlay(e.contentId, true, episodeFile(e)) }) {
                             onPlay(e.contentId, false, episodeFile(e))
                         }
+                    }
+                }
+            }
+            boxSet?.takeIf { it.items.isNotEmpty() }?.let { set ->
+                item {
+                    val cards = remember(set) {
+                        listOf(set.boxSet.toCard()) + set.items.map { it.toCard().let { c -> if (c.openTarget == contentId) c.copy(caption = "This film") else c } }
+                    }
+                    Box(Modifier.padding(top = 56.dp)) {
+                        dev.silage.app.browse.CardRow("Box set · ${set.boxSet.title}", cards,
+                            onOpen = { if (it.openTarget != contentId) onOpen(it.openTarget) }, onFocus = {})
                     }
                 }
             }
@@ -364,7 +389,7 @@ private fun DetailContent(
                 item {
                     TrailerRail(trailers, onPlayLocal = { id, file -> onPlay(id, false, file) },
                         onPlayRemote = { entry ->
-                        val trailer = dev.silage.app.nav.Trailer(youtubeWatchUrl(entry.video.siteKey), entry.title)
+                        val trailer = dev.silage.app.nav.Trailer(youtubeWatchUrl(entry.video.siteKey), entry.title.text())
                         if (dev.silage.app.playback.TrailerTools.ready()) onTrailer(trailer) else settingUpTrailer = trailer
                     })
                 }
@@ -443,7 +468,9 @@ private fun ToggleChip(icon: ImageVector, label: String, on: Boolean, onClick: (
 }
 
 @Composable
-private fun EpisodeRowView(e: EpisodeRow, highlighted: Boolean = false, onToggleWatched: suspend (Boolean) -> Boolean, onClick: () -> Unit) {
+private fun EpisodeRowView(e: EpisodeRow, highlighted: Boolean = false, onToggleWatched: suspend (Boolean) -> Boolean,
+    /** Plays it from the beginning (shown once it has progress). */
+    onFromStart: () -> Unit = {}, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val active = interaction.isActive()
     val shape = RoundedCornerShape(10.dp)
@@ -467,6 +494,12 @@ private fun EpisodeRowView(e: EpisodeRow, highlighted: Boolean = false, onToggle
                     Icon(Icons.Filled.Check, null, tint = Silage.Amber, modifier = Modifier.size(18.dp))
                 }
             }
+            // Quick play: pointing at or focusing the row shows what a click does.
+            if (active) {
+                Box(Modifier.align(Alignment.Center).size(64.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.7f)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(40.dp))
+                }
+            }
         }
         Column(Modifier.padding(start = 28.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("${e.number}. ${e.title}", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -477,6 +510,12 @@ private fun EpisodeRowView(e: EpisodeRow, highlighted: Boolean = false, onToggle
         val scope = rememberCoroutineScope()
         val on = watched.value == true
         Spacer(Modifier.width(16.dp))
+        ToggleChip(Icons.Filled.PlayArrow, if (e.progress != null) "Resume" else "Play", false, onClick)
+        if (e.progress != null) {
+            Spacer(Modifier.width(12.dp))
+            ToggleChip(Icons.Filled.Replay, "Start over", false, onFromStart)
+        }
+        Spacer(Modifier.width(12.dp))
         ToggleChip(if (on) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle, if (on) "Mark as unwatched" else "Mark as watched", on) {
             scope.launch { watched.toggle() }
         }

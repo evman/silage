@@ -109,13 +109,10 @@ private fun CardBody(card: CardModel, width: Dp, height: Dp, active: Boolean, in
                 )
             }
         }
-        // Under each poster: the title and details, or nothing for artwork only.
-        val caption = ui.presentation.caption
-        if (caption.showsTitle) {
-            Spacer(Modifier.height(10.dp))
+        // Under each poster: the title and details (upstream retired the caption choice).
+        Spacer(Modifier.height(10.dp))
             Text(card.title, color = if (active) Color.White else Silage.Text, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (caption.showsMetadata) card.caption?.let { Text(it, color = Silage.Text3, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-        }
+        card.caption?.let { Text(it, color = Silage.Text3, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
 

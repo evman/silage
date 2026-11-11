@@ -58,6 +58,7 @@ import dev.silage.app.playback.PlayingScreen
 import dev.silage.app.profiles.ProfileRow
 import dev.silage.app.profiles.ProfilesPresenter
 import dev.silage.app.profiles.ProfilesScreen
+import dev.silage.app.profiles.ProfilesState
 import dev.silage.app.signin.SignInPresenter
 import dev.silage.app.signin.SignInScreen
 import org.koin.core.Koin
@@ -87,7 +88,9 @@ fun main(args: Array<String>) {
     val appLinks = dev.silage.app.desktop.AppLinkChannel(XdgPaths.state.resolve("app-link"))
     val inviteLink = dev.silage.app.desktop.inviteLinkIn(args)
     if (inviteLink != null && appLinks.forward(inviteLink)) return
+    StartupTrace.mark("main entered")
     val mpv = dev.silage.player.MpvRuntime.check()
+    StartupTrace.mark("mpv checked")
     if ("--check" in args) {
         println(mpvCheckLine(mpv))
         kotlin.system.exitProcess(if (mpv is dev.silage.player.MpvStatus.Ok) 0 else 2)
@@ -112,6 +115,7 @@ fun main(args: Array<String>) {
         return
     }
     val koin = startKoin { modules(sharedModules() + desktopModule) }.koin
+    StartupTrace.mark("koin started")
     val crashLog = CrashLog()
     inviteLink?.let { (org.siloserver.silo.watchtogether.parseWatchPartyInvite(it))?.let { invite -> dev.silage.app.desktop.PendingInvite.value.value = invite } }
     appLinks.listen { invite -> dev.silage.app.desktop.PendingInvite.value.value = invite }
@@ -233,7 +237,11 @@ fun main(args: Array<String>) {
                         // The window opens on the startup animation while the start
                         // route (server, sign-in, profile) resolves underneath.
                         var navigator by remember { mutableStateOf<AppNavigator?>(null) }
-                        LaunchedEffect(Unit) { navigator = AppNavigator(withContext(Dispatchers.IO) { startRoute(koin) }) }
+                        LaunchedEffect(Unit) {
+                            StartupTrace.mark("first frame composed")
+                            navigator = AppNavigator(withContext(Dispatchers.IO) { startRoute(koin) })
+                            StartupTrace.mark("start route resolved")
+                        }
                         // Native canvases and initial page focus must not bypass the intro.
                         navigator?.takeIf { splashDone }?.let { nav ->
                             // The mouse's Back button, Browser Back and a remote's Back go back, as in Explorer and
@@ -278,7 +286,7 @@ fun main(args: Array<String>) {
                             }
                             }
                         }
-                        if (!splashDone) SplashScreen(ready = navigator != null) { splashDone = true }
+                        if (!splashDone) SplashScreen(ready = navigator != null) { StartupTrace.mark("intro finished"); splashDone = true }
                         if (System.getProperty("os.name").startsWith("Windows")) {
                             val storageError by koin.get<org.siloserver.silo.platform.RememberedSessionStore>().error.collectAsState()
                             storageError?.let { message ->
@@ -347,8 +355,38 @@ private suspend fun startRoute(koin: Koin): Route {
         }
         return Route.Home
     }
+    // With one profile and no PIN, "Who's watching?" picks it by itself. Do that now, while the
+    // intro plays, so Silage opens straight on Home instead of loading the picker afterwards.
+    val presenter = profilesPresenter(koin.get())
+    val loaded = presenter.load()
+    StartupTrace.mark("profiles loaded")
+    val sole = presenter.soleProfile(loaded)
+    if (sole != null && !sole.hasPin && presenter.choose(sole, null) == ProfilesState.Selected) {
+        StartupTrace.mark("sole profile chosen")
+        return Route.Home
+    }
     return Route.Profiles
 }
+
+/** "Who's watching?" over the server's profiles. */
+private fun profilesPresenter(profiles: ProfileRepository) = ProfilesPresenter(
+    list = {
+        when (val r = profiles.listProfiles()) {
+            is ApiResult.Success -> ApiResult.Success(r.data.map { ProfileRow(it.id, it.name, it.hasPin, it.avatarUrl, it.avatar) })
+            is ApiResult.Error -> r
+            is ApiResult.NetworkError -> r
+        }
+    },
+    verifyPin = { id, pin ->
+        when (val r = profiles.verifyPin(id, pin)) {
+            is ApiResult.Success -> ApiResult.Success(r.data.profileToken.takeIf { r.data.valid })
+            is ApiResult.Error -> r
+            is ApiResult.NetworkError -> r
+        }
+    },
+    select = { id, token -> profiles.selectProfile(id, token) },
+    forgetProfile = { profiles.clearProfile() },
+)
 
 /** Outlives the sign-in screen, for withdrawing an abandoned code on the server. */
 private val signInBackground = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
@@ -402,40 +440,31 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             serverHost = koin.get<ServerRegistry>().activeEntry.value?.url?.let(org.siloserver.silo.model.auth.DeviceCodeFormat::host).orEmpty(),
         )
         Route.Profiles -> ProfilesScreen(
-            ProfilesPresenter(
-                list = {
-                    when (val r = profiles.listProfiles()) {
-                        is ApiResult.Success -> ApiResult.Success(r.data.map { ProfileRow(it.id, it.name, it.hasPin, it.avatarUrl, it.avatar) })
-                        is ApiResult.Error -> r
-                        is ApiResult.NetworkError -> r
-                    }
-                },
-                verifyPin = { id, pin ->
-                    when (val r = profiles.verifyPin(id, pin)) {
-                        is ApiResult.Success -> ApiResult.Success(r.data.profileToken.takeIf { r.data.valid })
-                        is ApiResult.Error -> r
-                        is ApiResult.NetworkError -> r
-                    }
-                },
-                select = { id, token -> profiles.selectProfile(id, token) },
-                forgetProfile = { profiles.clearProfile() },
-            ),
-            onSelected = { nav.root(Route.Home) },
+            profilesPresenter(profiles),
+            onSelected = { koin.get<dev.silage.app.playback.DesktopThemeMusic>().reset(); nav.root(Route.Home) },
             onChangeServer = { nav.root(Route.Connect) },
             onManage = { nav.go(Route.ManageProfiles) },
             // No server to pick a profile from: what's already downloaded still plays.
             onDownloads = { nav.go(Route.Downloads) },
             hasDownloads = { koin.get<dev.silage.app.downloads.DesktopDownloads>().hasDownloadsOffline() },
         )
-        is Route.Playing -> if (route.offlineId != null) dev.silage.app.downloads.OfflinePlayingScreen(koin, route.offlineId, onDone = { if (!nav.back()) nav.root(Route.Home) })
+        is Route.Playing -> {
+            // A video (or trailer) starting ends any theme music at once.
+            LaunchedEffect(route) { koin.get<dev.silage.app.playback.DesktopThemeMusic>().interrupt() }
+            if (route.offlineId != null) dev.silage.app.downloads.OfflinePlayingScreen(koin, route.offlineId, onDone = { if (!nav.back()) nav.root(Route.Home) })
         else if (route.partyRoom != null) dev.silage.app.playback.PartyPlayingScreen(koin, route.partyRoom, onDone = { if (!nav.back()) nav.root(Route.Home) })
         else PlayingScreen(koin, route.contentId, route.fromStart, route.fileId,
             trailer = route.trailer,
             onDone = { if (!nav.back()) nav.root(Route.Home) },
             shuffleId = route.shuffleId,
             onPlayNext = { next, shuffleId -> nav.replace(Route.Playing(next, shuffleId = shuffleId)) })
+        }
         Route.Home -> AppShell(nav, koin, route) {
-            HomeScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) })
+            HomeScreen(koin, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it.openTarget)) },
+                onExploreAll = { id, title -> nav.go(Route.Section(id, title)) })
+        }
+        is Route.Section -> AppShell(nav, koin, route) {
+            dev.silage.app.home.SectionPageScreen(koin, route.id, route.title, route.libraryId, onOpen = { nav.go(Route.Detail(it.openTarget)) })
         }
         is Route.Library -> AppShell(nav, koin, route) {
             LibraryScreen(koin, route.id, route.name, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onOpenCollection = { id, name -> nav.go(Route.Collection(id, name)) },
@@ -452,7 +481,11 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
         Route.Calendar -> AppShell(nav, koin, route) {
             dev.silage.app.calendar.CalendarScreen(koin, onOpen = { id -> nav.go(Route.Detail(id)) })
         }
-        is Route.Detail -> DetailScreen(koin, route.contentId, initialSeason = route.season, focusEpisode = route.episode,
+        is Route.Detail -> dev.silage.app.browse.parseBoxSetTarget(route.contentId)?.let { (libraryId, boxSetId) ->
+            AppShell(nav, koin, route) {
+                dev.silage.app.browse.BoxSetScreen(koin, libraryId, boxSetId, onOpen = { nav.go(Route.Detail(it.openTarget)) }, onPlay = { nav.go(Route.Playing(it)) })
+            }
+        } ?: DetailScreen(koin, route.contentId, initialSeason = route.season, focusEpisode = route.episode,
             onPlay = { id, fromStart, fileId -> nav.go(Route.Playing(id, fromStart, fileId)) },
             onWatchTogether = { item -> nav.go(Route.WatchParty(item)) },
             onPerson = { id, name -> nav.go(Route.Person(id, name)) },
@@ -480,7 +513,12 @@ private fun AppRoutes(koin: Koin, nav: AppNavigator, route: Route) {
             onExit = { nav.replace(Route.WatchParty()) })
         Route.Requests -> AppShell(nav, koin, route) {
             dev.silage.app.requests.RequestsScreen(koin, onOpenLibrary = { nav.go(Route.Detail(it)) },
-                onOpenRequest = { type, id -> nav.go(Route.RequestDetail(type, id)) }, onSearch = { nav.go(Route.Search) })
+                onOpenRequest = { type, id -> nav.go(Route.RequestDetail(type, id)) }, onSearch = { nav.go(Route.Search) },
+                onSeeAll = { key, title -> nav.go(Route.RequestRow(key, title)) })
+        }
+        is Route.RequestRow -> AppShell(nav, koin, route) {
+            dev.silage.app.requests.RequestRowScreen(koin, route.key, route.title, onOpenLibrary = { nav.go(Route.Detail(it)) },
+                onOpenRequest = { type, id -> nav.go(Route.RequestDetail(type, id)) })
         }
         is Route.RequestDetail -> dev.silage.app.requests.RequestDetailScreen(koin, route.mediaType, route.tmdbId,
             onOpenLibrary = { nav.go(Route.Detail(it)) }, onOpenRequest = { type, id -> nav.go(Route.RequestDetail(type, id)) })

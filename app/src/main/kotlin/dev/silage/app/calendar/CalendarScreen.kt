@@ -1,5 +1,6 @@
 package dev.silage.app.calendar
 
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -38,7 +39,6 @@ import dev.silage.app.ui.UiPrefs
 import dev.silage.app.ui.focusCard
 import dev.silage.app.ui.isActive
 import org.koin.core.Koin
-import org.siloserver.silo.model.calendar.CalendarBadge
 import org.siloserver.silo.model.calendar.CalendarFilter
 import org.siloserver.silo.model.calendar.CalendarItem
 import org.siloserver.silo.viewmodel.CalendarFilterStore
@@ -93,12 +93,9 @@ private fun CalendarItem.caption(): String? = listOfNotNull(
     calendarAirTime(this),
 ).joinToString(" · ").ifBlank { null }
 
-private fun CalendarItem.badgeLabel(): String? = when {
-    CalendarBadge.SeriesPremiere in badges -> "Series premiere"
-    CalendarBadge.SeasonPremiere in badges -> "Season premiere"
-    CalendarBadge.Finale in badges -> "Finale"
-    else -> null
-}
+/** The poster badge, as the other Silo apps word it: PREMIERE, NEW SEASON, FINALE, or a movie's DIGITAL or PHYSICAL release. */
+internal fun CalendarItem.badgeLabel(): String? =
+    badges.firstNotNullOfOrNull { org.siloserver.silo.model.calendar.calendarBadgeLabel(it) }?.text()
 
 /** What's airing this week, day by day, from the shows and movies in the library. */
 @Composable
@@ -128,7 +125,7 @@ fun CalendarScreen(koin: Koin, onOpen: (String) -> Unit) {
             days.isEmpty() && state.isLoading -> item {
                 Box(Modifier.fillMaxWidth().padding(top = 120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
             }
-            days.isEmpty() && state.error != null -> item { Box(Modifier.fillMaxWidth().height(400.dp)) { ErrorState(state.error!!) { vm.refresh() } } }
+            days.isEmpty() && state.error != null -> item { Box(Modifier.fillMaxWidth().height(400.dp)) { ErrorState(state.error!!.text()) { vm.refresh() } } }
             days.isEmpty() -> item {
                 Text(
                     if (state.filter == CalendarFilter.Following) "Nothing airing this week from shows you follow." else "Nothing airing this week.",

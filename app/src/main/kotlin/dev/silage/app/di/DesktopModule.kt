@@ -66,17 +66,20 @@ val desktopModule = module {
     // Playback session plumbing, mirroring android-shared's playerInfraModule.
     single<PlaybackJournalStore> { FilePlaybackJournalStore(XdgPaths.state.resolve("playback-v2")) }
     single { PlaybackV2Api(get(), get()) }
+    single { dev.silage.app.playback.DesktopThemeMusic(get(), get(), get(), get()) }
     single { SequencedPlayback(get(), get(), get(), get()) { UUID.randomUUID().toString() } }
     // Plan 2 replaces this with a durable outbox when favorite/watchlist UI arrives.
     single<MembershipPort> { UnavailableMembershipPort }
-    factory { HomeViewModel(get(), get()) }
+    // Home opens on its last rows from disk, then refreshes from the server.
+    single<org.siloserver.silo.repository.port.HomeCachePort> { dev.silage.app.home.FileHomeCache(XdgPaths.cache.resolve("home")) }
+    factory { HomeViewModel(get(), get(), homeCache = get()) }
     single { dev.silage.app.ui.UiPrefs(XdgPaths.config.resolve("ui.json")) }
     single { dev.silage.app.settings.ProfileUiStore(get()) }
     single { dev.silage.app.shell.SidebarStore() }
     single { org.siloserver.silo.network.apiv2.HistoryRemovalV2Api(get(), get(), get()) }
     single { org.siloserver.silo.network.apiv2.LoginSessionsV2Api(get(), get(), get()) }
     // Updates (see dev.silage.app.update). Resolve these off the UI thread: detecting the install type runs commands.
-    // Watch Together: the shared code owns rooms and sync; these are its platform pieces.
+    // Watch Party: the shared code owns rooms and sync; these are its platform pieces.
     single {
         val tokens = get<TokenManager>()
         org.siloserver.silo.watchtogether.WatchPartyAvailabilityRepository(

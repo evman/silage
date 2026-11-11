@@ -25,6 +25,15 @@ class CardBadgesTest {
         assertTrue(badgesAt(OverlayPosition.TopRight, prefs, OverlayData(year = 2021)).isEmpty())
     }
 
+    @Test fun theCombinedBadgeReplacesTheSeparateQualityBadges() {
+        val base = ProfileUi().badges
+        val prefs = base.copy(items = base.items +
+            (OverlayId.Resolution to base.items.getValue(OverlayId.Resolution).copy(enabled = true, position = OverlayPosition.TopLeft)) +
+            (OverlayId.ResolutionHdrAudio to base.items.getValue(OverlayId.ResolutionHdrAudio).copy(enabled = true, position = OverlayPosition.TopLeft)))
+        val texts = badgesAt(OverlayPosition.TopLeft, prefs, OverlayData(resolution = "2160p", hdr = "DV", audio = "Atmos")).map { it.text }
+        assertEquals(listOf("4K DV Atmos"), texts)
+    }
+
     @Test fun noDataMeansNoBadge() {
         val prefs = prefsWithYear(OverlayPosition.TopLeft)
         assertTrue(badgesAt(OverlayPosition.TopLeft, prefs, OverlayData()).none { it.text.isBlank() })

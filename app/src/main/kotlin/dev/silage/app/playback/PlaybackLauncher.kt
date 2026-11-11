@@ -31,9 +31,14 @@ data class PlaybackMeta(
     val recap: TimeRange? = null,
     /** A picture for the system's media controls, when the server sent one with the item. */
     val artworkUrl: String? = null,
+    /** The title being played, to look up what [WatchDetail] leaves out (its artwork, on current servers). */
+    val contentId: String? = null,
+    /** A title page's trailer rather than the title itself (kept off the Discord status). */
+    val trailer: Boolean = false,
 ) {
     companion object {
         fun of(item: WatchDetail) = PlaybackMeta(
+            contentId = item.contentId,
             title = item.title,
             line = if (item.seriesTitle != null) {
                 listOfNotNull(
@@ -169,7 +174,8 @@ class PlaybackLauncher(
         val requestedAudio = audioTrackIndex ?: preferredAudio
 
         val qualityPrefs = quality()
-        val wantedQuality = qualityPreference ?: qualityPrefs.preference
+        // "original" and its aliases go as "auto": the server plays the source whenever it can.
+        val wantedQuality = org.siloserver.silo.model.playback.videoQualityPreference(qualityPreference ?: qualityPrefs.preference) ?: org.siloserver.silo.model.playback.PLAYBACK_QUALITY_AUTO
         val request = PlaybackStartRequestV3(
             clientFeatures = playbackClientFeaturesV3(context),
             fileId = playFileId,

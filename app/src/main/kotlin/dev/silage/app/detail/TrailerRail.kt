@@ -1,5 +1,6 @@
 package dev.silage.app.detail
 
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -47,7 +48,7 @@ internal fun youtubeWatchUrl(siteKey: String): String =
 
 /** The line under a card: its kind, then its length when the file's runtime is known. */
 internal fun trailerCaption(entry: TrailerRailEntry): String =
-    listOfNotNull(org.siloserver.silo.model.catalog.extraKindLabel(entry.kind), trailerRailDurationLabel(entry)).joinToString(" · ")
+    listOfNotNull(org.siloserver.silo.model.catalog.extraKindLabel(entry.kind).text(), trailerRailDurationLabel(entry)).joinToString(" · ")
 
 /**
  * "Trailers & More": provider trailers (YouTube) and the server's own extras, all played in Silage.
@@ -82,13 +83,13 @@ private fun TrailerCard(entry: TrailerRailEntry, onPoint: () -> Unit, onClick: (
     ) {
         Box(Modifier.size(320.dp, 180.dp).then(if (active) Modifier.border(3.dp, Color.White, shape) else Modifier).clip(shape)) {
             val still = (entry as? TrailerRailEntry.Remote)?.let { youtubeThumbnailUrl(it.video.siteKey) }
-            Artwork(still, null, entry.title, Modifier.size(320.dp, 180.dp))
+            Artwork(still, null, entry.title.text(), Modifier.size(320.dp, 180.dp))
             Box(Modifier.align(Alignment.Center).size(56.dp).clip(CircleShape).background(Color.Black.copy(alpha = if (active) 0.85f else 0.6f)), contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.PlayArrow, "Play", tint = Color.White, modifier = Modifier.size(34.dp))
             }
         }
         Spacer(Modifier.height(10.dp))
-        Text(entry.title, color = if (active) Color.White else Silage.Text, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(entry.title.text(), color = if (active) Color.White else Silage.Text, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(trailerCaption(entry), color = Silage.Text3, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

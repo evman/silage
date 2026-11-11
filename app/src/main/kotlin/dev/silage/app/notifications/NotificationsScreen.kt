@@ -1,5 +1,7 @@
 package dev.silage.app.notifications
 
+import org.siloserver.silo.common.i18n.UiText
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -75,7 +77,7 @@ fun NotificationsScreen(koin: Koin, onOpen: (contentId: String) -> Unit) {
                 Box(Modifier.fillMaxWidth().padding(top = 80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Silage.Text) }
             }
             rows.isEmpty() -> item {
-                Text(error ?: "Nothing yet. New episodes of shows you follow and requests that arrive will show up here.",
+                Text(error?.let { UiText.Key(it.key).text() } ?: "Nothing yet. New episodes of shows you follow and requests that arrive will show up here.",
                     color = Silage.Text2, fontSize = 21.sp, modifier = Modifier.padding(top = 24.dp))
             }
             else -> items(rows, key = { it.id }) { row ->

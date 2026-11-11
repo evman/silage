@@ -15,6 +15,9 @@ import dev.silage.player.PlayerEvent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -241,6 +244,15 @@ internal fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, p
     }
     val canvas = surface?.canvas
     val detach = if (output is VideoOutput.Embedded && canvas != null) attachEmbeddedInput(canvas, hud) else ({})
+    // The poster for the media controls and Discord, looked up once; current servers keep it in the full details.
+    val artworkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val posters = artworkScope.async(start = CoroutineStart.LAZY) {
+        playbackPosters(ready.meta) { id ->
+            (koin.get<org.siloserver.silo.repository.CatalogRepository>().getItemDetail(id) as? org.siloserver.silo.network.ApiResult.Success)?.data
+        }
+    }
+    // Where a poster found after opening goes: the Windows overlay or the Linux media controls.
+    var showPoster: ((String) -> Unit)? = null
     // Play/Pause, Next, Previous and Stop on the keyboard, only while this video is open.
     val mediaKeys: AutoCloseable = if (System.getProperty("os.name").startsWith("Windows")) {
         val keys = WindowsMediaKeys { hud.mediaKey(it) }
@@ -253,6 +265,7 @@ internal fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, p
             setPaused = { paused -> if (partyPlayback != null) partyPlayback.transport.playPause(paused) else mpv.setPaused(paused) },
             seekTo = { seconds -> if (partyPlayback != null) partyPlayback.transport.seekTo(seconds) else mpv.seekAbsolute(seconds) },
         )
+        showPoster = controls::showArtwork
         val setPlaying: (Boolean) -> Unit = { paused -> if (partyPlayback != null) partyPlayback.transport.playPause(paused) else mpv.setPaused(paused) }
         // The taskbar entry: buttons under its thumbnail and the position on its icon.
         val taskbar = WindowsTaskbar.open(
@@ -262,6 +275,17 @@ internal fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, p
         AutoCloseable { taskbar.close(); controls.close(); keys.close() }
     } else dev.silage.app.desktop.LinuxMediaSession(mpv.state, hud::mediaKey,
         command = { mpv.command(*it); Unit }, property = mpv::getProperty, title = ready.meta.title)
+        .also { session -> showPoster = session::showArtwork }
+    showPoster?.let { show -> artworkScope.launch { posters.await().firstOrNull()?.let(show) } }
+    // What's playing as a Discord status, only when turned on in Settings.
+    val uiPrefs = koin.get<dev.silage.app.ui.UiPrefs>()
+    // Trailers leave the status alone: it's for what you sat down to watch.
+    val discord = if (uiPrefs.discordPresence && !ready.meta.trailer && dev.silage.app.desktop.DiscordClientId.isNotBlank()) {
+        val coverArt = uiPrefs.discordCoverArt
+        dev.silage.app.desktop.DiscordPresence(mpv.state, dev.silage.app.desktop.PresenceInfo(
+            title = ready.meta.title, line = ready.meta.line, seriesTitle = ready.meta.seriesTitle, inParty = partyPlayback != null),
+            artwork = if (coverArt) ({ posters.await().firstNotNullOfOrNull { dev.silage.app.desktop.discordImageUrl(it) } }) else null)
+    } else null
     // A controller drives this player until it closes; then it goes back to the pages.
     val playerKeys: (dev.silage.app.playback.hud.HudKey) -> Unit = hud::key
     dev.silage.app.input.GamepadInput.player = playerKeys
@@ -287,6 +311,8 @@ internal fun openMpv(koin: Koin, surface: Surface?, ready: LaunchResult.Ready, p
             authRefresh?.cancel()
             detach()
             mediaKeys.close()
+            discord?.close()
+            artworkScope.cancel()
             hud.close()
             port.close()
             steppedAside?.close()
@@ -350,7 +376,7 @@ fun PlayingScreen(koin: Koin, contentId: String, fromStart: Boolean = false, fil
                         // YouTube refused the lookup as a bot: mpv asking again would be refused too.
                         if (found == null && TrailerPrefetch.blocked()) LaunchResult.Failed(TrailerPrefetch.BlockedMessage)
                         else LaunchResult.Ready(sessionId = "trailer", url = found?.playUrl ?: trailer.url, headers = emptyMap(), startSeconds = null,
-                            meta = PlaybackMeta(title = trailer.title, line = "Trailer"))
+                            meta = PlaybackMeta(title = trailer.title, line = "Trailer", trailer = true))
                     },
                     openPlayer = { ready ->
                         val options = found?.let(TrailerTools::directOptions) ?: TrailerTools.mpvOptions()

@@ -46,17 +46,17 @@ class SplashTimelineTest {
         assertTrue(t.frame(1000, null).textRise > 0f, "the name drifts up into place")
     }
 
-    @Test fun theDefaultSplashStaysFullyVisibleForFourSecondsEvenWhenReadyImmediately() {
+    @Test fun theDefaultSplashStaysFullyVisibleForASecondAndAHalfEvenWhenReadyImmediately() {
         val d = SplashTimeline()
         assertEquals(1f, d.frame(900, readyAtMs = 100).logoAlpha, "the intro still completes")
-        for (elapsed in listOf(1250L, 3500L, 3999L, 4000L)) {
+        for (elapsed in listOf(900L, 1250L, 1499L, 1500L)) {
             val frame = d.frame(elapsed, readyAtMs = 100)
             assertFalse(frame.finished, "must stay visible at $elapsed ms")
-            assertEquals(1f, frame.screenAlpha, "must not fade before four seconds")
+            assertEquals(1f, frame.screenAlpha, "must not fade before 1.5 seconds")
         }
-        assertTrue(d.frame(4175, readyAtMs = 100).screenAlpha in 0.3f..0.7f)
-        assertFalse(d.frame(4349, readyAtMs = 100).finished)
-        assertTrue(d.frame(4350, readyAtMs = 100).finished)
+        assertTrue(d.frame(1675, readyAtMs = 100).screenAlpha in 0.3f..0.7f)
+        assertFalse(d.frame(1849, readyAtMs = 100).finished)
+        assertTrue(d.frame(1850, readyAtMs = 100).finished)
     }
 
     @Test fun theDefaultSplashWaitsLongerThanFourSecondsWhenLoadingIsSlow() {

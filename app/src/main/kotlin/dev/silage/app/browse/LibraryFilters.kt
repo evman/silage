@@ -1,5 +1,6 @@
 package dev.silage.app.browse
 
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -176,7 +177,7 @@ fun FilterPanel(filters: LibraryFilters, vocabulary: CatalogFiltersResponse?, on
                 val shown = if (showAll) options else options.take(limit) + options.drop(limit).filter { it.first in chosen }
                 FacetRow(facet.label) {
                     shown.forEach { (value, label) ->
-                        Pill(facetLabel(facet, value, label), selected = value in chosen) { onChange(filters.toggle(facet, value)) }
+                        Pill(facetLabel(facet, value, label.text()), selected = value in chosen) { onChange(filters.toggle(facet, value)) }
                     }
                     if (!showAll) Pill("More… (${options.size - limit})") { expanded = expanded + facet }
                 }

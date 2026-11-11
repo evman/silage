@@ -28,7 +28,7 @@
 - **Full quality, no transcoding.** Your files play as they are, through mpv with hardware decoding.
 - **Real HDR on Linux.** True HDR output on KDE Plasma, plus [experimental Dolby Vision](docs/DOLBY_VISION.md).
 - **Made for the couch.** Everything works with a remote or arrow keys, Enter and Esc.
-- **Everything you use in Silo.** Libraries, collections, watchlist, ratings, profiles, requests, notifications, subtitles, Up next, Skip Intro and Watch Together.
+- **Everything you use in Silo.** Libraries, collections, watchlist, ratings, profiles, requests, notifications, subtitles, Up next, Skip Intro and Watch Party.
 - **Watch offline.** Download titles, episodes or whole seasons, where your server allows it.
 - **Updates itself.** New versions are signature-checked and installed with one click.
 
@@ -65,6 +65,14 @@ and pick **Normal window** or **Fullscreen**.
 ## Updates
 
 When a new version is ready, **Update ready** appears in the sidebar, never during playback. Select it to install and restart. You can turn automatic updates off under **Settings → About**.
+
+## Discord status
+
+Silage can show what you're watching on your Discord profile, with a progress bar, while the
+Discord app is open on the same computer. It's off until you turn it on in
+**Settings → Playback → Discord status**, since your Discord friends can see it. Trailers never
+show. **Cover art on Discord** adds the title's poster; Discord loads it from your server, so it
+needs a server reachable from the internet over HTTPS, and Discord sees your server's address.
 
 ## Controls
 

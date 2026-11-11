@@ -2,7 +2,6 @@ package dev.silage.app.settings
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import org.siloserver.silo.model.settings.CardCaption
 import org.siloserver.silo.model.settings.CardPosterSize
 import org.siloserver.silo.model.settings.SettingKeys
 import org.siloserver.silo.overlays.OverlayId
@@ -40,7 +39,6 @@ class ProfileUiTest {
         assertTrue(ui.quickActions.showsFavorite)
         assertFalse(ui.quickActions.showsWatched)
         assertEquals(CardPosterSize.Large, ui.presentation.posterSize)
-        assertEquals(CardCaption.Artwork, ui.presentation.caption)
     }
 
     @Test fun anUnknownQuickActionModeMeansBoth() {

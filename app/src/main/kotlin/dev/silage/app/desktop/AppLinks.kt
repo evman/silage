@@ -21,7 +21,7 @@ fun inviteLinkIn(args: Array<String>): String? = args.firstOrNull { arg ->
  * Hands a clicked link to the Silage already running, over a loopback socket
  * whose port and secret are in a file only this user can normally read. Whoever
  * connects must know the secret, and only a valid party link is ever accepted;
- * joining still needs a press on the Watch Together page.
+ * joining still needs a press on the Watch Party page.
  */
 class AppLinkChannel(private val file: Path) {
     /** Gives [link] to the running Silage; false when there's none to take it. */

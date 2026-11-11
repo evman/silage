@@ -89,6 +89,14 @@ private data class UiPrefsFile(
     val bufferingMode: String = "auto",
     /** What each profile chose for each show, by "profile|series". */
     val showPrefs: Map<String, ShowPrefs> = emptyMap(),
+    /** Play a title's theme music on its page (opt-in, as in the other Silo apps). */
+    val themeMusic: Boolean = false,
+    /** Loop the theme while the page stays open, instead of playing it once. */
+    val themeMusicLoop: Boolean = false,
+    /** Show what's playing as a Discord status (opt-in: friends can see it). */
+    val discordPresence: Boolean = false,
+    /** Send the title's poster link with it (the link names the server's image host). */
+    val discordCoverArt: Boolean = false,
 )
 
 /** What a profile chose while watching a show, used for its other episodes. Null fields follow Settings. */
@@ -145,6 +153,22 @@ class UiPrefs(private val path: Path) {
     var linuxWindowed: Boolean
         get() = read().linuxWindowed
         set(value) = write { it.copy(linuxWindowed = value) }
+
+    var themeMusic: Boolean
+        get() = read().themeMusic
+        set(value) = write { it.copy(themeMusic = value) }
+
+    var themeMusicLoop: Boolean
+        get() = read().themeMusicLoop
+        set(value) = write { it.copy(themeMusicLoop = value) }
+
+    var discordPresence: Boolean
+        get() = read().discordPresence
+        set(value) = write { it.copy(discordPresence = value) }
+
+    var discordCoverArt: Boolean
+        get() = read().discordCoverArt
+        set(value) = write { it.copy(discordCoverArt = value) }
 
     var autoplayNext: Boolean
         get() = read().autoplayNext

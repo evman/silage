@@ -1,5 +1,8 @@
 package dev.silage.app.home
 
+import org.siloserver.silo.model.section.cappedForRow
+import org.siloserver.silo.model.section.offersExploreAll
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -47,7 +50,9 @@ import org.siloserver.silo.viewmodel.HomeViewModel
 
 /** Home: a marquee for the focused card over the server's rows. */
 @Composable
-fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> Unit) {
+fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> Unit,
+    /** Opens a row's full page ("Explore all"). */
+    onExploreAll: (sectionId: String, title: String) -> Unit = { _, _ -> }) {
     // Owned by this visit's back-stack entry (cleared when it's popped); it loads on creation.
     val vm = rememberEntryViewModel { koin.get<HomeViewModel>() }
     val state by vm.uiState.collectAsState()
@@ -80,7 +85,8 @@ fun HomeScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) -> U
     }
     androidx.compose.runtime.CompositionLocalProvider(dev.silage.app.browse.LocalCardMenu provides menu) {
         val shown = remember(state.sections, removed) { withoutRemovedShows(state.sections, removed) }
-        SectionRowsScreen(shown, state.isLoading, state.error, onRetry = { vm.refresh() }, emptyText = "Nothing on Home yet", onOpen = onOpen, onPlay = onPlay)
+        SectionRowsScreen(shown, state.isLoading, state.error?.text(), onRetry = { vm.refresh() }, emptyText = "Nothing on Home yet", onOpen = onOpen, onPlay = onPlay,
+            onExploreAll = { onExploreAll(it.id, it.title) })
     }
 }
 
@@ -110,7 +116,7 @@ fun ForYouScreen(koin: Koin, onOpen: (CardModel) -> Unit, onPlay: (CardModel) ->
         val extras = koin.get<dev.silage.app.server.SiloExtras>()
         if (extras.tasteChanged) { extras.tasteChanged = false; vm.refresh() }
     }
-    SectionRowsScreen(state.sections, state.isLoading, state.error, onRetry = { vm.refresh() },
+    SectionRowsScreen(state.sections, state.isLoading, state.error?.text(), onRetry = { vm.refresh() },
         emptyText = "No recommendations yet. Watch a few things and check back.", onOpen = onOpen, onPlay = onPlay,
         header = { TasteHeader(koin, onPickTaste) })
 }
@@ -127,11 +133,15 @@ fun SectionRowsScreen(
     onPlay: (CardModel) -> Unit,
     /** Above the rows, and under the empty message when there are none. */
     header: (@Composable () -> Unit)? = null,
+    /** With this, rows show at most 20 cards and end with an "Explore all" card that opens the full row. */
+    onExploreAll: ((org.siloserver.silo.model.section.ResolvedSection) -> Unit)? = null,
 ) {
-    val rows = remember(sections) {
+    val rows = remember(sections, onExploreAll != null) {
         sections.filter { it.items.isNotEmpty() }.map { section ->
             val progress = isProgressRow(section.sectionType)
-            Triple(section, progress, section.items.map { it.toCard(landscape = progress).copy(homeRow = section.sectionType) })
+            val shown = if (onExploreAll != null) section.cappedForRow() else section
+            val cards = shown.items.map { it.toCard(landscape = progress).copy(homeRow = section.sectionType) }
+            Triple(section, progress, if (onExploreAll != null && section.offersExploreAll) cards + exploreAllCard(section, progress) else cards)
         }
     }
     // The focused card. Only the marquee reads it, so moving between cards
@@ -146,6 +156,7 @@ fun SectionRowsScreen(
     val marquee = rows.firstOrNull { it.first.id == restoreRow }?.third?.firstOrNull { it.id == restoreCard }
         ?: rows.firstOrNull()?.third?.firstOrNull()
     val firstCard = rememberInitialFocus(rows.isNotEmpty())
+    if (rows.isNotEmpty()) LaunchedEffect(Unit) { dev.silage.app.StartupTrace.mark("home rows shown") }
 
     val listState = rememberLazyListState()
     // Developer switch for screenshots: start scrolled down N rows.
@@ -166,7 +177,7 @@ fun SectionRowsScreen(
                 items(rows, key = { it.first.id }) { (section, progress, cards) ->
                     CardRow(
                         section.title, cards,
-                        onOpen = { if (progress) onPlay(it) else onOpen(it) },
+                        onOpen = { if (it.id == exploreAllId(section)) onExploreAll?.invoke(section) else if (progress) onPlay(it) else onOpen(it) },
                         onFocus = { focused.value = it; lastFocused = "${section.id}/${it.id}" },
                         firstCardFocus = if (section.id == (restoreRow ?: rows.first().first.id)) firstCard else null,
                         focusCardId = if (section.id == restoreRow) restoreCard else null,
@@ -268,3 +279,12 @@ fun ErrorState(message: String, onRetry: () -> Unit) {
         }
     }
 }
+
+private fun exploreAllId(section: org.siloserver.silo.model.section.ResolvedSection) = "explore-all:${section.id}"
+
+/** The card that ends a row and opens its full page, shaped like the row's other cards. */
+internal fun exploreAllCard(section: org.siloserver.silo.model.section.ResolvedSection, landscape: Boolean) = CardModel(
+    id = exploreAllId(section), title = "Explore all", caption = section.title, imageUrl = null, thumbhash = null,
+    landscape = landscape, progress = null, watched = false, backdropUrl = null, backdropThumbhash = null, logoUrl = null,
+    overview = "See everything in ${section.title}", metaLine = "", openTarget = exploreAllId(section),
+)

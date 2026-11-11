@@ -153,6 +153,21 @@ private fun InterfaceSection(koin: Koin) {
             }
         }
         Spacer(Modifier.height(40.dp))
+        val themeMusic = remember(version) { prefs.themeMusic }
+        val themeLoop = remember(version) { prefs.themeMusicLoop }
+        Heading("Theme music", "Play a title's theme music softly on its page, when your server has one. It fades out when you leave the page or start watching.")
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Pill("On", selected = themeMusic) { prefs.themeMusic = true }
+            Pill("Off", selected = !themeMusic) { prefs.themeMusic = false }
+        }
+        if (themeMusic) {
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Pill("Play once", selected = !themeLoop) { prefs.themeMusicLoop = false }
+                Pill("Loop", selected = themeLoop) { prefs.themeMusicLoop = true }
+            }
+        }
+        Spacer(Modifier.height(40.dp))
         Heading("Sidebar", "Choose which libraries appear in the sidebar, and their order.")
         SidebarEditorList(all) { prefs.sidebar = it }
     }
@@ -384,6 +399,24 @@ private fun PlaybackSection(koin: Koin) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Pill("Best quality", selected = preferredVersion != "last") { prefs.preferredVersion = "best" }
             Pill("Last played", selected = preferredVersion == "last") { prefs.preferredVersion = "last" }
+        }
+        if (dev.silage.app.desktop.DiscordClientId.isNotBlank()) {
+            val discord = remember(version) { prefs.discordPresence }
+            Spacer(Modifier.height(40.dp))
+            Heading("Discord status", "Show what you're watching on your Discord profile while the Discord app is open on this computer. Your Discord friends can see it. Applies from the next video.")
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Pill("Off", selected = !discord) { prefs.discordPresence = false }
+                Pill("On", selected = discord) { prefs.discordPresence = true }
+            }
+            if (discord) {
+                val coverArt = remember(version) { prefs.discordCoverArt }
+                Spacer(Modifier.height(24.dp))
+                Heading("Cover art on Discord", "Show the title's poster beside your status. Discord loads it from your server's picture address, so that address is shared with Discord. Needs a server reachable from the internet over HTTPS.")
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Pill("Off", selected = !coverArt) { prefs.discordCoverArt = false }
+                    Pill("On", selected = coverArt) { prefs.discordCoverArt = true }
+                }
+            }
         }
         Spacer(Modifier.height(48.dp))
     }

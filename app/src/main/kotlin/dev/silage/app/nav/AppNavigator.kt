@@ -17,7 +17,7 @@ sealed interface Route {
     data object Calendar : Route
     data object Notifications : Route
     data object Requests : Route
-    /** The Watch Together hub; [host]: a title to host a party with straight away; [invite]: a clicked invitation to offer. */
+    /** The Watch Party hub; [host]: a title to host a party with straight away; [invite]: a clicked invitation to offer. */
     data class WatchParty(val host: org.siloserver.silo.viewmodel.WatchPartyItem? = null,
         val invite: org.siloserver.silo.watchtogether.WatchPartyInvite? = null) : Route
     data class PartyLobby(val roomId: String) : Route
@@ -29,10 +29,14 @@ sealed interface Route {
     data class Library(val id: Int, val name: String) : Route
     /** [personal]: one of the profile's own collections (sidebar), rather than a library's. */
     data class Collection(val id: String, val name: String, val personal: Boolean = false) : Route
+    /** A Home or library row's full page ("Explore all"). */
+    data class Section(val id: String, val title: String, val libraryId: Int? = null) : Route
     data class Person(val id: Long, val name: String) : Route
     /** [season] and [episode]: open a show's page on that season, at that episode (from "Go to show"). */
     data class Detail(val contentId: String, val season: Int? = null, val episode: String? = null) : Route
     data class RequestDetail(val mediaType: String, val tmdbId: Int) : Route
+    /** A Discover row's See all page on Requests. */
+    data class RequestRow(val key: String, val title: String) : Route
     /** [trailer]: a provider trailer (YouTube) played in the same player, rather than a title from the server. */
     data class Playing(val contentId: String, val fromStart: Boolean = false, val fileId: Int? = null, val shuffleId: String? = null,
         val trailer: Trailer? = null,

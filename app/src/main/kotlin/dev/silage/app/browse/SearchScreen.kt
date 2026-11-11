@@ -62,7 +62,7 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit, onOpenRequest: (mediaT
     val entryScope = LocalNavEntry.current.scope
     // Shows, movies and everything else at once; shows and exact titles lead (see rankedSearch).
     val query = rememberEntry("search") {
-        SearchQuery(entryScope) { q -> rankedSearch(q) { text, type -> catalog.browse(query = text, mediaType = type, limit = if (type == null) 60 else 30) } }
+        SearchQuery(entryScope) { q -> rankedSearch(q, boxSets = { catalog.searchBoxSets(it) }) { text, type -> catalog.browse(query = text, mediaType = type, limit = if (type == null) 60 else 30) } }
     }
     val results by query.results.collectAsState()
     val requestSearch = rememberEntry("search:requests") {
@@ -115,7 +115,7 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit, onOpenRequest: (mediaT
             emptyText = if (results == SearchResults.Idle) "Search your movies and shows" else "No results for “$text” in your library",
             header = {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    SearchField(text, { search(it) }, field)
+                    SearchField(text, { search(it) }, field, toResults = { (results as? SearchResults.Done)?.cards?.isNotEmpty() == true && runCatching { restore.requestFocus() }.isSuccess })
                 }
                 if (text.isBlank() && recent.isNotEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
@@ -150,7 +150,9 @@ fun SearchScreen(koin: Koin, onOpen: (CardModel) -> Unit, onOpenRequest: (mediaT
 
 /** The big search box. */
 @Composable
-fun SearchField(text: String, onChange: (String) -> Unit, focusRequester: FocusRequester, modifier: Modifier = Modifier) {
+fun SearchField(text: String, onChange: (String) -> Unit, focusRequester: FocusRequester, modifier: Modifier = Modifier,
+    /** Down or Enter: focus the results. Returns false when there are none to focus. */
+    toResults: (() -> Boolean)? = null) {
     val focus = LocalFocusManager.current
     val interaction = remember { MutableInteractionSource() }
     val fieldFocused by interaction.collectIsFocusedAsState()
@@ -172,10 +174,11 @@ fun SearchField(text: String, onChange: (String) -> Unit, focusRequester: FocusR
                 cursorBrush = SolidColor(Silage.Amber),
                 // A single-line field keeps the arrows for its cursor; Down/Enter go to the results.
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
-                    .textEntry(text, onChange, "Search") { focus.moveFocus(FocusDirection.Down) }
+                    .textEntry(text, onChange, "Search") { toResults?.invoke() == true || focus.moveFocus(FocusDirection.Down) }
                     .onPreviewKeyEvent { e ->
                     if (e.type == KeyEventType.KeyDown && (e.key == Key.DirectionDown || e.key == Key.Enter || e.key == Key.NumPadEnter)) {
-                        focus.moveFocus(FocusDirection.Down)
+                        // Straight to the results: moving focus "down" by position can land on the sidebar instead.
+                        toResults?.invoke() == true || focus.moveFocus(FocusDirection.Down)
                     } else {
                         false
                     }

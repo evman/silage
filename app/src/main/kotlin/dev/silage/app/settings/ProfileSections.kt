@@ -2,6 +2,7 @@
 
 package dev.silage.app.settings
 
+import org.siloserver.silo.common.i18n.text
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,10 +18,8 @@ import dev.silage.app.ui.Silage
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonPrimitive
 import org.koin.core.Koin
-import org.siloserver.silo.model.settings.CardCaption
 import org.siloserver.silo.model.settings.CardPosterSize
 import org.siloserver.silo.model.settings.CardPresentation
-import org.siloserver.silo.model.settings.CardPresentationPreset
 import org.siloserver.silo.model.settings.SettingKeys
 import org.siloserver.silo.overlays.CardOverlayPrefs
 import org.siloserver.silo.overlays.OverlayCategory
@@ -101,18 +100,9 @@ internal fun PostersSection(koin: Koin) {
     }
     Column(Modifier.verticalScroll(rememberScrollState())) {
         SaveProblem(store)
-        Heading("Under each poster", "How big posters are, and what is written under them.")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            CardPresentationPreset.entries.forEach { p -> Pill(p.displayName, selected = ui.presentation.preset == p) { savePresentation(p.presentation) } }
-            if (ui.presentation.preset == null) Pill("Custom", selected = true) {}
-        }
-        Spacer(Modifier.height(18.dp))
+        Heading("Poster size", "How big posters are in rows and grids.")
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            CardPosterSize.entries.forEach { z -> Pill(z.displayName, selected = ui.presentation.posterSize == z) { savePresentation(ui.presentation.copy(posterSize = z)) } }
-        }
-        Spacer(Modifier.height(18.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            CardCaption.entries.forEach { c -> Pill(c.displayName, selected = ui.presentation.caption == c) { savePresentation(ui.presentation.copy(caption = c)) } }
+            CardPosterSize.entries.forEach { z -> Pill(z.displayName.text(), selected = ui.presentation.posterSize == z) { savePresentation(ui.presentation.copy(posterSize = z)) } }
         }
 
         Spacer(Modifier.height(40.dp))
@@ -152,6 +142,7 @@ internal fun PostersSection(koin: Koin) {
                         Column(Modifier.width(300.dp)) {
                             Text(def.label, color = if (cfg.enabled) Silage.Text else Silage.Text3, fontSize = 19.sp)
                             def.availabilityNote?.let { Text(it, color = Silage.Text3, fontSize = 14.sp) }
+                            combinedHint(def.id)?.let { Text(it, color = Silage.Text3, fontSize = 14.sp) }
                         }
                         FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Pill(if (cfg.enabled) "On" else "Off", selected = cfg.enabled) { saveBadges(ui.badges.withBadge(def.id) { it.copy(enabled = !it.enabled) }) }
@@ -175,4 +166,11 @@ internal fun PostersSection(koin: Koin) {
         }
         Spacer(Modifier.height(48.dp))
     }
+}
+
+/** What a combined badge stands in for: while it is on, the badges it covers are hidden (upstream's COMBINED_BADGES). */
+internal fun combinedHint(id: org.siloserver.silo.overlays.OverlayId): String? = when (id) {
+    org.siloserver.silo.overlays.OverlayId.ResolutionHdrAudio -> "One badge such as “4K DV Atmos”; hides the resolution, HDR and audio badges"
+    org.siloserver.silo.overlays.OverlayId.ResolutionHdr -> "One badge such as “4K HDR”; hides the resolution and HDR badges"
+    else -> null
 }
