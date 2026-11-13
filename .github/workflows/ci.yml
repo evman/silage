@@ -4,6 +4,8 @@ on:
     # Release branches too, so Windows builds and tests before anything is tagged.
     branches: [main, 'release-*']
   pull_request:
+  # Run it by hand too (Actions → CI → Run workflow), e.g. when a push didn't start it.
+  workflow_dispatch:
 
 jobs:
   runtime:
